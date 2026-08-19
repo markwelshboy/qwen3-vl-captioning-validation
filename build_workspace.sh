@@ -198,7 +198,8 @@ echo
 echo "=== Build complete ==="
 echo "Validator:       $VENV/bin/qwen-vl-validate"
 echo "DWPose profiler: $VENV/bin/qwen-dwpose-profile"
-echo "Runner:          $REPO_ROOT/run_workspace.sh"
+echo "Qwen runner:     $REPO_ROOT/run_workspace.sh"
+echo "DWPose runner:   $REPO_ROOT/run_dwpose_workspace.sh"
 echo
 cat <<EOF
 Qwen example:
@@ -207,6 +208,6 @@ Qwen example:
     --dtype bfloat16 --attn sdpa --run-name analysis-v1-nf4
 
 DWPose example:
-  "$VENV/bin/qwen-dwpose-profile" /data/sh1vx \\
+  bash "$REPO_ROOT/run_dwpose_workspace.sh" /data/sh1vx \\
     --output "$REPO_ROOT/runs/analysis-v1-nf4/dwpose"
 EOF
