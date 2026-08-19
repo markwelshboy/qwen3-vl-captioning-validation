@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qwen3-vl-captioning-validation"
+version = "0.1.0"
+description = "Standalone Qwen3-VL dataset analysis/caption comparison harness"
+requires-python = ">=3.10"
+dependencies = [
+  "transformers>=4.57.0,<5",
+  "accelerate>=1.0",
+  "Pillow>=10",
+  "jsonschema>=4.20",
+  "tqdm>=4.66"
+]
+
+[project.scripts]
+qwen-vl-validate = "qwen_caption_validate.cli:main"
+
+[tool.setuptools]
+packages = ["qwen_caption_validate"]
