@@ -8,6 +8,7 @@ set -euo pipefail
 #   * keep venv, model caches, temp files, and package caches under /workspace
 #   * install a CUDA 12.8 PyTorch build suitable for the L40S/driver-570 host
 #   * install the Transformers + bitsandbytes/NF4 validation stack
+#   * install the lightweight DWPose/ONNX dataset profiler
 #   * fail immediately if CUDA cannot actually initialize
 #
 # Usage:
@@ -151,13 +152,14 @@ echo "Installing/updating CUDA 12.8 PyTorch ..."
     --index-url "$TORCH_INDEX_URL" \
     torch torchvision
 
-# Install this repo and the bitsandbytes/NF4 extra. Running from the repo makes
-# the editable path deterministic regardless of the caller's current directory.
+# Install this repo, bitsandbytes/NF4, and the lightweight ONNX DWPose profiler.
+# Running from the repo makes the editable path deterministic regardless of the
+# caller's current directory.
 echo
-echo "Installing validator + bitsandbytes ..."
+echo "Installing validator + bitsandbytes + DWPose ..."
 (
     cd "$REPO_ROOT"
-    "$UV_BIN" pip install --python "$PY" -e '.[bnb]'
+    "$UV_BIN" pip install --python "$PY" -e '.[bnb,dwpose]'
 )
 
 # Hard preflight: a build that imports Torch but cannot initialize CUDA is not
@@ -166,6 +168,7 @@ echo "Installing validator + bitsandbytes ..."
 echo
 echo "=== CUDA preflight ==="
 "$PY" - <<'PY'
+import importlib.metadata
 import sys
 import torch
 import transformers
@@ -176,6 +179,7 @@ print("torch:", torch.__version__)
 print("torch CUDA:", torch.version.cuda)
 print("transformers:", transformers.__version__)
 print("bitsandbytes:", bnb.__version__)
+print("easy-dwpose:", importlib.metadata.version("easy-dwpose"))
 print("CUDA available:", torch.cuda.is_available())
 
 if not torch.cuda.is_available():
@@ -192,12 +196,17 @@ fi
 
 echo
 echo "=== Build complete ==="
-echo "Validator: $VENV/bin/qwen-vl-validate"
-echo "Runner:    $REPO_ROOT/run_workspace.sh"
+echo "Validator:       $VENV/bin/qwen-vl-validate"
+echo "DWPose profiler: $VENV/bin/qwen-dwpose-profile"
+echo "Runner:          $REPO_ROOT/run_workspace.sh"
 echo
 cat <<EOF
-Example:
+Qwen example:
   bash "$REPO_ROOT/run_workspace.sh" /data/sh1vx \\
     --models 8b 32b --backend transformers --quantization 4bit \\
     --dtype bfloat16 --attn sdpa --run-name analysis-v1-nf4
+
+DWPose example:
+  "$VENV/bin/qwen-dwpose-profile" /data/sh1vx \\
+    --output "$REPO_ROOT/runs/analysis-v1-nf4/dwpose"
 EOF
