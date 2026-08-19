@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from PIL import Image
 from jsonschema import Draft202012Validator
 from transformers import AutoModelForImageTextToText, AutoProcessor
 
@@ -116,26 +115,23 @@ def generate(
     max_new_tokens: int,
 ) -> tuple[str, float]:
     started = time.perf_counter()
-    with Image.open(image_path) as src:
-        image = src.convert("RGB")
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": image},
-                    {"type": "text", "text": prompt},
-                ],
-            }
-        ]
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "path": str(image_path.resolve())},
+                {"type": "text", "text": prompt},
+            ],
+        }
+    ]
 
-        inputs = loaded.processor.apply_chat_template(
-            messages,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_dict=True,
-            return_tensors="pt",
-        )
-
+    inputs = loaded.processor.apply_chat_template(
+        messages,
+        tokenize=True,
+        add_generation_prompt=True,
+        return_dict=True,
+        return_tensors="pt",
+    )
     inputs = inputs.to(loaded.model.device)
 
     with torch.inference_mode():
