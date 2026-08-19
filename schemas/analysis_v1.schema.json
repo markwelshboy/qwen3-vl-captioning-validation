@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Qwen3-VL identity caption visual analysis",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "image_summary",
+    "framing",
+    "camera",
+    "target_subject",
+    "transient_appearance",
+    "identity_observations",
+    "non_target_entities",
+    "embedded_depictions",
+    "nuisance_regions",
+    "uncertainties"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "image_summary": {"type": "string"},
+    "framing": {
+      "type": "object",
+      "required": ["shot_scale", "subject_extent", "subject_frame_coverage", "photographic_archetype"],
+      "properties": {
+        "shot_scale": {"enum": ["extreme_close_up", "close_up", "medium_close_up", "medium", "three_quarter", "full_length", "unknown"]},
+        "subject_extent": {"type": "string"},
+        "subject_frame_coverage": {"enum": ["small", "medium", "large", "face_dominant", "unknown"]},
+        "photographic_archetype": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "camera": {
+      "type": "object",
+      "required": ["elevation", "elevation_confidence", "perspective_notes"],
+      "properties": {
+        "elevation": {"enum": ["high", "eye_level", "low", "unknown"]},
+        "elevation_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "perspective_notes": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "target_subject": {
+      "type": "object",
+      "required": ["orientation", "gaze", "expression_state", "visible_limbs"],
+      "properties": {
+        "orientation": {"type": "object"},
+        "gaze": {"type": "object"},
+        "expression_state": {"type": "array"},
+        "visible_limbs": {"type": "array"}
+      },
+      "additionalProperties": true
+    },
+    "transient_appearance": {"type": "array"},
+    "identity_observations": {"type": "array"},
+    "non_target_entities": {"type": "array"},
+    "embedded_depictions": {"type": "array"},
+    "nuisance_regions": {"type": "array"},
+    "uncertainties": {"type": "array"}
+  },
+  "additionalProperties": true
+}
