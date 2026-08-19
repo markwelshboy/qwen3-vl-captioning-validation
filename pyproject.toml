@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qwen3-vl-captioning-validation"
-version = "0.1.0"
+version = "0.2.0"
 description = "Standalone Qwen3-VL dataset analysis/caption comparison harness"
 requires-python = ">=3.10"
 dependencies = [
@@ -13,6 +13,15 @@ dependencies = [
   "Pillow>=10",
   "jsonschema>=4.20",
   "tqdm>=4.66"
+]
+
+[project.optional-dependencies]
+vllm = [
+  "vllm",
+  "qwen-vl-utils>=0.0.14"
+]
+bnb = [
+  "bitsandbytes>=0.45"
 ]
 
 [project.scripts]
