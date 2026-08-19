@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Dataset selection verification cases",
+  "type": "object",
+  "required": ["schema_version", "cases"],
+  "properties": {
+    "schema_version": {"const": "selection-verification-1.0"},
+    "notes": {"type": ["string", "null"]},
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "incumbent", "challenger", "human_expectation"],
+        "properties": {
+          "id": {"type": "string"},
+          "incumbent": {"type": "string"},
+          "challenger": {"type": "string"},
+          "coverage_to_preserve": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "human_expectation": {
+            "enum": ["challenger_better", "incumbent_better", "different_value", "uncertain"]
+          },
+          "human_reason": {"type": ["string", "null"]},
+          "expected_profiler_effects": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "challenger_higher_active_snr",
+                "challenger_lower_background_entropy",
+                "challenger_higher_subject_signal",
+                "challenger_selected_as_representative",
+                "incumbent_loses_representative_status",
+                "preserve_same_composition_coverage",
+                "preserve_same_identity_view_coverage",
+                "improve_identity_view_coverage",
+                "preserve_same_action_coverage",
+                "improve_action_coverage"
+              ]
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}
