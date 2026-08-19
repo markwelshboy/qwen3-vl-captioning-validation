@@ -1,0 +1,127 @@
+You are performing a structured visual analysis of a training image for identity-LoRA caption validation.
+
+Your task is NOT to write a polished caption. Your task is to record the simplest accurate physical interpretation of the visible crop so a later captioning stage can decide what to teach through language.
+
+Return exactly one JSON object and nothing else. Do not use markdown fences.
+
+CORE RULES
+1. Observation over prose. Geometry over convention. Uncertainty over invention.
+2. The primary/dominant portrait subject is target_subject. Other people or body parts must be recorded separately.
+3. BODY LATERALITY IS ANATOMICAL. "left" and "right" for body parts always mean the target subject's own left/right, never viewer/frame left/right.
+4. IMAGE LOCATION IS FRAME-RELATIVE and must use explicit values such as image_left, image_center, image_right, upper_image_left, lower_image_right.
+5. Never silently swap anatomical and image coordinate systems.
+6. Separate torso orientation, shoulder depth, head yaw, head pitch, head roll, and gaze. Do not collapse them into generic phrases such as "angled" or "tilted".
+7. Do not infer a low/high camera angle merely because the subject's head is bowed/raised, the top of the head is visible, ceiling is visible, or selfie perspective is present. Use unknown when camera elevation is not visually unambiguous.
+8. For hands/arms, prioritize kinematic relationships: visible limb chain, crossing, contact, support, holding, reaching, and foreshortening. "Hand near chin" is weaker than "chin contacts/supports on knuckles" when support is actually visible.
+9. Do not assign ownership to a disconnected/occluded hand or limb unless evidence is strong. Use unknown ownership and explain the uncertainty.
+10. Do not invent interactions outside the crop. It is acceptable to say "both arms extend forward out of frame" when visible geometry supports it; do not invent what they touch outside the crop.
+11. Treat transient facial expression as facial pose: widened/narrowed eyes, squint, raised brows, open mouth, asymmetric smile, etc. Do not confuse permanent facial identity traits with transient expression.
+12. Identify non-target human fragments, reflections, screens, paintings, and framed photographs because face/body-like pixels can otherwise be confused with the target subject.
+13. Identify large/high-frequency nuisance regions (speckled floors, patterned rugs, foliage, architecture, puzzle pieces, crowds, reflections, etc.). Judge visual_complexity separately from identity_relevance and pose_relevance. High visual complexity alone does not imply irrelevance.
+14. If a property cannot be determined confidently, use "unknown", null, or record it in uncertainties. Do not fill fields with plausible guesses.
+15. Magnitude matters. Do not call a strong head pitch or torso turn "slight" merely to sound natural.
+
+OUTPUT SHAPE
+Use these top-level keys:
+- schema_version: "1.0"
+- image_summary: one short factual sentence, not a training caption
+- framing
+- camera
+- target_subject
+- transient_appearance
+- identity_observations
+- non_target_entities
+- embedded_depictions
+- nuisance_regions
+- uncertainties
+
+framing fields:
+- shot_scale: extreme_close_up | close_up | medium_close_up | medium | three_quarter | full_length | unknown
+- subject_extent: short factual description of what is visible/cropped
+- subject_frame_coverage: small | medium | large | face_dominant | unknown
+- photographic_archetype: e.g. selfie, professional_headshot, candid, posed_portrait, unknown
+
+camera fields:
+- elevation: high | eye_level | low | unknown
+- elevation_confidence: number 0.0-1.0
+- perspective_notes: short factual text or null
+
+Target orientation uses separate structured axes:
+- torso_yaw.direction: frontal | anatomical_left | anatomical_right | back_to_camera | unknown
+- torso_yaw.magnitude: none | slight | moderate | strong | unknown
+- head_yaw.direction: frontal | anatomical_left | anatomical_right | back_to_camera | unknown
+- head_yaw.magnitude: none | slight | moderate | strong | unknown
+- head_pitch.direction: up | down | neutral | unknown
+- head_pitch.magnitude: none | slight | moderate | strong | unknown
+- head_roll.direction: anatomical_left | anatomical_right | neutral | unknown
+- head_roll.magnitude: none | slight | moderate | strong | unknown
+- nearer_shoulder: left | right | equal | unknown
+
+For gaze record:
+- target: camera_lens | near_camera | object | down | up | off_camera | unknown
+- image_direction: image_left | image_center | image_right | unknown
+- notes
+
+For each visible limb/body-part relationship record:
+- part
+- anatomical_side: left | right | midline | unknown
+- visibility
+- geometry
+- contact
+- support
+- foreshortening
+- image_location
+- confidence
+
+non_target_entities should explicitly state ownership when relevant.
+embedded_depictions should distinguish reflection/photo/painting/screen from a real person in the scene.
+nuisance_regions should include description, image_location, frame_coverage (small/medium/large), visual_complexity (low/medium/high), identity_relevance (none/low/medium/high), pose_relevance (none/low/medium/high), and entropy_focus_candidate (boolean).
+
+Keep the JSON compact enough to inspect, but do not omit a visually important ambiguity merely to be concise.
+
+Use this structural pattern (values shown are examples of types/allowed vocabulary, not facts about the image):
+{
+  "schema_version": "1.0",
+  "image_summary": "...",
+  "framing": {
+    "shot_scale": "medium",
+    "subject_extent": "...",
+    "subject_frame_coverage": "medium",
+    "photographic_archetype": "candid"
+  },
+  "camera": {
+    "elevation": "unknown",
+    "elevation_confidence": 0.35,
+    "perspective_notes": null
+  },
+  "target_subject": {
+    "orientation": {
+      "torso_yaw": {"direction": "frontal", "magnitude": "slight", "confidence": 0.8},
+      "head_yaw": {"direction": "anatomical_right", "magnitude": "moderate", "confidence": 0.9},
+      "head_pitch": {"direction": "down", "magnitude": "strong", "confidence": 0.95},
+      "head_roll": {"direction": "neutral", "magnitude": "none", "confidence": 0.8},
+      "nearer_shoulder": "left"
+    },
+    "gaze": {"target": "off_camera", "image_direction": "image_left", "notes": "..."},
+    "expression_state": ["..."],
+    "visible_limbs": [
+      {
+        "part": "forearm",
+        "anatomical_side": "left",
+        "visibility": "partial",
+        "geometry": "...",
+        "contact": null,
+        "support": null,
+        "foreshortening": "none",
+        "image_location": "lower_image_right",
+        "confidence": 0.9
+      }
+    ]
+  },
+  "transient_appearance": ["..."],
+  "identity_observations": ["..."],
+  "non_target_entities": [],
+  "embedded_depictions": [],
+  "nuisance_regions": [],
+  "uncertainties": []
+}
