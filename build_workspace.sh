@@ -195,7 +195,9 @@ echo "=== Build complete ==="
 echo "Validator: $VENV/bin/qwen-vl-validate"
 echo "Runner:    $REPO_ROOT/run_workspace.sh"
 echo
-echo "Example:"
-echo "  $REPO_ROOT/run_workspace.sh /data/sh1vx \\\" 
-echo "    --models 8b 32b --backend transformers --quantization 4bit \\\" 
-echo "    --dtype bfloat16 --attn sdpa --run-name analysis-v1-nf4"
+cat <<EOF
+Example:
+  bash "$REPO_ROOT/run_workspace.sh" /data/sh1vx \\
+    --models 8b 32b --backend transformers --quantization 4bit \\
+    --dtype bfloat16 --attn sdpa --run-name analysis-v1-nf4
+EOF
