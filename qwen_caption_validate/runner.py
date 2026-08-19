@@ -10,7 +10,7 @@ from typing import Any
 
 import torch
 from jsonschema import Draft202012Validator
-from transformers import AutoModelForImageTextToText, AutoProcessor
+from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
 
 MODEL_ALIASES = {
     "8b": "Qwen/Qwen3-VL-8B-Instruct",
@@ -26,6 +26,7 @@ class LoadedModel:
     model: Any
     processor: Any
     load_seconds: float
+    quantization: str
 
 
 def resolve_model_id(name: str) -> str:
@@ -54,10 +55,29 @@ def _dtype_value(dtype_name: str):
     raise ValueError(f"Unsupported dtype: {dtype_name}")
 
 
+def _quantization_config(quantization: str, dtype: str):
+    if quantization == "none":
+        return None
+    if quantization == "8bit":
+        return BitsAndBytesConfig(load_in_8bit=True)
+    if quantization == "4bit":
+        compute_dtype = _dtype_value(dtype)
+        if compute_dtype == "auto" or compute_dtype == torch.float32:
+            compute_dtype = torch.bfloat16
+        return BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=compute_dtype,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+        )
+    raise ValueError(f"Unsupported quantization mode: {quantization}")
+
+
 def load_model(
     model_id: str,
     *,
     dtype: str = "auto",
+    quantization: str = "none",
     attn_implementation: str | None = None,
     cache_dir: Path | None = None,
     min_pixels: int | None = None,
@@ -70,6 +90,9 @@ def load_model(
         "device_map": "auto",
         "low_cpu_mem_usage": True,
     }
+    quantization_config = _quantization_config(quantization, dtype)
+    if quantization_config is not None:
+        model_kwargs["quantization_config"] = quantization_config
     if attn_implementation:
         model_kwargs["attn_implementation"] = attn_implementation
     if cache_dir:
@@ -92,6 +115,7 @@ def load_model(
         model=model,
         processor=processor,
         load_seconds=time.perf_counter() - started,
+        quantization=quantization,
     )
 
 
