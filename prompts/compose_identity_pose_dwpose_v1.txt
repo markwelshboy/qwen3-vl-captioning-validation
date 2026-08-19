@@ -1,0 +1,41 @@
+You are composing a natural-language training caption for a single-identity LoRA dataset from a structured visual analysis plus secondary 2D pose evidence.
+
+Target trigger token: {{SUBJECT_TOKEN}}
+Detail profile: {{DETAIL_PROFILE}}
+
+Return only the final caption as plain text. Do not return JSON or commentary.
+
+TRAINING POLICY
+- Begin by anchoring the primary target as {{SUBJECT_TOKEN}}.
+- Describe the simplest correct physical explanation of the visible crop.
+- Prioritize: (1) framing/archetype when meaningful, (2) defining pose geometry and relative rotations, (3) contact/support/foreshortening, (4) gaze and transient facial expression, (5) transient appearance/clothing, (6) non-target entities or embedded depictions that could be confused with the target, (7) compact descriptions of large/high-complexity nuisance regions.
+- Body left/right is ALWAYS anatomical. Scene positions must explicitly say "left/right side of the frame" or equivalent frame-relative wording.
+- Never say "camera-left", "camera-right", or ambiguous "on the left/right" when coordinate ownership is unclear.
+- Prefer relational language when anatomical side is uncertain.
+- Never invent hidden body ownership or interactions outside the crop.
+- When multiple people/body parts are present, avoid ambiguous pronoun chains. Repeat {{SUBJECT_TOKEN}} or say "another person/person's hand" where useful.
+- Caption transient facial deformation/state, not persistent facial identity characteristics that should remain associated with {{SUBJECT_TOKEN}}.
+- Mention clothing/accessories as transient appearance, but do not waste words cataloguing minor decoration unless it explains substantial pixels.
+- Name high-complexity nuisance structure compactly when it explains a large or otherwise confusing pixel region.
+- Prefer an incomplete but geometrically correct caption over a detailed speculative one.
+- Avoid filler such as "suggesting daytime conditions", speculative scene purpose, or lighting claims that do not explain meaningful appearance changes.
+
+SECONDARY POSE EVIDENCE POLICY
+- The DWPose block is auxiliary evidence, not ground truth.
+- Prefer measured DWPose evidence over vague VLM wording when the disagreement concerns directly observable projected 2D geometry such as a strongly sloped shoulder line, torso cant, visible-joint extent, or whether a visible wrist completes an arm chain.
+- Do NOT let DWPose overrule the visual analysis on front-vs-back orientation or metric depth; DWPose does not establish those independently.
+- Treat DWPose anatomical left/right labels as uncertain when the pose is rear-facing, highly rotated, occluded, or otherwise ambiguous.
+- If a hand candidate is not supported by a nearby visible target wrist, avoid confidently assigning it to the target subject unless the structured visual analysis has strong independent ownership evidence.
+- Never mention DWPose, keypoints, confidence scores, coordinates, or numeric angles in the final caption. Convert useful evidence into ordinary natural-language geometry.
+
+Length guidance:
+- concise: roughly 35-60 words
+- balanced: roughly 55-90 words
+- detailed: roughly 80-120 words
+These are targets, not hard requirements. Information density matters more than exact length.
+
+STRUCTURED ANALYSIS
+{{ANALYSIS_JSON}}
+
+SECONDARY 2D POSE EVIDENCE
+{{POSE_EVIDENCE_JSON}}
