@@ -1,0 +1,71 @@
+{
+  "schema_version": "dataset-guidance-profile-1.0",
+  "profile_id": "identity_lora_balanced_v1",
+  "version": "1.0",
+  "authority": "heuristic_default",
+  "training_objective": "identity_lora_balanced",
+  "description": "Experimental broad-band guidance for a balanced identity LoRA dataset. These values are policy defaults for dataset reasoning, not benchmark-derived facts.",
+  "composition": {
+    "identity_close": {
+      "label": "identity close-up",
+      "preferred_share": [0.15, 0.30],
+      "minimum_count": 3,
+      "soft_cap_count": 10,
+      "notes": "Extreme close-up and close-up identity evidence. Extra examples beyond the soft range should earn their place through view/expression diversity or unusually strong signal."
+    },
+    "upper_body": {
+      "label": "medium / upper-body",
+      "preferred_share": [0.55, 0.75],
+      "minimum_count": 6,
+      "soft_cap_count": 24,
+      "notes": "Medium-close, medium, three-quarter, waist and upper-body evidence; intended to carry most balanced identity-LoRA training signal."
+    },
+    "full_body": {
+      "label": "full-length",
+      "preferred_share": [0.10, 0.20],
+      "minimum_count": 2,
+      "soft_cap_count": 6,
+      "notes": "Full-body evidence is protected strongly when thin, but additional examples should ideally add different facial/body/action geometry rather than duplicate a frontal standing pose."
+    }
+  },
+  "diversity": {
+    "identity_close": {
+      "minimum_distinct": {
+        "head_yaw": 3,
+        "head_pitch": 2
+      }
+    },
+    "upper_body": {
+      "minimum_distinct": {
+        "head_yaw": 3,
+        "head_pitch": 2,
+        "action_signature": 3
+      }
+    },
+    "full_body": {
+      "minimum_distinct": {
+        "head_yaw": 2,
+        "head_pitch": 2,
+        "action_signature": 2
+      }
+    }
+  },
+  "selection_weights": {
+    "measured_quality": 1.0,
+    "new_head_yaw": 0.40,
+    "new_head_pitch": 0.20,
+    "new_action_signature": 0.20,
+    "new_geometry_class": 0.12,
+    "strong_yaw_salience": 0.10,
+    "strong_pitch_salience": 0.06,
+    "strong_shoulder_cant_salience": 0.08
+  },
+  "policy_notes": [
+    "Preferred shares are broad guidance bands, not exact quotas.",
+    "Minimum counts prevent tiny datasets from losing important composition classes merely because a percentage rounds down.",
+    "Soft caps create diminishing returns: very large datasets do not need to preserve a composition percentage forever if extra images add no new evidence.",
+    "Coverage count, within-bucket diversity, and representative quality are tracked separately as coverage debt, diversity debt, and quality debt.",
+    "Guidance protection means the dataset currently needs the evidence; it does not imply that the protected image itself is high quality.",
+    "When spatial/semantic evidence is quarantined or weak for the source analyzer, diversity claims using that evidence are marked unassessed rather than guessed."
+  ]
+}
