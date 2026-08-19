@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qwen3-vl-captioning-validation"
-version = "0.3.0"
+version = "0.3.1"
 description = "Standalone Qwen3-VL dataset analysis/caption comparison harness"
 requires-python = ">=3.10"
 dependencies = [
@@ -23,8 +23,20 @@ vllm = [
 bnb = [
   "bitsandbytes>=0.45"
 ]
+# easy-dwpose 1.0.2 incorrectly hard-pins onnxruntime-gpu==1.16.2 on Linux.
+# That ORT release has no Python 3.12 wheel and targets the old CUDA 11 stack.
+# build_workspace.sh therefore installs easy-dwpose itself with --no-deps after
+# installing this compatible runtime set explicitly.
 dwpose = [
-  "easy-dwpose==1.0.2"
+  "numpy>=1.26",
+  "opencv-python-headless>=4.8",
+  "loguru>=0.7",
+  "huggingface-hub>=0.20",
+  "matplotlib>=3.8",
+  "omegaconf>=2.3",
+  "imageio>=2.31",
+  "onnxruntime-gpu>=1.21,<1.27; sys_platform == 'linux'",
+  "onnxruntime>=1.21,<1.27; sys_platform != 'linux'"
 ]
 
 [project.scripts]
