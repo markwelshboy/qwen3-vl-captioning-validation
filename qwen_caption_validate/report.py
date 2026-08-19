@@ -57,6 +57,7 @@ def build_report(run_dir: Path, model_slugs: list[str]) -> Path:
 
         runtime = model_runtime.get(slug, {})
         load_seconds = runtime.get("load_seconds")
+        backend = runtime.get("backend", "unknown")
         avg_analysis = sum(analysis_times) / len(analysis_times) if analysis_times else None
         avg_compose = sum(compose_times) / len(compose_times) if compose_times else None
         total_generation = sum(analysis_times) + sum(compose_times)
@@ -66,6 +67,7 @@ def build_report(run_dir: Path, model_slugs: list[str]) -> Path:
             f"""
             <section class="summary-card">
               <strong>{html.escape(model_label)}</strong>
+              <div class="backend">{html.escape(str(backend))}</div>
               <div class="summary-grid">
                 <span>Load <b>{_fmt_seconds(load_seconds)}</b></span>
                 <span>Avg analysis <b>{_fmt_seconds(avg_analysis)}</b></span>
@@ -97,20 +99,25 @@ def build_report(run_dir: Path, model_slugs: list[str]) -> Path:
 
             analysis_seconds = None
             compose_seconds = None
+            backend = None
             if result:
                 analysis = result.get("analysis")
                 raw = result.get("raw_response") if not analysis else None
                 status = "valid" if result.get("schema_valid") else "warning"
                 validation = result.get("schema_errors") or []
                 analysis_seconds = result.get("analysis_seconds", result.get("inference_seconds"))
+                backend = result.get("backend")
             else:
                 analysis = raw = None
                 status = "missing"
                 validation = []
             if caption_meta:
                 compose_seconds = caption_meta.get("compose_seconds")
+                backend = backend or caption_meta.get("backend")
 
             parts = []
+            if backend:
+                parts.append(str(backend))
             if analysis_seconds is not None:
                 parts.append(f"A {_fmt_seconds(analysis_seconds)}")
             if compose_seconds is not None:
@@ -170,7 +177,8 @@ header h1 {{ margin:0 0 5px; font-size:20px; }}
 header p {{ margin:0; color:#9fb0c8; }}
 .runtime-summary {{ padding:14px 18px 0; display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; }}
 .summary-card {{ background:#0d1a2b; border:1px solid #24344a; border-radius:12px; padding:12px 14px; }}
-.summary-card strong {{ display:block; margin-bottom:8px; }}
+.summary-card strong {{ display:block; }}
+.backend {{ color:#7f93ae; font-size:11px; margin:3px 0 8px; text-transform:uppercase; letter-spacing:.06em; }}
 .summary-grid {{ display:flex; flex-wrap:wrap; gap:7px 14px; color:#9fb0c8; font-size:12px; }}
 .summary-grid b {{ color:#e7edf6; }}
 main {{ padding:18px; display:grid; gap:18px; }}
