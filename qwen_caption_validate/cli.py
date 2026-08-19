@@ -1,0 +1,231 @@
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import sys
+from datetime import datetime
+from pathlib import Path
+
+from tqdm import tqdm
+
+from .report import build_report
+from .runner import (
+    discover_images,
+    generate,
+    generate_text,
+    load_model,
+    model_slug,
+    parse_json_response,
+    render_compose_prompt,
+    resolve_model_id,
+    unload_model,
+    validate_analysis,
+)
+
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_ANALYSIS_PROMPT = PACKAGE_ROOT / "prompts" / "analysis_v1.txt"
+DEFAULT_COMPOSE_PROMPT = PACKAGE_ROOT / "prompts" / "compose_identity_pose_v1.txt"
+DEFAULT_SCHEMA = PACKAGE_ROOT / "schemas" / "analysis_v1.schema.json"
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="qwen-vl-validate",
+        description="Run Qwen3-VL models sequentially over an image dataset and compare structured visual analyses/captions.",
+    )
+    parser.add_argument("dataset", type=Path, help="Folder containing training images (and optional .txt sidecars).")
+    parser.add_argument("--models", nargs="+", default=["8b", "32b"], help="Model aliases (8b, 32b) or Hugging Face model IDs.")
+    parser.add_argument("--output", type=Path, default=Path("runs"), help="Root output folder.")
+    parser.add_argument("--run-name", help="Stable run name. Reusing it resumes/skips completed outputs.")
+    parser.add_argument("--recursive", action="store_true", help="Scan dataset recursively.")
+    parser.add_argument("--limit", type=int, help="Process only the first N images (useful for prompt iteration).")
+    parser.add_argument("--overwrite", action="store_true", help="Regenerate existing per-model outputs.")
+    parser.add_argument("--analysis-prompt", type=Path, default=DEFAULT_ANALYSIS_PROMPT)
+    parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA)
+    parser.add_argument("--compose", action="store_true", help="After analysis, generate a training caption from the structured JSON.")
+    parser.add_argument("--compose-prompt", type=Path, default=DEFAULT_COMPOSE_PROMPT)
+    parser.add_argument("--subject-token", default="sH1Vx")
+    parser.add_argument("--detail", choices=["concise", "balanced", "detailed"], default="balanced")
+    parser.add_argument("--max-analysis-tokens", type=int, default=1800)
+    parser.add_argument("--max-caption-tokens", type=int, default=450)
+    parser.add_argument("--dtype", choices=["auto", "bfloat16", "float16", "float32"], default="auto")
+    parser.add_argument("--attn", choices=["sdpa", "flash_attention_2", "eager"], help="Optional Transformers attention implementation.")
+    parser.add_argument("--cache-dir", type=Path, help="Optional Hugging Face cache directory.")
+    parser.add_argument("--min-pixels", type=int, help="Optional Qwen processor minimum image pixels.")
+    parser.add_argument("--max-pixels", type=int, help="Optional Qwen processor maximum image pixels.")
+    return parser.parse_args()
+
+
+def _result_key(relative_path: Path) -> str:
+    text = str(relative_path.with_suffix(""))
+    return text.replace("/", "__").replace("\\", "__")
+
+
+def _read_sidecar(image: Path) -> str | None:
+    sidecar = image.with_suffix(".txt")
+    if not sidecar.exists():
+        return None
+    try:
+        return sidecar.read_text(encoding="utf-8").strip()
+    except UnicodeDecodeError:
+        return sidecar.read_text(encoding="utf-8", errors="replace").strip()
+
+
+def main() -> int:
+    args = parse_args()
+    dataset = args.dataset.expanduser().resolve()
+    if not dataset.is_dir():
+        print(f"Dataset folder does not exist: {dataset}", file=sys.stderr)
+        return 2
+
+    images = discover_images(dataset, recursive=args.recursive)
+    if args.limit is not None:
+        images = images[: args.limit]
+    if not images:
+        print(f"No supported images found in {dataset}", file=sys.stderr)
+        return 2
+
+    analysis_prompt = args.analysis_prompt.read_text(encoding="utf-8")
+    compose_prompt = args.compose_prompt.read_text(encoding="utf-8") if args.compose else None
+    schema = json.loads(args.schema.read_text(encoding="utf-8"))
+
+    run_name = args.run_name or datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir = args.output.expanduser().resolve() / run_name
+    report_images = run_dir / "images"
+    report_images.mkdir(parents=True, exist_ok=True)
+
+    model_ids = [resolve_model_id(name) for name in args.models]
+    model_slugs = [model_slug(model_id) for model_id in model_ids]
+
+    image_records = []
+    for image in images:
+        rel = image.relative_to(dataset)
+        key = _result_key(rel)
+        report_copy = report_images / f"{key}{image.suffix.lower()}"
+        if not report_copy.exists() or args.overwrite:
+            shutil.copy2(image, report_copy)
+        image_records.append(
+            {
+                "relative_path": str(rel),
+                "result_key": key,
+                "report_image": str(report_copy.relative_to(run_dir)),
+                "existing_caption": _read_sidecar(image),
+            }
+        )
+
+    manifest_path = run_dir / "run.json"
+    existing_manifest = {}
+    if manifest_path.exists():
+        try:
+            existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            existing_manifest = {}
+
+    model_map = dict(existing_manifest.get("models", {}))
+    for slug, model_id in zip(model_slugs, model_ids):
+        model_map[slug] = model_id
+
+    manifest = {
+        "run_name": run_name,
+        "dataset": str(dataset),
+        "models": model_map,
+        "analysis_prompt": str(args.analysis_prompt),
+        "schema": str(args.schema),
+        "compose": bool(args.compose),
+        "compose_prompt": str(args.compose_prompt) if args.compose else None,
+        "subject_token": args.subject_token,
+        "detail": args.detail,
+        "images": image_records,
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    for model_id, slug in zip(model_ids, model_slugs):
+        model_dir = run_dir / slug
+        model_dir.mkdir(parents=True, exist_ok=True)
+
+        pending = []
+        for image, record in zip(images, image_records):
+            result_path = model_dir / f"{record['result_key']}.analysis.json"
+            caption_path = model_dir / f"{record['result_key']}.caption.txt"
+            needs_analysis = args.overwrite or not result_path.exists()
+            needs_caption = args.compose and (args.overwrite or not caption_path.exists())
+            if needs_analysis or needs_caption:
+                pending.append((image, record, needs_analysis, needs_caption))
+
+        if not pending:
+            print(f"[{model_id}] nothing to do; all requested outputs already exist.")
+            continue
+
+        print(f"\nLoading {model_id} ...")
+        loaded = load_model(
+            model_id,
+            dtype=args.dtype,
+            attn_implementation=args.attn,
+            cache_dir=args.cache_dir,
+            min_pixels=args.min_pixels,
+            max_pixels=args.max_pixels,
+        )
+        print(f"Loaded in {loaded.load_seconds:.1f}s. Processing {len(pending)} image(s).")
+
+        try:
+            jsonl_path = model_dir / "results.jsonl"
+            with jsonl_path.open("a", encoding="utf-8") as jsonl:
+                for image, record, needs_analysis, needs_caption in tqdm(pending, desc=slug):
+                    result_path = model_dir / f"{record['result_key']}.analysis.json"
+                    caption_path = model_dir / f"{record['result_key']}.caption.txt"
+                    result = None
+
+                    if needs_analysis:
+                        raw, seconds = generate(
+                            loaded,
+                            image,
+                            analysis_prompt,
+                            max_new_tokens=args.max_analysis_tokens,
+                        )
+                        parsed, parse_error = parse_json_response(raw)
+                        schema_errors = validate_analysis(parsed, schema) if parsed is not None else []
+                        result = {
+                            "image": record["relative_path"],
+                            "model": model_id,
+                            "inference_seconds": seconds,
+                            "analysis": parsed,
+                            "raw_response": raw,
+                            "parse_error": parse_error,
+                            "schema_valid": parsed is not None and not schema_errors,
+                            "schema_errors": schema_errors,
+                        }
+                        result_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+                        jsonl.write(json.dumps(result, ensure_ascii=False) + "\n")
+                        jsonl.flush()
+                    else:
+                        result = json.loads(result_path.read_text(encoding="utf-8"))
+
+                    if needs_caption:
+                        analysis = result.get("analysis") if result else None
+                        if analysis is None:
+                            caption_path.with_suffix(".caption.error.txt").write_text(
+                                "Caption skipped because analysis JSON could not be parsed.\n",
+                                encoding="utf-8",
+                            )
+                        else:
+                            prompt = render_compose_prompt(compose_prompt, analysis, args.subject_token, args.detail)
+                            caption, _ = generate_text(
+                                loaded,
+                                prompt,
+                                max_new_tokens=args.max_caption_tokens,
+                            )
+                            caption_path.write_text(caption.strip() + "\n", encoding="utf-8")
+        finally:
+            print(f"Unloading {model_id} ...")
+            unload_model(loaded)
+
+        build_report(run_dir, list(model_map.keys()))
+
+    report = build_report(run_dir, list(model_map.keys()))
+    print(f"\nDone. Report: {report}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
