@@ -43,13 +43,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--overwrite", action="store_true", help="Regenerate existing per-model outputs.")
     parser.add_argument("--analysis-prompt", type=Path, default=DEFAULT_ANALYSIS_PROMPT)
     parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA)
-    parser.add_argument("--compose", action="store_true", help="After analysis, generate a training caption from the structured JSON.")
+    parser.add_argument("--compose", action="store_true", help="After analysis, generate and cache a training caption from the structured JSON.")
     parser.add_argument("--compose-prompt", type=Path, default=DEFAULT_COMPOSE_PROMPT)
     parser.add_argument("--subject-token", default="sH1Vx")
     parser.add_argument("--detail", choices=["concise", "balanced", "detailed"], default="balanced")
     parser.add_argument("--max-analysis-tokens", type=int, default=1800)
     parser.add_argument("--max-caption-tokens", type=int, default=450)
     parser.add_argument("--dtype", choices=["auto", "bfloat16", "float16", "float32"], default="auto")
+    parser.add_argument(
+        "--quantization",
+        choices=["none", "8bit", "4bit"],
+        default="none",
+        help="Optional bitsandbytes quantization. Prefer official FP8 checkpoints on FP8-capable hardware when available.",
+    )
     parser.add_argument("--attn", choices=["sdpa", "flash_attention_2", "eager"], help="Optional Transformers attention implementation.")
     parser.add_argument("--cache-dir", type=Path, help="Optional Hugging Face cache directory.")
     parser.add_argument("--min-pixels", type=int, help="Optional Qwen processor minimum image pixels.")
@@ -70,6 +76,10 @@ def _read_sidecar(image: Path) -> str | None:
         return sidecar.read_text(encoding="utf-8").strip()
     except UnicodeDecodeError:
         return sidecar.read_text(encoding="utf-8", errors="replace").strip()
+
+
+def _write_manifest(path: Path, manifest: dict) -> None:
+    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def main() -> int:
@@ -123,6 +133,7 @@ def main() -> int:
             existing_manifest = {}
 
     model_map = dict(existing_manifest.get("models", {}))
+    model_runtime = dict(existing_manifest.get("model_runtime", {}))
     for slug, model_id in zip(model_slugs, model_ids):
         model_map[slug] = model_id
 
@@ -130,15 +141,19 @@ def main() -> int:
         "run_name": run_name,
         "dataset": str(dataset),
         "models": model_map,
+        "model_runtime": model_runtime,
         "analysis_prompt": str(args.analysis_prompt),
         "schema": str(args.schema),
         "compose": bool(args.compose),
         "compose_prompt": str(args.compose_prompt) if args.compose else None,
         "subject_token": args.subject_token,
         "detail": args.detail,
+        "dtype": args.dtype,
+        "quantization": args.quantization,
+        "attention": args.attn,
         "images": image_records,
     }
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    _write_manifest(manifest_path, manifest)
 
     for model_id, slug in zip(model_ids, model_slugs):
         model_dir = run_dir / slug
@@ -148,8 +163,9 @@ def main() -> int:
         for image, record in zip(images, image_records):
             result_path = model_dir / f"{record['result_key']}.analysis.json"
             caption_path = model_dir / f"{record['result_key']}.caption.txt"
+            caption_meta_path = model_dir / f"{record['result_key']}.caption.json"
             needs_analysis = args.overwrite or not result_path.exists()
-            needs_caption = args.compose and (args.overwrite or not caption_path.exists())
+            needs_caption = args.compose and (args.overwrite or not caption_path.exists() or not caption_meta_path.exists())
             if needs_analysis or needs_caption:
                 pending.append((image, record, needs_analysis, needs_caption))
 
@@ -161,12 +177,21 @@ def main() -> int:
         loaded = load_model(
             model_id,
             dtype=args.dtype,
+            quantization=args.quantization,
             attn_implementation=args.attn,
             cache_dir=args.cache_dir,
             min_pixels=args.min_pixels,
             max_pixels=args.max_pixels,
         )
         print(f"Loaded in {loaded.load_seconds:.1f}s. Processing {len(pending)} image(s).")
+        model_runtime[slug] = {
+            "load_seconds": loaded.load_seconds,
+            "quantization": loaded.quantization,
+            "dtype": args.dtype,
+            "attention": args.attn,
+        }
+        manifest["model_runtime"] = model_runtime
+        _write_manifest(manifest_path, manifest)
 
         try:
             jsonl_path = model_dir / "results.jsonl"
@@ -174,6 +199,7 @@ def main() -> int:
                 for image, record, needs_analysis, needs_caption in tqdm(pending, desc=slug):
                     result_path = model_dir / f"{record['result_key']}.analysis.json"
                     caption_path = model_dir / f"{record['result_key']}.caption.txt"
+                    caption_meta_path = model_dir / f"{record['result_key']}.caption.json"
                     result = None
 
                     if needs_analysis:
@@ -189,6 +215,7 @@ def main() -> int:
                             "image": record["relative_path"],
                             "model": model_id,
                             "inference_seconds": seconds,
+                            "analysis_seconds": seconds,
                             "analysis": parsed,
                             "raw_response": raw,
                             "parse_error": parse_error,
@@ -210,12 +237,25 @@ def main() -> int:
                             )
                         else:
                             prompt = render_compose_prompt(compose_prompt, analysis, args.subject_token, args.detail)
-                            caption, _ = generate_text(
+                            caption, compose_seconds = generate_text(
                                 loaded,
                                 prompt,
                                 max_new_tokens=args.max_caption_tokens,
                             )
-                            caption_path.write_text(caption.strip() + "\n", encoding="utf-8")
+                            caption = caption.strip()
+                            caption_path.write_text(caption + "\n", encoding="utf-8")
+                            caption_meta = {
+                                "image": record["relative_path"],
+                                "model": model_id,
+                                "compose_seconds": compose_seconds,
+                                "detail": args.detail,
+                                "subject_token": args.subject_token,
+                                "caption": caption,
+                            }
+                            caption_meta_path.write_text(
+                                json.dumps(caption_meta, indent=2, ensure_ascii=False),
+                                encoding="utf-8",
+                            )
         finally:
             print(f"Unloading {model_id} ...")
             unload_model(loaded)
