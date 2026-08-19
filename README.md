@@ -11,11 +11,12 @@ The app runs models sequentially, so only one model is resident in accelerator m
 - Scans a dataset folder for `.png`, `.jpg`, `.jpeg`, `.webp`, and `.bmp` images.
 - Reads matching `.txt` sidecars when present so the existing caption is visible in the report.
 - Runs the same structured **Analysis v1** prompt against 8B, 32B, or arbitrary compatible Hugging Face model IDs.
-- Saves the raw response, parsed JSON, schema-validation state, and inference time for every image/model pair.
-- Optionally performs a second **Compose** call using the structured analysis to produce an identity/pose-aware training caption.
+- Saves the raw response, parsed JSON, schema-validation state, and analysis inference time for every image/model pair.
+- Optionally performs a second **Compose** call using the structured analysis and pre-caches the resulting training caption plus its compose runtime.
+- Records model-load time separately from per-image Analysis and Compose time.
 - Unloads each model before loading the next.
 - Supports resume: reuse `--run-name` and completed image/model outputs are skipped.
-- Writes a local side-by-side `report.html` for visual comparison.
+- Writes a local side-by-side `report.html` with per-image and aggregate runtime summaries.
 
 ## Installation
 
@@ -32,23 +33,63 @@ pip install -e .
 
 Qwen3-VL support requires `transformers >= 4.57.0`. The harness uses the standard Transformers image-text generation path with `device_map="auto"`.
 
-For the 32B model, use a sufficiently large GPU or multi-GPU machine. The harness intentionally does **not** quantize by default because the initial experiment is meant to compare model capacity, not model capacity plus a quantization variable.
+## Recommended single-L40S setup
+
+An L40S has 48 GB VRAM and native FP8 support. A 32B checkpoint in BF16 is too large to be a comfortable single-GPU target, so for this validator prefer Qwen's official FP8 checkpoints rather than adding an unrelated 4-bit quantization variable.
+
+Use the official FP8 variants for **both** sizes when making the cleanest 8B-vs-32B capacity comparison:
+
+```text
+Qwen/Qwen3-VL-8B-Instruct-FP8
+Qwen/Qwen3-VL-32B-Instruct-FP8
+```
+
+A reasonable clean host stack is Python 3.11, current stable CUDA-enabled PyTorch, Transformers 4.x with Qwen3-VL support, Accelerate, and the dependencies installed by this project. Start with PyTorch SDPA; Flash Attention 2 is optional and can be tested after the baseline works.
+
+Example:
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip setuptools wheel
+
+# Install the current CUDA-enabled PyTorch build appropriate for the host/driver.
+pip install torch
+
+pip install -e .
+```
+
+Optional Flash Attention 2:
+
+```bash
+pip install -U flash-attn --no-build-isolation
+```
+
+Then add `--attn flash_attention_2`. For the first correctness comparison, `--attn sdpa` is a perfectly sensible baseline and avoids making Flash Attention installation part of the experiment.
+
+The harness also has a `--quantization 8bit|4bit` fallback path for ordinary checkpoints. That requires `bitsandbytes`, but it is **not** the preferred L40S experiment while official FP8 checkpoints exist.
 
 ## Fastest first experiment
 
-Put the 28-image dataset in a folder and run both models sequentially:
+Put the dataset in a folder and run both official FP8 models sequentially:
 
 ```bash
 qwen-vl-validate /data/sh1vx \
-  --models 8b 32b \
-  --run-name analysis-v1
+  --models \
+    Qwen/Qwen3-VL-8B-Instruct-FP8 \
+    Qwen/Qwen3-VL-32B-Instruct-FP8 \
+  --attn sdpa \
+  --run-name analysis-v1-fp8
 ```
 
 For initial prompt iteration, do only a handful of the difficult images:
 
 ```bash
 qwen-vl-validate /data/sh1vx \
-  --models 8b 32b \
+  --models \
+    Qwen/Qwen3-VL-8B-Instruct-FP8 \
+    Qwen/Qwen3-VL-32B-Instruct-FP8 \
+  --attn sdpa \
   --run-name prompt-test \
   --limit 6
 ```
@@ -56,50 +97,68 @@ qwen-vl-validate /data/sh1vx \
 Open:
 
 ```text
-runs/analysis-v1/report.html
+runs/analysis-v1-fp8/report.html
 ```
 
-The report shows the source crop, existing sidecar caption, and each model's structured JSON side by side.
+The report shows the source crop, existing sidecar caption, each model's structured JSON, and the runtime cost. The report distinguishes:
 
-## Test Analyze -> Compose too
+- one-off model load time;
+- per-image Analysis time (`A`);
+- per-image Compose time (`C`) when enabled;
+- total generation time and averages by model.
+
+## Test Analyze -> Compose and pre-cache captions
 
 Once the Analysis JSON is behaving sensibly:
 
 ```bash
 qwen-vl-validate /data/sh1vx \
-  --models 8b 32b \
-  --run-name analyze-compose-v1 \
+  --models \
+    Qwen/Qwen3-VL-8B-Instruct-FP8 \
+    Qwen/Qwen3-VL-32B-Instruct-FP8 \
+  --attn sdpa \
+  --run-name analyze-compose-v1-fp8 \
   --compose \
   --subject-token sH1Vx \
   --detail balanced
 ```
 
-Each model directory will then contain both:
+Each model directory will then contain:
 
 ```text
 <image>.analysis.json
 <image>.caption.txt
+<image>.caption.json
 ```
+
+`caption.txt` is the directly reusable pre-cached training caption. `caption.json` stores the caption plus Compose runtime and provenance metadata used by the report.
 
 This lets us answer separately:
 
 1. Did the VLM perceive the crop correctly?
 2. Given correct perception, did the training-caption policy produce useful language?
+3. How much wall-clock inference did Analysis and Compose each cost?
+
+The same pattern can later support pre-cached rewrite candidates: generate alternative captions from the cached Analysis under named Compose/rewrite prompts ahead of training, then let Fizgig choose among those candidates without invoking the VLM during the training run.
 
 ## Output layout
 
 ```text
-runs/analysis-v1/
+runs/analyze-compose-v1-fp8/
 ├── run.json
 ├── report.html
 ├── images/
-├── Qwen__Qwen3-VL-8B-Instruct/
+├── Qwen__Qwen3-VL-8B-Instruct-FP8/
 │   ├── results.jsonl
 │   ├── image_001.analysis.json
+│   ├── image_001.caption.txt
+│   ├── image_001.caption.json
 │   └── ...
-└── Qwen__Qwen3-VL-32B-Instruct/
+└── Qwen__Qwen3-VL-32B-Instruct-FP8/
     ├── results.jsonl
     ├── image_001.analysis.json
+    ├── image_001.caption.txt
+    ├── image_001.caption.json
     └── ...
 ```
 
@@ -119,7 +178,7 @@ Override them at runtime:
 
 ```bash
 qwen-vl-validate /data/sh1vx \
-  --models 32b \
+  --models Qwen/Qwen3-VL-32B-Instruct-FP8 \
   --analysis-prompt ./my_analysis_v2.txt \
   --schema ./my_analysis_v2.schema.json \
   --run-name analysis-v2
@@ -141,16 +200,17 @@ This is aimed directly at the failure modes found in natural identity-training p
 ## Useful options
 
 ```text
---models 8b 32b             Run one or more models sequentially
---run-name NAME             Stable run folder; rerun to resume
---overwrite                 Recompute existing results
---limit N                   Quick prompt testing
---recursive                 Scan nested dataset folders
---compose                   Run the second caption-composition call
+--models MODEL [MODEL ...]    Run one or more models sequentially
+--run-name NAME               Stable run folder; rerun to resume
+--overwrite                   Recompute existing results
+--limit N                     Quick prompt testing
+--recursive                   Scan nested dataset folders
+--compose                     Generate/cache the second-stage caption
 --detail concise|balanced|detailed
 --dtype auto|bfloat16|float16|float32
+--quantization none|8bit|4bit
 --attn sdpa|flash_attention_2|eager
---cache-dir PATH            Choose Hugging Face cache location
+--cache-dir PATH              Choose Hugging Face cache location
 --min-pixels N / --max-pixels N
 ```
 
@@ -160,8 +220,9 @@ The first useful comparison is intentionally simple:
 
 1. Same image crop.
 2. Same Analysis v1 prompt/schema.
-3. 8B versus 32B.
+3. Same official FP8 precision for 8B and 32B on the L40S.
 4. Review the structured fields rather than judging prose quality.
+5. Compare runtime as well as correctness.
 
 Pay particular attention to:
 
