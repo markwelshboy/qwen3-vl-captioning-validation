@@ -9,7 +9,7 @@ set -euo pipefail
 #   * install a CUDA 12.8 PyTorch build suitable for the L40S/driver-570 host
 #   * install the Transformers + bitsandbytes/NF4 validation stack
 #   * install the lightweight DWPose/ONNX dataset profiler
-#   * fail immediately if CUDA cannot actually initialize
+#   * fail immediately if CUDA cannot actually initialize for PyTorch
 #
 # Usage:
 #   bash ./build_workspace.sh
@@ -152,27 +152,42 @@ echo "Installing/updating CUDA 12.8 PyTorch ..."
     --index-url "$TORCH_INDEX_URL" \
     torch torchvision
 
-# Install this repo, bitsandbytes/NF4, and the lightweight ONNX DWPose profiler.
-# Running from the repo makes the editable path deterministic regardless of the
-# caller's current directory.
+# Install the project and compatible DWPose runtime dependencies. easy-dwpose
+# 1.0.2 advertises Python 3.12 support but hard-pins Linux to
+# onnxruntime-gpu==1.16.2, for which no CPython 3.12 wheel exists. It also
+# targets the older CUDA 11 generation. We intentionally resolve the modern
+# CUDA-12 ONNX Runtime ourselves, then install easy-dwpose without its stale
+# dependency metadata.
 echo
-echo "Installing validator + bitsandbytes + DWPose ..."
+echo "Installing validator + bitsandbytes + DWPose runtime ..."
 (
     cd "$REPO_ROOT"
     "$UV_BIN" pip install --python "$PY" -e '.[bnb,dwpose]'
+    "$UV_BIN" pip install --python "$PY" --no-deps easy-dwpose==1.0.2
 )
 
 # Hard preflight: a build that imports Torch but cannot initialize CUDA is not
-# considered successful. This catches wrong-driver/wrong-wheel environments
-# before a model starts loading on CPU.
+# considered successful. ONNX Runtime CUDA is reported separately; the DWPose
+# profiler can fall back to its CPU provider if CUDA EP is unavailable.
 echo
-echo "=== CUDA preflight ==="
+echo "=== Runtime preflight ==="
 "$PY" - <<'PY'
 import importlib.metadata
 import sys
+
 import torch
 import transformers
 import bitsandbytes as bnb
+import onnxruntime as ort
+
+# Recent ORT releases can preload CUDA/cuDNN libraries supplied alongside
+# PyTorch/NVIDIA site-packages. Importing torch first also helps make those
+# libraries available to ORT in the same process.
+if hasattr(ort, "preload_dlls"):
+    try:
+        ort.preload_dlls()
+    except Exception as exc:
+        print("ONNX Runtime preload warning:", exc)
 
 print("python:", sys.executable)
 print("torch:", torch.__version__)
@@ -180,13 +195,18 @@ print("torch CUDA:", torch.version.cuda)
 print("transformers:", transformers.__version__)
 print("bitsandbytes:", bnb.__version__)
 print("easy-dwpose:", importlib.metadata.version("easy-dwpose"))
+print("onnxruntime-gpu:", ort.__version__)
+print("ORT providers:", ort.get_available_providers())
 print("CUDA available:", torch.cuda.is_available())
 
 if not torch.cuda.is_available():
-    raise SystemExit("ERROR: CUDA is not available; refusing to accept this build.")
+    raise SystemExit("ERROR: CUDA is not available to PyTorch; refusing to accept this build.")
 
 print("GPU:", torch.cuda.get_device_name(0))
 print("VRAM GiB:", round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 1))
+
+if "CUDAExecutionProvider" not in ort.get_available_providers():
+    print("WARNING: ONNX Runtime CUDA provider is unavailable; DWPose --device auto will use CPU.")
 PY
 
 if command -v nvidia-smi >/dev/null 2>&1; then
