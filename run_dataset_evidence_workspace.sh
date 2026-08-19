@@ -19,4 +19,4 @@ export HF_XET_CACHE="$WORK_ROOT/huggingface/xet"
 unset HF_HUB_ENABLE_HF_TRANSFER || true
 
 cd "$REPO_ROOT"
-exec "$PY" -m qwen_caption_validate.dataset_evidence_v2 "$@"
+exec "$PY" -m qwen_caption_validate.dataset_evidence_v3 "$@"
