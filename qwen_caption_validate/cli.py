@@ -18,6 +18,7 @@ from .runner import (
     model_slug,
     parse_json_response,
     render_compose_prompt,
+    resolve_backend,
     resolve_model_id,
     unload_model,
     validate_analysis,
@@ -35,7 +36,7 @@ def parse_args() -> argparse.Namespace:
         description="Run Qwen3-VL models sequentially over an image dataset and compare structured visual analyses/captions.",
     )
     parser.add_argument("dataset", type=Path, help="Folder containing training images (and optional .txt sidecars).")
-    parser.add_argument("--models", nargs="+", default=["8b", "32b"], help="Model aliases (8b, 32b) or Hugging Face model IDs.")
+    parser.add_argument("--models", nargs="+", default=["8b", "32b"], help="Model aliases (8b, 32b, 8b-fp8, 32b-fp8) or Hugging Face model IDs.")
     parser.add_argument("--output", type=Path, default=Path("runs"), help="Root output folder.")
     parser.add_argument("--run-name", help="Stable run name. Reusing it resumes/skips completed outputs.")
     parser.add_argument("--recursive", action="store_true", help="Scan dataset recursively.")
@@ -49,17 +50,35 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--detail", choices=["concise", "balanced", "detailed"], default="balanced")
     parser.add_argument("--max-analysis-tokens", type=int, default=1800)
     parser.add_argument("--max-caption-tokens", type=int, default=450)
+    parser.add_argument(
+        "--backend",
+        choices=["auto", "transformers", "vllm"],
+        default="auto",
+        help="Inference backend. auto routes official *-FP8 checkpoints to vLLM and ordinary checkpoints to Transformers.",
+    )
     parser.add_argument("--dtype", choices=["auto", "bfloat16", "float16", "float32"], default="auto")
     parser.add_argument(
         "--quantization",
         choices=["none", "8bit", "4bit"],
         default="none",
-        help="Optional bitsandbytes quantization. Prefer official FP8 checkpoints on FP8-capable hardware when available.",
+        help="Optional bitsandbytes quantization for the Transformers backend. Prefer native *-FP8 checkpoints with vLLM on an L40S.",
     )
-    parser.add_argument("--attn", choices=["sdpa", "flash_attention_2", "eager"], help="Optional Transformers attention implementation.")
-    parser.add_argument("--cache-dir", type=Path, help="Optional Hugging Face cache directory.")
+    parser.add_argument("--attn", choices=["sdpa", "flash_attention_2", "eager"], help="Optional Transformers attention implementation (ignored by vLLM).")
+    parser.add_argument("--cache-dir", type=Path, help="Optional Hugging Face/vLLM cache directory.")
     parser.add_argument("--min-pixels", type=int, help="Optional Qwen processor minimum image pixels.")
     parser.add_argument("--max-pixels", type=int, help="Optional Qwen processor maximum image pixels.")
+    parser.add_argument(
+        "--vllm-gpu-memory-utilization",
+        type=float,
+        default=0.92,
+        help="Fraction of GPU memory vLLM may use (default: 0.92; useful for 32B FP8 on a 48 GB L40S).",
+    )
+    parser.add_argument(
+        "--vllm-max-model-len",
+        type=int,
+        default=8192,
+        help="Maximum vLLM context length. 8192 is ample for this validation workload and avoids wasting KV-cache budget.",
+    )
     return parser.parse_args()
 
 
@@ -87,6 +106,10 @@ def main() -> int:
     dataset = args.dataset.expanduser().resolve()
     if not dataset.is_dir():
         print(f"Dataset folder does not exist: {dataset}", file=sys.stderr)
+        return 2
+
+    if not 0.0 < args.vllm_gpu_memory_utilization <= 1.0:
+        print("--vllm-gpu-memory-utilization must be > 0 and <= 1", file=sys.stderr)
         return 2
 
     images = discover_images(dataset, recursive=args.recursive)
@@ -148,9 +171,12 @@ def main() -> int:
         "compose_prompt": str(args.compose_prompt) if args.compose else None,
         "subject_token": args.subject_token,
         "detail": args.detail,
+        "backend": args.backend,
         "dtype": args.dtype,
         "quantization": args.quantization,
         "attention": args.attn,
+        "vllm_gpu_memory_utilization": args.vllm_gpu_memory_utilization,
+        "vllm_max_model_len": args.vllm_max_model_len,
         "images": image_records,
     }
     _write_manifest(manifest_path, manifest)
@@ -173,22 +199,29 @@ def main() -> int:
             print(f"[{model_id}] nothing to do; all requested outputs already exist.")
             continue
 
-        print(f"\nLoading {model_id} ...")
+        resolved_backend = resolve_backend(model_id, args.backend)
+        print(f"\nLoading {model_id} with {resolved_backend} ...")
         loaded = load_model(
             model_id,
+            backend=args.backend,
             dtype=args.dtype,
             quantization=args.quantization,
             attn_implementation=args.attn,
             cache_dir=args.cache_dir,
             min_pixels=args.min_pixels,
             max_pixels=args.max_pixels,
+            vllm_gpu_memory_utilization=args.vllm_gpu_memory_utilization,
+            vllm_max_model_len=args.vllm_max_model_len,
         )
         print(f"Loaded in {loaded.load_seconds:.1f}s. Processing {len(pending)} image(s).")
         model_runtime[slug] = {
             "load_seconds": loaded.load_seconds,
+            "backend": loaded.backend,
             "quantization": loaded.quantization,
             "dtype": args.dtype,
-            "attention": args.attn,
+            "attention": args.attn if loaded.backend == "transformers" else None,
+            "vllm_gpu_memory_utilization": args.vllm_gpu_memory_utilization if loaded.backend == "vllm" else None,
+            "vllm_max_model_len": args.vllm_max_model_len if loaded.backend == "vllm" else None,
         }
         manifest["model_runtime"] = model_runtime
         _write_manifest(manifest_path, manifest)
@@ -214,6 +247,7 @@ def main() -> int:
                         result = {
                             "image": record["relative_path"],
                             "model": model_id,
+                            "backend": loaded.backend,
                             "inference_seconds": seconds,
                             "analysis_seconds": seconds,
                             "analysis": parsed,
@@ -247,6 +281,7 @@ def main() -> int:
                             caption_meta = {
                                 "image": record["relative_path"],
                                 "model": model_id,
+                                "backend": loaded.backend,
                                 "compose_seconds": compose_seconds,
                                 "detail": args.detail,
                                 "subject_token": args.subject_token,
