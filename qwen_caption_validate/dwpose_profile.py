@@ -66,7 +66,7 @@ def parse_args() -> argparse.Namespace:
         "--device",
         choices=["auto", "cpu", "cuda"],
         default="auto",
-        help="DWPose execution device. auto prefers CUDA when available.",
+        help="DWPose execution device. auto prefers the ONNX CUDA provider when available.",
     )
     return parser.parse_args()
 
@@ -268,14 +268,42 @@ def derive_pose_summary(pose_data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _resolve_device(requested: str) -> str:
+def _onnxruntime_providers() -> list[str]:
+    try:
+        import onnxruntime as ort
+    except ImportError as exc:
+        raise RuntimeError("onnxruntime is not installed; re-run build_workspace.sh") from exc
+
+    # Import torch before this helper is called. Modern ORT releases can also
+    # preload CUDA/cuDNN libraries from PyTorch/NVIDIA site-packages.
+    if hasattr(ort, "preload_dlls"):
+        try:
+            ort.preload_dlls()
+        except Exception as exc:
+            print(f"WARNING: ONNX Runtime CUDA preload failed: {exc}", file=sys.stderr)
+    return list(ort.get_available_providers())
+
+
+def _resolve_device(requested: str) -> tuple[str, list[str]]:
+    providers = _onnxruntime_providers()
+    ort_cuda = "CUDAExecutionProvider" in providers
+    torch_cuda = torch.cuda.is_available()
+
     if requested == "cpu":
-        return "cpu"
+        return "cpu", providers
     if requested == "cuda":
-        if not torch.cuda.is_available():
+        if not torch_cuda:
             raise RuntimeError("--device cuda requested but torch.cuda.is_available() is false")
-        return "cuda:0"
-    return "cuda:0" if torch.cuda.is_available() else "cpu"
+        if not ort_cuda:
+            raise RuntimeError(
+                "--device cuda requested but ONNX Runtime has no CUDAExecutionProvider. "
+                f"Available providers: {providers}"
+            )
+        return "cuda:0", providers
+
+    if torch_cuda and ort_cuda:
+        return "cuda:0", providers
+    return "cpu", providers
 
 
 def _load_detector(device: str):
@@ -283,8 +311,7 @@ def _load_detector(device: str):
         from easy_dwpose import DWposeDetector
     except ImportError as exc:
         raise RuntimeError(
-            "DWPose support is not installed. Re-run build_workspace.sh, or install the "
-            "project's [dwpose] optional dependency."
+            "DWPose support is not installed. Re-run build_workspace.sh."
         ) from exc
 
     started = time.perf_counter()
@@ -319,8 +346,11 @@ def main() -> int:
         return 2
 
     output.mkdir(parents=True, exist_ok=True)
-    device = _resolve_device(args.device)
+    device, providers = _resolve_device(args.device)
 
+    print(f"ONNX Runtime providers: {providers}")
+    if args.device == "auto" and device == "cpu" and torch.cuda.is_available():
+        print("DWPose auto-selection: CUDA GPU exists, but ORT CUDA provider is unavailable; using CPU.")
     print(f"Loading DWPose on {device} ...")
     detector, load_seconds = _load_detector(device)
     print(f"Loaded DWPose in {load_seconds:.2f}s. Processing {len(images)} image(s).")
@@ -351,6 +381,7 @@ def main() -> int:
             "image_width": width,
             "image_height": height,
             "device": device,
+            "onnxruntime_providers": providers,
             "inference_seconds": round(seconds, 4),
             "derived": derived,
             "raw_pose": _to_builtin(pose_data),
@@ -388,6 +419,7 @@ def main() -> int:
         "dataset": str(dataset),
         "image_count": len(records),
         "device": device,
+        "onnxruntime_providers": providers,
         "model_load_seconds": round(load_seconds, 4),
         "average_inference_seconds": round(sum(inference_times) / len(inference_times), 4) if inference_times else None,
         "no_body_pose_count": no_pose,
