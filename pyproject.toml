@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qwen3-vl-captioning-validation"
-version = "0.4.0"
+version = "0.5.0"
 description = "Standalone Qwen3-VL dataset analysis/caption comparison harness"
 requires-python = ">=3.10"
 dependencies = [
@@ -43,7 +43,7 @@ dwpose = [
 qwen-vl-validate = "qwen_caption_validate.cli:main"
 qwen-dwpose-profile = "qwen_caption_validate.dwpose_compat:main"
 qwen-compose-compare = "qwen_caption_validate.compose_compare:main"
-qwen-dataset-evidence = "qwen_caption_validate.dataset_evidence:main"
+qwen-dataset-evidence = "qwen_caption_validate.dataset_evidence_v2:main"
 
 [tool.setuptools]
 packages = ["qwen_caption_validate"]
