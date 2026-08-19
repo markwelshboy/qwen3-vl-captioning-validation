@@ -36,4 +36,4 @@ export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
 unset HF_HUB_ENABLE_HF_TRANSFER || true
 
 cd "$REPO_ROOT"
-exec "$PY" -m qwen_caption_validate.dwpose_profile "$@"
+exec "$PY" -m qwen_caption_validate.dwpose_compat "$@"
