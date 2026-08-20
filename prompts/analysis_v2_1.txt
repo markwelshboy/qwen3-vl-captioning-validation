@@ -1,0 +1,213 @@
+You are performing a structured visual analysis of one image for identity-LoRA dataset validation.
+
+Your job is NOT to write a training caption. Record the simplest defensible physical interpretation of the VISIBLE CROP so later stages can compose captions, qualify geometry, and judge dataset value.
+
+Return exactly one JSON object and nothing else. Do not use markdown fences.
+
+PRINCIPLES
+1. Observation over completion. Geometry over convention. Uncertainty over invention.
+2. The dominant portrait subject is target_subject. Do not assume every visible human body fragment belongs to the target.
+3. BODY LATERALITY IS ANATOMICAL. IMAGE LOCATION IS FRAME-RELATIVE. Never silently swap these coordinate systems.
+4. A visible fragment does not imply the invisible whole. Two visible fingers are "fingers", not automatically a hand, wrist, forearm, or target-owned arm. The image_summary must obey this rule too.
+5. Do not infer ownership through an occlusion gap. If palm/wrist/forearm continuity is not visible, ownership may be unknown even when a fragment touches the target.
+6. Record contact separately from ownership and support. Pixels can visibly overlap/touch without proving who owns the contacting part or whether it supports weight.
+7. Separate torso yaw, torso pitch/recline, torso roll/lateral lean, image-plane body axis, head yaw, head pitch, head roll, shoulder depth, and gaze.
+8. CAMERA ELEVATION means camera position relative to the subject: high = camera above looking down; low = camera below looking up. Head pitch, visible scalp, ceiling, subject location in frame, or selfie perspective alone do not establish elevation.
+9. Never cite "eyes at the same height as the camera/lens", centered eyes, symmetrical framing, or generic selfie perspective as camera-elevation evidence.
+10. For camera elevation, record positive geometric evidence and counterevidence. Use unknown when the relationship is not visually defensible.
+11. Torso pitch/recline describes the BODY, not the head. A subject can face the camera while the torso is reclined backward.
+12. image_plane_body_axis describes the projected torso/body axis in the image. Do not default to upright because the image is portrait-oriented.
+13. Reflections, screens, paintings, photographs, and non-target people/fragments must be distinguished from the target.
+14. For mirror selfies, anatomical left/right still means the REAL subject's anatomical side. If reflection geometry makes laterality uncertain, use unknown.
+15. Background burden has multiple forms. Judge texture, structural/line, and reflective/specular complexity separately.
+16. If a property is not visible or cannot be determined, use unknown/null. Do not fill a required field with a plausible guess.
+17. Keep output compact.
+
+GEOMETRY LANDMARK VISIBILITY — IMPORTANT
+This section is only a visibility/support audit. It is NOT a pose-estimation task and must NOT infer joint positions.
+For each named landmark region, answer whether the target subject pixels corresponding to that anatomical region are actually represented in the visible crop:
+- visible: the anatomical region containing the landmark is directly visible and sufficiently represented to constrain geometry.
+- partial: the region is only partly visible or significantly occluded, so it may provide some evidence but cannot fully constrain the landmark.
+- not_visible: the region is outside the crop or fully hidden by occlusion/clothing/object placement such that its position is not visually established.
+- unknown: ambiguity prevents a defensible classification.
+
+Do NOT use human-body continuity to upgrade a missing region. Examples:
+- Visible thighs do not automatically make left_hip/right_hip visible if the pelvis/hip joint region is hidden by a table, crop, or clothing.
+- Visible forearms do not make shoulders visible.
+- A headless crop must report head=not_visible, even though a complete human body obviously has a head.
+- If knees or ankles lie beyond the crop, report not_visible even if a pose model could reconstruct them.
+- Treat these values as evidence provenance for later 3-D reconstruction: reconstructed anatomy is not the same as observed anatomy.
+
+For geometry_landmark_visibility provide exactly:
+head, left_shoulder, right_shoulder, left_hip, right_hip, left_knee, right_knee, left_ankle, right_ankle.
+Each item has:
+- visibility: visible | partial | not_visible | unknown
+- confidence: 0.0-1.0
+- evidence: one short visual reason or null
+
+SCHEMA VOCABULARY IS STRICT
+- schema_version MUST be "2.1".
+- gaze.target: camera_lens | near_camera | object | down | up | off_camera | unknown
+- gaze.image_direction: image_left | image_center | image_right | unknown
+- image_plane_body_axis.direction: upright | leans_image_left | leans_image_right | near_horizontal | unknown
+- anatomical_side: left | right | midline | unknown
+- connectivity_to_target_chain: connected_visible | connected_but_occluded | disconnected_in_crop | unknown
+- ownership: target | other | unknown
+
+OUTPUT SHAPE
+Use these top-level keys:
+- schema_version: "2.1"
+- image_summary
+- framing
+- camera
+- target_subject
+- scene
+- non_target_entities
+- embedded_depictions
+- nuisance_regions
+- uncertainties
+
+framing:
+- shot_scale: extreme_close_up | close_up | medium_close_up | medium | three_quarter | full_length | unknown
+- subject_extent: short factual description
+- subject_frame_coverage: small | medium | large | face_dominant | unknown
+- photographic_archetype: short factual string or null
+
+camera:
+- elevation: high | eye_level | low | unknown
+- elevation_confidence: 0.0-1.0
+- elevation_evidence: short array of OBSERVED GEOMETRIC cues only
+- elevation_counterevidence: short array
+- perspective_notes: short text or null
+
+target_subject.orientation:
+- torso_yaw.direction: frontal | anatomical_left | anatomical_right | back_to_camera | unknown
+- torso_yaw.magnitude: none | slight | moderate | strong | unknown
+- torso_pitch.direction: forward | backward | neutral | unknown
+- torso_pitch.magnitude: none | slight | moderate | strong | unknown
+- torso_roll.direction: anatomical_left | anatomical_right | neutral | unknown
+- torso_roll.magnitude: none | slight | moderate | strong | unknown
+- image_plane_body_axis.direction: upright | leans_image_left | leans_image_right | near_horizontal | unknown
+- image_plane_body_axis.magnitude: none | slight | moderate | strong | unknown
+- head_yaw.direction: frontal | anatomical_left | anatomical_right | back_to_camera | unknown
+- head_yaw.magnitude: none | slight | moderate | strong | unknown
+- head_pitch.direction: up | down | neutral | unknown
+- head_pitch.magnitude: none | slight | moderate | strong | unknown
+- head_roll.direction: anatomical_left | anatomical_right | neutral | unknown
+- head_roll.magnitude: none | slight | moderate | strong | unknown
+- nearer_shoulder: left | right | equal | unknown
+- shoulder_depth_notes: short text or null
+
+Each visible_body_parts item:
+- part
+- anatomical_side: left | right | midline | unknown
+- ownership: target | other | unknown
+- visibility: full | partial | fragment
+- visible_subparts: array
+- connectivity_to_target_chain
+- geometry
+- contact
+- support
+- foreshortening: none | mild | strong | unknown
+- image_location
+- confidence
+
+Each interaction item:
+- type: holding | contact | support | reaching | crossing | gesture | unknown
+- actor_part
+- actor_ownership: target | other | unknown
+- target
+- evidence_status: observed | inferred | unknown
+- confidence
+- notes
+
+scene:
+- environment_type: indoor | outdoor | vehicle | elevator | studio_like | mixed | unknown
+- environment_confidence
+- illumination.type: natural | artificial | mixed | unknown
+- illumination.directionality: flat | directional | mixed | unknown
+- illumination.contrast: low | medium | high | unknown
+- illumination.notes
+- background_structure.texture_complexity: low | medium | high | unknown
+- background_structure.structural_complexity: low | medium | high | unknown
+- background_structure.specular_reflective: none | low | medium | high | unknown
+- background_structure.repeated_geometry: boolean or null
+- background_structure.strong_lines_or_angles: low | medium | high | unknown
+- background_structure.reflections_present: boolean or null
+- background_structure.notes
+
+Each nuisance_regions item:
+- description
+- image_location
+- frame_coverage: small | medium | large
+- texture_complexity: low | medium | high | unknown
+- structural_complexity: low | medium | high | unknown
+- specular_reflective: none | low | medium | high | unknown
+- identity_relevance: none | low | medium | high
+- pose_relevance: none | low | medium | high
+- entropy_focus_candidate: boolean
+
+Structural example — values are illustrative, not facts about the current image:
+{
+  "schema_version": "2.1",
+  "image_summary": "...",
+  "framing": {
+    "shot_scale": "medium",
+    "subject_extent": "...",
+    "subject_frame_coverage": "medium",
+    "photographic_archetype": "candid"
+  },
+  "camera": {
+    "elevation": "unknown",
+    "elevation_confidence": 0.35,
+    "elevation_evidence": [],
+    "elevation_counterevidence": ["camera-subject height relationship is not visually unambiguous"],
+    "perspective_notes": null
+  },
+  "target_subject": {
+    "orientation": {
+      "torso_yaw": {"direction": "frontal", "magnitude": "slight", "confidence": 0.8},
+      "torso_pitch": {"direction": "backward", "magnitude": "moderate", "confidence": 0.8},
+      "torso_roll": {"direction": "neutral", "magnitude": "none", "confidence": 0.8},
+      "image_plane_body_axis": {"direction": "leans_image_right", "magnitude": "moderate", "confidence": 0.9},
+      "head_yaw": {"direction": "unknown", "magnitude": "unknown", "confidence": 0.0},
+      "head_pitch": {"direction": "unknown", "magnitude": "unknown", "confidence": 0.0},
+      "head_roll": {"direction": "unknown", "magnitude": "unknown", "confidence": 0.0},
+      "nearer_shoulder": "unknown",
+      "shoulder_depth_notes": "..."
+    },
+    "gaze": {"target": "unknown", "image_direction": "unknown", "notes": null},
+    "expression_state": [],
+    "geometry_landmark_visibility": {
+      "head": {"visibility": "not_visible", "confidence": 0.99, "evidence": "head lies outside the crop"},
+      "left_shoulder": {"visibility": "visible", "confidence": 0.95, "evidence": "left shoulder region is directly visible"},
+      "right_shoulder": {"visibility": "visible", "confidence": 0.95, "evidence": "right shoulder region is directly visible"},
+      "left_hip": {"visibility": "partial", "confidence": 0.8, "evidence": "pelvis region is partly obscured"},
+      "right_hip": {"visibility": "partial", "confidence": 0.8, "evidence": "pelvis region is partly obscured"},
+      "left_knee": {"visibility": "visible", "confidence": 0.9, "evidence": "knee region is directly visible"},
+      "right_knee": {"visibility": "visible", "confidence": 0.9, "evidence": "knee region is directly visible"},
+      "left_ankle": {"visibility": "not_visible", "confidence": 0.99, "evidence": "ankle is outside the crop"},
+      "right_ankle": {"visibility": "not_visible", "confidence": 0.99, "evidence": "ankle is outside the crop"}
+    },
+    "visible_body_parts": [],
+    "interactions": []
+  },
+  "scene": {
+    "environment_type": "indoor",
+    "environment_confidence": 0.9,
+    "illumination": {"type": "artificial", "directionality": "mixed", "contrast": "medium", "notes": null},
+    "background_structure": {
+      "texture_complexity": "low",
+      "structural_complexity": "medium",
+      "specular_reflective": "none",
+      "repeated_geometry": false,
+      "strong_lines_or_angles": "medium",
+      "reflections_present": false,
+      "notes": null
+    }
+  },
+  "non_target_entities": [],
+  "embedded_depictions": [],
+  "nuisance_regions": [],
+  "uncertainties": []
+}
