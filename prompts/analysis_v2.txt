@@ -8,18 +8,33 @@ PRINCIPLES
 1. Observation over completion. Geometry over convention. Uncertainty over invention.
 2. The dominant portrait subject is target_subject. Do not assume every visible human body fragment belongs to the target.
 3. BODY LATERALITY IS ANATOMICAL. IMAGE LOCATION IS FRAME-RELATIVE. Never silently swap these coordinate systems.
-4. A visible fragment does not imply the invisible whole. Two visible fingers are "fingers", not automatically a hand, wrist, forearm, or target-owned arm.
+4. A visible fragment does not imply the invisible whole. Two visible fingers are "fingers", not automatically a hand, wrist, forearm, or target-owned arm. The image_summary must obey this rule too: do not call isolated fingers a hand.
 5. Do not infer ownership through an occlusion gap. If palm/wrist/forearm continuity is not visible, ownership may be unknown even when a fragment touches the target.
 6. Record contact separately from ownership and support. Pixels can visibly overlap/touch without proving who owns the contacting part or whether it supports weight.
 7. Separate torso yaw, torso pitch/recline, torso roll/lateral lean, image-plane body axis, head yaw, head pitch, head roll, shoulder depth, and gaze. Do not collapse them into "angled" or "tilted".
-8. CAMERA ELEVATION means camera position relative to the subject: high = camera above looking down; low = camera below looking up. Head pitch, visible scalp, ceiling, or selfie perspective alone do not establish elevation.
-9. For camera elevation, record positive visual evidence and counterevidence. Use unknown when the relationship is not visually defensible.
-10. Distinguish photographic shot scale from physical subject coverage. Do not turn these directly into training-policy recommendations.
-11. Treat expression as transient state, not identity morphology.
-12. Reflections, screens, paintings, photographs, and non-target people/fragments must be distinguished from the target.
-13. Background burden has multiple forms. Judge texture complexity, structural/line complexity, and reflective/specular complexity separately. Smooth shiny metal can be low-texture but still structurally/specularly difficult.
-14. If a property is not visible or cannot be determined, use unknown/null. Do not fill a required-looking field with a plausible guess.
-15. Keep output compact. Prefer short structured values to prose. Include ambiguity when it matters, but avoid repeating the same fact in several fields.
+8. CAMERA ELEVATION means camera position relative to the subject: high = camera above looking down; low = camera below looking up. Head pitch, visible scalp, ceiling, subject location in the frame, or selfie perspective alone do not establish elevation.
+9. Never cite "eyes at the same height as the camera/lens", "eyes aligned with camera", "centered eyes", or symmetrical framing as camera-elevation evidence. Those are not observable 3-D camera-height facts from a single image.
+10. For camera elevation, record positive geometric evidence and counterevidence. Useful evidence includes a floor/ground plane extending behind the head or shoulders, strong view down onto upper surfaces of shoulders/body, strong view up beneath chin/objects, horizon/context geometry, or an obvious overhead/underneath viewpoint. Use unknown when the relationship is not visually defensible.
+11. A floor plane dominating behind the subject's head/upper torso plus a visible view down onto the body is evidence FOR a high camera position, even if the subject looks directly at the lens.
+12. Torso pitch/recline describes the BODY, not the head. A subject can face the camera while the torso is reclined backward. Use seating, backrest/support, chest-plane orientation, and shoulder/torso geometry as evidence.
+13. image_plane_body_axis describes the projected torso/body axis in the image. Do not default to upright merely because the image itself is portrait-oriented.
+14. Distinguish photographic shot scale from physical subject coverage. Do not turn these directly into training-policy recommendations.
+15. Treat expression as transient state, not identity morphology.
+16. Reflections, screens, paintings, photographs, and non-target people/fragments must be distinguished from the target.
+17. For mirror selfies, anatomical left/right still means the REAL subject's anatomical side, not image-left/right in the mirror. If reflection geometry makes laterality uncertain, use unknown rather than guessing.
+18. Background burden has multiple forms. Judge texture complexity, structural/line complexity, and reflective/specular complexity separately. Smooth shiny metal can be low-texture but still structurally/specularly difficult.
+19. If a property is not visible or cannot be determined, use unknown/null. Do not fill a required-looking field with a plausible guess.
+20. Keep output compact. Prefer short structured values to prose. Include ambiguity when it matters, but avoid repeating the same fact in several fields.
+
+SCHEMA VOCABULARY IS STRICT
+Use the exact enum tokens below. Do not invent synonyms.
+- gaze.target MUST be one of: camera_lens | near_camera | object | down | up | off_camera | unknown
+  * If looking at a phone or phone screen, use target="object" and explain "phone screen" in notes.
+  * Never emit target="camera"; use camera_lens.
+- gaze.image_direction MUST be one of: image_left | image_center | image_right | unknown
+  * Never emit center/left/right by themselves.
+- image_plane_body_axis.direction MUST use near_horizontal with an underscore, never "near-horizontal".
+- anatomical_side MUST be left | right | midline | unknown. For a plural/collective part such as both shoulders, use unknown rather than "both".
 
 SPECIAL BODY-PART RULES
 - If only digits are visible, use part="fingers" and list only the visible digits/subparts you can defend.
@@ -31,9 +46,6 @@ SPECIAL BODY-PART RULES
   * unknown: cannot determine
 - ownership values: target | other | unknown.
 - If connectivity is disconnected_in_crop or unknown, target ownership should normally be unknown unless there is unusually strong visual evidence; explain that evidence in geometry/uncertainties.
-
-CAMERA ELEVATION EVIDENCE
-Useful evidence may include floor/ground plane projection, strong view down onto shoulders/body, strong view up beneath chin/objects, horizon/context geometry, or an obvious overhead/underneath viewpoint. Do not use a bowed/raised head as camera evidence by itself.
 
 OUTPUT SHAPE
 Use these top-level keys:
@@ -57,7 +69,7 @@ framing:
 camera:
 - elevation: high | eye_level | low | unknown
 - elevation_confidence: 0.0-1.0
-- elevation_evidence: short array of observed cues
+- elevation_evidence: short array of OBSERVED GEOMETRIC cues only
 - elevation_counterevidence: short array of cues that make the judgement less certain
 - perspective_notes: short text or null
 
