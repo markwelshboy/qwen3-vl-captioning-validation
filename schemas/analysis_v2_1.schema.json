@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Qwen3-VL identity-LoRA visual analysis v2.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "image_summary",
+    "framing",
+    "camera",
+    "target_subject",
+    "scene",
+    "non_target_entities",
+    "embedded_depictions",
+    "nuisance_regions",
+    "uncertainties"
+  ],
+  "properties": {
+    "schema_version": {"const": "2.1"},
+    "image_summary": {"type": "string"},
+    "framing": {
+      "type": "object",
+      "required": ["shot_scale", "subject_extent", "subject_frame_coverage", "photographic_archetype"],
+      "properties": {
+        "shot_scale": {"enum": ["extreme_close_up", "close_up", "medium_close_up", "medium", "three_quarter", "full_length", "unknown"]},
+        "subject_extent": {"type": "string"},
+        "subject_frame_coverage": {"enum": ["small", "medium", "large", "face_dominant", "unknown"]},
+        "photographic_archetype": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "camera": {
+      "type": "object",
+      "required": ["elevation", "elevation_confidence", "elevation_evidence", "elevation_counterevidence", "perspective_notes"],
+      "properties": {
+        "elevation": {"enum": ["high", "eye_level", "low", "unknown"]},
+        "elevation_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "elevation_evidence": {"type": "array", "items": {"type": "string"}},
+        "elevation_counterevidence": {"type": "array", "items": {"type": "string"}},
+        "perspective_notes": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "target_subject": {
+      "type": "object",
+      "required": ["orientation", "gaze", "expression_state", "geometry_landmark_visibility", "visible_body_parts", "interactions"],
+      "properties": {
+        "orientation": {
+          "type": "object",
+          "required": ["torso_yaw", "torso_pitch", "torso_roll", "image_plane_body_axis", "head_yaw", "head_pitch", "head_roll", "nearer_shoulder", "shoulder_depth_notes"],
+          "properties": {
+            "torso_yaw": {"$ref": "#/$defs/yawAxis"},
+            "torso_pitch": {"$ref": "#/$defs/torsoPitchAxis"},
+            "torso_roll": {"$ref": "#/$defs/rollAxis"},
+            "image_plane_body_axis": {"$ref": "#/$defs/imagePlaneAxis"},
+            "head_yaw": {"$ref": "#/$defs/yawAxis"},
+            "head_pitch": {"$ref": "#/$defs/headPitchAxis"},
+            "head_roll": {"$ref": "#/$defs/rollAxis"},
+            "nearer_shoulder": {"enum": ["left", "right", "equal", "unknown"]},
+            "shoulder_depth_notes": {"type": ["string", "null"]}
+          },
+          "additionalProperties": true
+        },
+        "gaze": {
+          "type": "object",
+          "required": ["target", "image_direction", "notes"],
+          "properties": {
+            "target": {"enum": ["camera_lens", "near_camera", "object", "down", "up", "off_camera", "unknown"]},
+            "image_direction": {"enum": ["image_left", "image_center", "image_right", "unknown"]},
+            "notes": {"type": ["string", "null"]}
+          },
+          "additionalProperties": true
+        },
+        "expression_state": {"type": "array", "items": {"type": "string"}},
+        "geometry_landmark_visibility": {
+          "type": "object",
+          "required": ["head", "left_shoulder", "right_shoulder", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle"],
+          "properties": {
+            "head": {"$ref": "#/$defs/landmarkVisibility"},
+            "left_shoulder": {"$ref": "#/$defs/landmarkVisibility"},
+            "right_shoulder": {"$ref": "#/$defs/landmarkVisibility"},
+            "left_hip": {"$ref": "#/$defs/landmarkVisibility"},
+            "right_hip": {"$ref": "#/$defs/landmarkVisibility"},
+            "left_knee": {"$ref": "#/$defs/landmarkVisibility"},
+            "right_knee": {"$ref": "#/$defs/landmarkVisibility"},
+            "left_ankle": {"$ref": "#/$defs/landmarkVisibility"},
+            "right_ankle": {"$ref": "#/$defs/landmarkVisibility"}
+          },
+          "additionalProperties": false
+        },
+        "visible_body_parts": {"type": "array", "items": {"$ref": "#/$defs/bodyPartObservation"}},
+        "interactions": {"type": "array", "items": {"$ref": "#/$defs/interactionObservation"}}
+      },
+      "additionalProperties": true
+    },
+    "scene": {
+      "type": "object",
+      "required": ["environment_type", "environment_confidence", "illumination", "background_structure"],
+      "properties": {
+        "environment_type": {"enum": ["indoor", "outdoor", "vehicle", "elevator", "studio_like", "mixed", "unknown"]},
+        "environment_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "illumination": {
+          "type": "object",
+          "required": ["type", "directionality", "contrast", "notes"],
+          "properties": {
+            "type": {"enum": ["natural", "artificial", "mixed", "unknown"]},
+            "directionality": {"enum": ["flat", "directional", "mixed", "unknown"]},
+            "contrast": {"enum": ["low", "medium", "high", "unknown"]},
+            "notes": {"type": ["string", "null"]}
+          },
+          "additionalProperties": true
+        },
+        "background_structure": {
+          "type": "object",
+          "required": ["texture_complexity", "structural_complexity", "specular_reflective", "repeated_geometry", "strong_lines_or_angles", "reflections_present", "notes"],
+          "properties": {
+            "texture_complexity": {"$ref": "#/$defs/complexity"},
+            "structural_complexity": {"$ref": "#/$defs/complexity"},
+            "specular_reflective": {"$ref": "#/$defs/specular"},
+            "repeated_geometry": {"type": ["boolean", "null"]},
+            "strong_lines_or_angles": {"$ref": "#/$defs/complexity"},
+            "reflections_present": {"type": ["boolean", "null"]},
+            "notes": {"type": ["string", "null"]}
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "non_target_entities": {"type": "array", "items": {"type": "object"}},
+    "embedded_depictions": {"type": "array", "items": {"type": "object"}},
+    "nuisance_regions": {"type": "array", "items": {"$ref": "#/$defs/nuisanceRegion"}},
+    "uncertainties": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "magnitude": {"enum": ["none", "slight", "moderate", "strong", "unknown"]},
+    "complexity": {"enum": ["low", "medium", "high", "unknown"]},
+    "specular": {"enum": ["none", "low", "medium", "high", "unknown"]},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "landmarkVisibility": {
+      "type": "object",
+      "required": ["visibility", "confidence", "evidence"],
+      "properties": {
+        "visibility": {"enum": ["visible", "partial", "not_visible", "unknown"]},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidence": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "yawAxis": {
+      "type": "object",
+      "required": ["direction", "magnitude", "confidence"],
+      "properties": {
+        "direction": {"enum": ["frontal", "anatomical_left", "anatomical_right", "back_to_camera", "unknown"]},
+        "magnitude": {"$ref": "#/$defs/magnitude"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      },
+      "additionalProperties": true
+    },
+    "torsoPitchAxis": {
+      "type": "object",
+      "required": ["direction", "magnitude", "confidence"],
+      "properties": {
+        "direction": {"enum": ["forward", "backward", "neutral", "unknown"]},
+        "magnitude": {"$ref": "#/$defs/magnitude"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      },
+      "additionalProperties": true
+    },
+    "headPitchAxis": {
+      "type": "object",
+      "required": ["direction", "magnitude", "confidence"],
+      "properties": {
+        "direction": {"enum": ["up", "down", "neutral", "unknown"]},
+        "magnitude": {"$ref": "#/$defs/magnitude"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      },
+      "additionalProperties": true
+    },
+    "rollAxis": {
+      "type": "object",
+      "required": ["direction", "magnitude", "confidence"],
+      "properties": {
+        "direction": {"enum": ["anatomical_left", "anatomical_right", "neutral", "unknown"]},
+        "magnitude": {"$ref": "#/$defs/magnitude"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      },
+      "additionalProperties": true
+    },
+    "imagePlaneAxis": {
+      "type": "object",
+      "required": ["direction", "magnitude", "confidence"],
+      "properties": {
+        "direction": {"enum": ["upright", "leans_image_left", "leans_image_right", "near_horizontal", "unknown"]},
+        "magnitude": {"$ref": "#/$defs/magnitude"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      },
+      "additionalProperties": true
+    },
+    "bodyPartObservation": {
+      "type": "object",
+      "required": ["part", "anatomical_side", "ownership", "visibility", "visible_subparts", "connectivity_to_target_chain", "geometry", "contact", "support", "foreshortening", "image_location", "confidence"],
+      "properties": {
+        "part": {"type": "string"},
+        "anatomical_side": {"enum": ["left", "right", "midline", "unknown"]},
+        "ownership": {"enum": ["target", "other", "unknown"]},
+        "visibility": {"enum": ["full", "partial", "fragment"]},
+        "visible_subparts": {"type": "array", "items": {"type": "string"}},
+        "connectivity_to_target_chain": {"enum": ["connected_visible", "connected_but_occluded", "disconnected_in_crop", "unknown"]},
+        "geometry": {"type": ["string", "null"]},
+        "contact": {"type": ["string", "null"]},
+        "support": {"type": ["string", "null"]},
+        "foreshortening": {"enum": ["none", "mild", "strong", "unknown"]},
+        "image_location": {"type": "string"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      },
+      "additionalProperties": true
+    },
+    "interactionObservation": {
+      "type": "object",
+      "required": ["type", "actor_part", "actor_ownership", "target", "evidence_status", "confidence", "notes"],
+      "properties": {
+        "type": {"enum": ["holding", "contact", "support", "reaching", "crossing", "gesture", "unknown"]},
+        "actor_part": {"type": "string"},
+        "actor_ownership": {"enum": ["target", "other", "unknown"]},
+        "target": {"type": ["string", "null"]},
+        "evidence_status": {"enum": ["observed", "inferred", "unknown"]},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "notes": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "nuisanceRegion": {
+      "type": "object",
+      "required": ["description", "image_location", "frame_coverage", "texture_complexity", "structural_complexity", "specular_reflective", "identity_relevance", "pose_relevance", "entropy_focus_candidate"],
+      "properties": {
+        "description": {"type": "string"},
+        "image_location": {"type": "string"},
+        "frame_coverage": {"enum": ["small", "medium", "large"]},
+        "texture_complexity": {"$ref": "#/$defs/complexity"},
+        "structural_complexity": {"$ref": "#/$defs/complexity"},
+        "specular_reflective": {"$ref": "#/$defs/specular"},
+        "identity_relevance": {"enum": ["none", "low", "medium", "high"]},
+        "pose_relevance": {"enum": ["none", "low", "medium", "high"]},
+        "entropy_focus_candidate": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
