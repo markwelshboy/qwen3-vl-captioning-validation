@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import shutil
 import sys
@@ -9,6 +10,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
+from .analysis_v2_normalize import normalize_analysis_v2
 from .report import build_report
 from .runner import (
     discover_images,
@@ -40,7 +42,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=Path("runs"), help="Root output folder.")
     parser.add_argument("--run-name", help="Stable run name. Reusing it resumes/skips completed outputs.")
     parser.add_argument("--recursive", action="store_true", help="Scan dataset recursively.")
-    parser.add_argument("--limit", type=int, help="Process only the first N images (useful for prompt iteration).")
+    parser.add_argument(
+        "--include",
+        action="append",
+        default=[],
+        help=(
+            "Optional glob for relative paths or basenames to process. Repeatable. "
+            "Useful for targeted regression reruns, e.g. --include 'jQTv_720x1280_00002.png'."
+        ),
+    )
+    parser.add_argument("--limit", type=int, help="Process only the first N images after include filtering (useful for prompt iteration).")
     parser.add_argument("--overwrite", action="store_true", help="Regenerate existing per-model outputs.")
     parser.add_argument("--analysis-prompt", type=Path, default=DEFAULT_ANALYSIS_PROMPT)
     parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA)
@@ -101,6 +112,13 @@ def _write_manifest(path: Path, manifest: dict) -> None:
     path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _matches_include(image: Path, dataset: Path, patterns: list[str]) -> bool:
+    if not patterns:
+        return True
+    relative = str(image.relative_to(dataset)).replace("\\", "/")
+    return any(fnmatch.fnmatch(relative, pattern) or fnmatch.fnmatch(image.name, pattern) for pattern in patterns)
+
+
 def main() -> int:
     args = parse_args()
     dataset = args.dataset.expanduser().resolve()
@@ -113,10 +131,12 @@ def main() -> int:
         return 2
 
     images = discover_images(dataset, recursive=args.recursive)
+    if args.include:
+        images = [image for image in images if _matches_include(image, dataset, args.include)]
     if args.limit is not None:
         images = images[: args.limit]
     if not images:
-        print(f"No supported images found in {dataset}", file=sys.stderr)
+        print(f"No supported images found in {dataset} for the requested filters.", file=sys.stderr)
         return 2
 
     analysis_prompt = args.analysis_prompt.read_text(encoding="utf-8")
@@ -177,6 +197,7 @@ def main() -> int:
         "attention": args.attn,
         "vllm_gpu_memory_utilization": args.vllm_gpu_memory_utilization,
         "vllm_max_model_len": args.vllm_max_model_len,
+        "include_patterns": args.include,
         "images": image_records,
     }
     _write_manifest(manifest_path, manifest)
@@ -243,6 +264,9 @@ def main() -> int:
                             max_new_tokens=args.max_analysis_tokens,
                         )
                         parsed, parse_error = parse_json_response(raw)
+                        normalization_actions = []
+                        if isinstance(parsed, dict) and parsed.get("schema_version") == "2.0":
+                            parsed, normalization_actions = normalize_analysis_v2(parsed)
                         schema_errors = validate_analysis(parsed, schema) if parsed is not None else []
                         result = {
                             "image": record["relative_path"],
@@ -253,6 +277,7 @@ def main() -> int:
                             "analysis": parsed,
                             "raw_response": raw,
                             "parse_error": parse_error,
+                            "normalization_actions": normalization_actions,
                             "schema_valid": parsed is not None and not schema_errors,
                             "schema_errors": schema_errors,
                         }
