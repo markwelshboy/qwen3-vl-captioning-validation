@@ -25,14 +25,16 @@ PRINCIPLES
 
 GEOMETRY LANDMARK VISIBILITY — IMPORTANT
 This section is only a visibility/support audit. It is NOT a pose-estimation task and must NOT infer joint positions.
-For each named landmark region, answer whether the target subject pixels corresponding to that anatomical region are actually represented in the visible crop:
-- visible: the anatomical region containing the landmark is directly visible and sufficiently represented to constrain geometry.
-- partial: the region is only partly visible or significantly occluded, so it may provide some evidence but cannot fully constrain the landmark.
-- not_visible: the region is outside the crop or fully hidden by occlusion/clothing/object placement such that its position is not visually established.
+For each named landmark region, answer whether the target-subject anatomical region needed to constrain that landmark is actually represented in the visible crop:
+- visible: the anatomical region containing the landmark is directly represented and sufficiently constrained by visible body/clothing contour to support geometry.
+- partial: the region is cropped, materially occluded, or ambiguously represented, so it provides some evidence but cannot fully constrain the landmark.
+- not_visible: the region is outside the crop or fully hidden such that its position is not visually established.
 - unknown: ambiguity prevents a defensible classification.
 
+Ordinary clothing does NOT by itself make a landmark partial. If a clothed shoulder or hip region is clearly represented by the visible body/garment contour, it can be visible. Use partial for genuine crop truncation, material occlusion, or severe ambiguity—not merely because skin or the exact joint center is covered by normal clothing.
+
 Do NOT use human-body continuity to upgrade a missing region. Examples:
-- Visible thighs do not automatically make left_hip/right_hip visible if the pelvis/hip joint region is hidden by a table, crop, or clothing.
+- Visible thighs do not automatically make left_hip/right_hip visible if the pelvis/hip region is hidden by a table, crop, or major occlusion.
 - Visible forearms do not make shoulders visible.
 - A headless crop must report head=not_visible, even though a complete human body obviously has a head.
 - If knees or ankles lie beyond the crop, report not_visible even if a pose model could reconstruct them.
@@ -105,12 +107,14 @@ Each visible_body_parts item:
 - visibility: full | partial | fragment
 - visible_subparts: array
 - connectivity_to_target_chain
-- geometry
-- contact
-- support
+- geometry: SHORT JSON STRING or null; NEVER an object or array
+- contact: SHORT JSON STRING or null; NEVER an object or array
+- support: SHORT JSON STRING or null; NEVER an object or array
 - foreshortening: none | mild | strong | unknown
 - image_location
 - confidence
+
+For geometry/contact/support, write compact text such as "elbow bent; wrist flexed", "holding cup", "resting on table", or null. Do not create nested objects, dictionaries, or arrays in these three fields; richer interaction structure belongs in target_subject.interactions.
 
 Each interaction item:
 - type: holding | contact | support | reaching | crossing | gesture | unknown
@@ -182,8 +186,8 @@ Structural example — values are illustrative, not facts about the current imag
       "head": {"visibility": "not_visible", "confidence": 0.99, "evidence": "head lies outside the crop"},
       "left_shoulder": {"visibility": "visible", "confidence": 0.95, "evidence": "left shoulder region is directly visible"},
       "right_shoulder": {"visibility": "visible", "confidence": 0.95, "evidence": "right shoulder region is directly visible"},
-      "left_hip": {"visibility": "partial", "confidence": 0.8, "evidence": "pelvis region is partly obscured"},
-      "right_hip": {"visibility": "partial", "confidence": 0.8, "evidence": "pelvis region is partly obscured"},
+      "left_hip": {"visibility": "visible", "confidence": 0.9, "evidence": "clothed pelvis/hip contour is clearly represented"},
+      "right_hip": {"visibility": "visible", "confidence": 0.9, "evidence": "clothed pelvis/hip contour is clearly represented"},
       "left_knee": {"visibility": "visible", "confidence": 0.9, "evidence": "knee region is directly visible"},
       "right_knee": {"visibility": "visible", "confidence": 0.9, "evidence": "knee region is directly visible"},
       "left_ankle": {"visibility": "not_visible", "confidence": 0.99, "evidence": "ankle is outside the crop"},
