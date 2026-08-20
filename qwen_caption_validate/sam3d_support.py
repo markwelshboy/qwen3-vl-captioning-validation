@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
@@ -13,6 +14,27 @@ LANDMARKS = (
     "right_knee",
     "left_ankle",
     "right_ankle",
+)
+HUMAN_CONTEXT_TOKENS = (
+    "person",
+    "people",
+    "human",
+    "man",
+    "woman",
+    "boy",
+    "girl",
+    "child",
+    "face",
+    "head",
+    "hand",
+    "arm",
+    "body",
+    "portrait",
+    "photo",
+    "photograph",
+    "painting",
+    "poster",
+    "reflection",
 )
 
 
@@ -81,16 +103,31 @@ def _metric(metrics: dict[str, Any], new_key: str, old_key: str | None = None) -
     return None
 
 
+def _may_describe_human_context(item: Any) -> bool:
+    if isinstance(item, str):
+        text = item.lower()
+    else:
+        try:
+            text = json.dumps(item, ensure_ascii=False).lower()
+        except TypeError:
+            text = str(item).lower()
+    return any(token in text for token in HUMAN_CONTEXT_TOKENS)
+
+
 def _target_provenance_audit(analysis: dict[str, Any], sam3d_record: dict[str, Any]) -> dict[str, Any]:
     embedded = analysis.get("embedded_depictions") or []
     non_target = analysis.get("non_target_entities") or []
-    has_context_risk = bool(embedded or non_target)
+    embedded_human_like = [item for item in embedded if _may_describe_human_context(item)] if isinstance(embedded, list) else []
+    non_target_human_like = [item for item in non_target if _may_describe_human_context(item)] if isinstance(non_target, list) else []
+    has_context_risk = bool(embedded_human_like or non_target_human_like)
     bbox = sam3d_record.get("bbox") or {}
 
     return {
         "sam3d_bbox_source": bbox.get("source"),
         "embedded_depiction_count": len(embedded) if isinstance(embedded, list) else None,
         "non_target_entity_count": len(non_target) if isinstance(non_target, list) else None,
+        "human_like_embedded_depiction_count": len(embedded_human_like),
+        "human_like_non_target_entity_count": len(non_target_human_like),
         "context_risk": "requires_review" if has_context_risk else "no_semantic_multi_subject_risk_detected",
         "authority": (
             "preselected_bbox_requires_target_provenance_review"
@@ -99,7 +136,7 @@ def _target_provenance_audit(analysis: dict[str, Any], sam3d_record: dict[str, A
         ),
         "note": (
             "SAM 3D Body reconstructs the supplied bbox; it does not prove that the bbox belongs to the intended identity. "
-            "Embedded depictions/non-target people therefore remain an upstream target-selection concern."
+            "Human-like embedded depictions/non-target people therefore remain an upstream target-selection concern."
         ),
     }
 
@@ -160,7 +197,7 @@ def qualify_sam3d_geometry(analysis: dict[str, Any], sam3d_record: dict[str, Any
     provenance = _target_provenance_audit(analysis, sam3d_record)
     if provenance["context_risk"] == "requires_review" and aggregate_authority == "qualified_3d_geometry":
         aggregate_authority = "qualified_geometry_pending_target_provenance"
-        aggregate_reason += "; semantic context contains another person or embedded depiction, so target-bbox provenance still requires review"
+        aggregate_reason += "; semantic context contains another person or embedded human depiction, so target-bbox provenance still requires review"
 
     return {
         "schema_version": "sam3d-support-audit-0.1",
