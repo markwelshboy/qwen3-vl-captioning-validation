@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any
 
+from .analysis_v2_normalize import normalize_analysis_v2
 from .pose_evidence import build_pose_evidence
-from .runner import model_slug, resolve_model_id
+from .runner import model_slug, resolve_model_id, validate_analysis
 
 
 HANDISH_TOKENS = ("finger", "hand", "wrist", "forearm", "arm")
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+ANALYSIS_V2_SCHEMA = PACKAGE_ROOT / "schemas" / "analysis_v2.schema.json"
 
 
 def parse_args() -> argparse.Namespace:
@@ -68,10 +72,18 @@ def _supported_hand_sides(pose: dict[str, Any]) -> set[str]:
     }
 
 
+def _mirror_sensitive(analysis: dict[str, Any]) -> bool:
+    framing = analysis.get("framing") or {}
+    archetype = str(framing.get("photographic_archetype") or "").lower()
+    summary = str(analysis.get("image_summary") or "").lower()
+    return "mirror" in archetype or "mirror selfie" in summary
+
+
 def _qualify_body_parts(analysis: dict[str, Any], pose: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     subject = analysis.get("target_subject") or {}
     parts = subject.get("visible_body_parts") or []
     supported_sides = _supported_hand_sides(pose)
+    mirror_sensitive = _mirror_sensitive(analysis)
     qualified: list[dict[str, Any]] = []
     warnings: list[str] = []
 
@@ -87,7 +99,10 @@ def _qualify_body_parts(analysis: dict[str, Any], pose: dict[str, Any]) -> tuple
 
         selection_usable = True
         qualified_ownership = ownership
+        qualified_side = side
+        laterality_selection_usable = side in {"left", "right"}
         reasons: list[str] = []
+        laterality_reasons: list[str] = []
 
         if handish:
             deterministic_support = side in supported_sides if side in {"left", "right"} else bool(supported_sides)
@@ -123,10 +138,34 @@ def _qualify_body_parts(analysis: dict[str, Any], pose: dict[str, Any]) -> tuple
                 selection_usable = False
                 reasons.append("isolated finger fragment cannot establish an unseen hand/arm chain")
 
+            # DWPose laterality is useful only as a conflict detector on direct
+            # images. Mirror selfies reverse the depicted body and make detector
+            # left/right unsuitable for validating true anatomical laterality.
+            if side in {"left", "right"}:
+                if mirror_sensitive:
+                    laterality_selection_usable = False
+                    laterality_reasons.append("mirror/reflection geometry makes detector-side validation non-authoritative")
+                elif supported_sides and side not in supported_sides:
+                    qualified_side = "unknown"
+                    laterality_selection_usable = False
+                    laterality_reasons.append(
+                        f"Analyze-v2 side={side} conflicts with DWPose hand-root association to {sorted(supported_sides)}"
+                    )
+                    warnings.append(
+                        f"body part {index} ({part}) anatomical side conflicts with DWPose hand-root/wrist association; laterality downgraded"
+                    )
+                elif side in supported_sides:
+                    laterality_reasons.append("Analyze-v2 side agrees with DWPose hand-root/wrist association")
+            else:
+                laterality_selection_usable = False
+
         item["fusion_v2"] = {
             "qualified_ownership": qualified_ownership,
+            "qualified_anatomical_side": qualified_side,
             "selection_usable": selection_usable,
+            "laterality_selection_usable": laterality_selection_usable,
             "reasons": reasons,
+            "laterality_reasons": laterality_reasons,
         }
         qualified.append(item)
 
@@ -142,10 +181,10 @@ def _qualify_interactions(
     warnings: list[str] = []
     out: list[dict[str, Any]] = []
 
-    # Analyze-v2 intentionally keeps this conservative. Until body-part IDs are
-    # mandatory, a hand interaction may use any compatible qualified target handish
-    # observation as supporting context, but disconnected/unknown fragments can never
-    # make the interaction selection-authoritative.
+    # Until body-part IDs are mandatory, a hand interaction may use any compatible
+    # qualified target handish observation as supporting context. Laterality is
+    # intentionally separate: a holding/contact action may remain valid while the
+    # claimed anatomical side is downgraded to unknown.
     qualified_target_handish = [
         part for part in qualified_parts
         if _is_handish(part.get("part"))
@@ -189,21 +228,64 @@ def _qualify_interactions(
     return out, warnings
 
 
+_WEAK_EYE_LEVEL_PATTERNS = (
+    re.compile(r"eyes?.*(same|approximately same|aligned).*(height|level).*(camera|lens)", re.I),
+    re.compile(r"(camera|lens).*(same|approximately same|aligned).*(height|level).*eyes?", re.I),
+    re.compile(r"symmetri(c|cal).*fram", re.I),
+    re.compile(r"selfie perspective", re.I),
+    re.compile(r"head level to camera", re.I),
+)
+
+
+def _camera_evidence_strength(elevation: str, evidence: list[str]) -> tuple[list[str], list[str]]:
+    credible: list[str] = []
+    weak: list[str] = []
+    for item in evidence:
+        text = item.strip()
+        low = text.lower()
+        if any(pattern.search(text) for pattern in _WEAK_EYE_LEVEL_PATTERNS):
+            weak.append(text)
+            continue
+        if low.startswith("no strong ") or low.startswith("no visible "):
+            weak.append(text)
+            continue
+        if elevation == "high" and any(
+            token in low for token in ("overhead", "view down", "looking down", "floor plane", "ground plane", "top surface")
+        ):
+            credible.append(text)
+            continue
+        if elevation == "low" and any(
+            token in low for token in ("view up", "looking up", "beneath chin", "underside", "ceiling plane")
+        ):
+            credible.append(text)
+            continue
+        if elevation == "eye_level" and any(token in low for token in ("horizon", "vanishing", "level ground plane")):
+            credible.append(text)
+            continue
+        # Keep other explicitly geometric statements visible but do not let them
+        # establish authority by themselves.
+        weak.append(text)
+    return credible, weak
+
+
 def _camera_audit(analysis: dict[str, Any]) -> dict[str, Any]:
     camera = analysis.get("camera") or {}
     elevation = str(camera.get("elevation") or "unknown")
     confidence = float(camera.get("elevation_confidence") or 0.0)
     evidence = [str(x) for x in (camera.get("elevation_evidence") or []) if x]
     counter = [str(x) for x in (camera.get("elevation_counterevidence") or []) if x]
+    credible, weak = _camera_evidence_strength(elevation, evidence)
 
-    qualified = elevation != "unknown" and confidence >= 0.80 and bool(evidence)
+    qualified = elevation != "unknown" and confidence >= 0.80 and bool(credible)
     reasons: list[str] = []
     if elevation == "unknown":
         reasons.append("Analyze-v2 left camera elevation unresolved")
     if confidence < 0.80:
         reasons.append("camera elevation confidence below 0.80 audit threshold")
-    if elevation != "unknown" and not evidence:
-        reasons.append("camera elevation lacks explicit visual evidence")
+    if elevation != "unknown" and not credible:
+        reasons.append("camera elevation lacks qualified geometric evidence")
+    if weak:
+        reasons.append("one or more camera-elevation evidence strings are weak/non-geometric and cannot establish authority")
     if counter:
         reasons.append("counterevidence is present and should remain visible to downstream policy")
 
@@ -211,6 +293,8 @@ def _camera_audit(analysis: dict[str, Any]) -> dict[str, Any]:
         "elevation": elevation,
         "confidence": round(confidence, 3),
         "evidence": evidence,
+        "qualified_geometric_evidence": credible,
+        "weak_or_non_geometric_evidence": weak,
         "counterevidence": counter,
         "qualified_semantic_evidence": qualified,
         "selection_usable": False,
@@ -244,6 +328,47 @@ def _scene_audit(analysis: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _projected_body_axis_audit(analysis: dict[str, Any], deterministic_geometry: dict[str, Any]) -> dict[str, Any]:
+    orientation = ((analysis.get("target_subject") or {}).get("orientation") or {})
+    semantic = orientation.get("image_plane_body_axis") or {}
+    semantic_direction = str(semantic.get("direction") or "unknown")
+    semantic_magnitude = str(semantic.get("magnitude") or "unknown")
+    semantic_confidence = float(semantic.get("confidence") or 0.0)
+
+    torso_axis = deterministic_geometry.get("torso_axis_from_vertical") or {}
+    shoulder = deterministic_geometry.get("shoulder_line") or {}
+    torso_abs = torso_axis.get("abs_deg")
+    shoulder_abs = shoulder.get("abs_deg")
+
+    conflict = False
+    reasons: list[str] = []
+    if torso_axis.get("status") == "usable" and torso_abs is not None and float(torso_abs) >= 15.0:
+        if semantic_direction == "upright" and semantic_magnitude in {"none", "slight"} and semantic_confidence >= 0.75:
+            conflict = True
+            reasons.append(
+                "semantic image-plane body axis is upright while DWPose projected torso axis exceeds 15 degrees"
+            )
+    if (
+        torso_axis.get("status") != "usable"
+        and shoulder.get("status") == "usable"
+        and shoulder_abs is not None
+        and float(shoulder_abs) >= 15.0
+    ):
+        reasons.append(
+            "torso-axis keypoints are unavailable, but DWPose reports strong projected shoulder-line cant"
+        )
+
+    return {
+        "semantic": semantic,
+        "deterministic_torso_axis_from_vertical": torso_axis,
+        "deterministic_shoulder_line": shoulder,
+        "conflict": conflict,
+        "selection_usable": False,
+        "authority": "report_only_projected_2d_geometry",
+        "reasons": reasons,
+    }
+
+
 def fuse_analysis_v2(analysis: dict[str, Any], pose: dict[str, Any]) -> dict[str, Any]:
     qualified_parts, part_warnings = _qualify_body_parts(analysis, pose)
     qualified_interactions, interaction_warnings = _qualify_interactions(analysis, qualified_parts)
@@ -259,19 +384,23 @@ def fuse_analysis_v2(analysis: dict[str, Any], pose: dict[str, Any]) -> dict[str
     }
 
     warnings = part_warnings + interaction_warnings
+    body_axis_audit = _projected_body_axis_audit(analysis, deterministic_geometry)
+    if body_axis_audit.get("conflict"):
+        warnings.append("semantic image-plane body axis conflicts with deterministic projected torso-axis evidence")
     torso_axis = deterministic_geometry["torso_axis_from_vertical"]
     if torso_axis.get("status") == "usable" and float(torso_axis.get("abs_deg") or 0.0) >= 15.0:
         warnings.append(
-            "DWPose reports a strong image-plane torso-axis cant; keep this distinct from semantic torso yaw/recline"
+            "DWPose reports a strong projected torso-axis cant; keep this distinct from semantic torso yaw/recline"
         )
 
     return {
-        "schema_version": "analysis-fusion-2.0",
+        "schema_version": "analysis-fusion-2.1",
         "analysis_schema_version": analysis.get("schema_version"),
         "image_summary": analysis.get("image_summary"),
         "framing": analysis.get("framing") or {},
         "camera_audit": _camera_audit(analysis),
         "orientation_semantics": ((analysis.get("target_subject") or {}).get("orientation") or {}),
+        "projected_body_axis_audit": body_axis_audit,
         "deterministic_geometry": deterministic_geometry,
         "qualified_body_parts": qualified_parts,
         "qualified_interactions": qualified_interactions,
@@ -285,8 +414,9 @@ def fuse_analysis_v2(analysis: dict[str, Any], pose: dict[str, Any]) -> dict[str
             "camera_axes": "report_only",
             "scene_structural_specular_axes": "report_only",
             "unsupported_hand_ownership": "not_selection_authoritative",
+            "hand_laterality_conflicts": "laterality_not_selection_authoritative",
             "deterministic_image_plane_geometry": "auditable_secondary_evidence",
-            "note": "Fusion-v2 is intentionally audit-first. Do not feed new camera/scene axes into V8.1 selection weights until regression validation passes.",
+            "note": "Fusion-v2.1 is intentionally audit-first. Do not feed new camera/scene/body-axis fields into V8.1 selection weights until regression validation passes.",
         },
     }
 
@@ -310,12 +440,14 @@ def main() -> int:
         else run_dir / "fusion-v2" / slug
     )
     output_dir.mkdir(parents=True, exist_ok=True)
+    schema = _read_json(ANALYSIS_V2_SCHEMA)
 
     analysis_paths = sorted(model_dir.glob("*.analysis.json"))
     written = 0
     skipped = 0
     invalid = 0
     missing_dwpose = 0
+    normalized_count = 0
     index: list[dict[str, Any]] = []
 
     for analysis_path in analysis_paths:
@@ -332,6 +464,22 @@ def main() -> int:
             index.append({"image_key": key, "status": "skipped_non_v2_or_invalid_analysis"})
             continue
 
+        normalized, normalization_actions = normalize_analysis_v2(analysis)
+        schema_errors = validate_analysis(normalized, schema)
+        if schema_errors:
+            invalid += 1
+            index.append(
+                {
+                    "image_key": key,
+                    "status": "skipped_schema_invalid_after_normalization",
+                    "normalization_actions": normalization_actions,
+                    "schema_errors": schema_errors,
+                }
+            )
+            continue
+        if normalization_actions:
+            normalized_count += 1
+
         dwpose_path = dwpose_dir / f"{key}.dwpose.json"
         if not dwpose_path.exists():
             missing_dwpose += 1
@@ -339,26 +487,32 @@ def main() -> int:
             continue
 
         pose = build_pose_evidence(_read_json(dwpose_path))
-        fused = fuse_analysis_v2(analysis, pose)
+        fused = fuse_analysis_v2(normalized, pose)
         payload = {
             "image": result.get("image"),
             "model": result.get("model"),
             "analysis_path": str(analysis_path),
             "dwpose_path": str(dwpose_path),
+            "analysis_schema_valid_after_normalization": True,
+            "analysis_normalization_actions": normalization_actions,
             "fusion": fused,
         }
         _write_json(out_path, payload)
         written += 1
-        index.append({
-            "image_key": key,
-            "status": "written",
-            "fusion_warnings": fused.get("fusion_warnings") or [],
-            "camera": fused.get("camera_audit"),
-            "scene": fused.get("scene_audit"),
-        })
+        index.append(
+            {
+                "image_key": key,
+                "status": "written",
+                "normalization_actions": normalization_actions,
+                "fusion_warnings": fused.get("fusion_warnings") or [],
+                "camera": fused.get("camera_audit"),
+                "body_axis": fused.get("projected_body_axis_audit"),
+                "scene": fused.get("scene_audit"),
+            }
+        )
 
     summary = {
-        "schema_version": "analysis-fusion-2.0-run",
+        "schema_version": "analysis-fusion-2.1-run",
         "run_dir": str(run_dir),
         "analysis_model": model_id,
         "analysis_model_slug": slug,
@@ -366,6 +520,7 @@ def main() -> int:
         "output_dir": str(output_dir),
         "written": written,
         "skipped_existing": skipped,
+        "normalized_records": normalized_count,
         "invalid_or_non_v2_analysis": invalid,
         "missing_dwpose": missing_dwpose,
         "records": index,
@@ -373,7 +528,10 @@ def main() -> int:
     _write_json(output_dir / "fusion_v2.index.json", summary)
 
     print(f"Fusion-v2 output: {output_dir}")
-    print(f"Written: {written}; reused: {skipped}; invalid/non-v2: {invalid}; missing DWPose: {missing_dwpose}")
+    print(
+        f"Written: {written}; reused: {skipped}; normalized: {normalized_count}; "
+        f"invalid/non-v2: {invalid}; missing DWPose: {missing_dwpose}"
+    )
     return 0
 
 
