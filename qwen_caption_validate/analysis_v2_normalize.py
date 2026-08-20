@@ -93,10 +93,14 @@ def normalize_analysis_v2(data: dict[str, Any]) -> tuple[dict[str, Any], list[di
         for index, part in enumerate(parts):
             if not isinstance(part, dict):
                 continue
+            # The schema is intentionally singular-side only. When the model emits
+            # a collective "both" for a plural part (e.g. shoulders), retain the
+            # fact in raw_response but canonicalize the structured side to unknown
+            # rather than inventing one anatomical side.
             _map_value(
                 part,
                 "anatomical_side",
-                {"both": "bilateral"},
+                {"both": "unknown"},
                 f"target_subject.visible_body_parts.{index}.anatomical_side",
                 actions,
             )
