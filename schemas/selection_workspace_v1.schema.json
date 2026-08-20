@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "selection_workspace_v1.schema.json",
+  "title": "Dataset selection workspace v1",
+  "type": "object",
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": {
+      "const": "dataset-selection-workspace-1.0"
+    },
+    "default_state": {
+      "enum": ["included", "candidate", "excluded", "superseded"],
+      "default": "included"
+    },
+    "selection_mode": {
+      "enum": ["preserve_size", "target_size", "flexible"]
+    },
+    "target_size": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "state"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "state": {
+            "enum": ["included", "candidate", "excluded", "superseded"]
+          },
+          "source_id": {"type": ["string", "null"]},
+          "derivative_id": {"type": ["string", "null"]},
+          "parent_derivative": {"type": ["string", "null"]},
+          "added_at": {"type": ["string", "null"]},
+          "reason": {"type": ["string", "null"]},
+          "overrides": {
+            "type": "object",
+            "properties": {
+              "fine_action": {"type": ["string", "null"]}
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}
