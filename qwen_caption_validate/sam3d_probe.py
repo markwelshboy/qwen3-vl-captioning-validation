@@ -318,7 +318,8 @@ def main() -> int:
 
     try:
         import torch
-        from sam_3d_body import SAM3DBodyEstimator, load_sam_3d_body_hf
+        from huggingface_hub import snapshot_download
+        from sam_3d_body import SAM3DBodyEstimator, load_sam_3d_body
         from sam_3d_body.metadata.mhr70 import mhr_names
     except ImportError as exc:
         raise SystemExit(
@@ -328,9 +329,22 @@ def main() -> int:
     if str(args.device).startswith("cuda") and not torch.cuda.is_available():
         raise SystemExit("CUDA was requested but torch.cuda.is_available() is false")
 
-    print(f"Loading SAM 3D Body: {args.model_repo} on {args.device} ...")
+    print(f"Resolving SAM 3D Body checkpoint: {args.model_repo} ...")
+    snapshot_dir = Path(snapshot_download(repo_id=args.model_repo))
+    checkpoint_path = snapshot_dir / "model.ckpt"
+    mhr_path = snapshot_dir / "assets" / "mhr_model.pt"
+    if not checkpoint_path.exists() or not mhr_path.exists():
+        raise SystemExit(
+            f"Checkpoint snapshot is missing expected files: {checkpoint_path} / {mhr_path}"
+        )
+
+    print(f"Loading SAM 3D Body on {args.device} ...")
     load_started = time.perf_counter()
-    model, model_cfg = load_sam_3d_body_hf(args.model_repo, device=args.device)
+    model, model_cfg = load_sam_3d_body(
+        checkpoint_path=str(checkpoint_path),
+        device=args.device,
+        mhr_path=str(mhr_path),
+    )
     estimator = SAM3DBodyEstimator(
         sam_3d_body_model=model,
         model_cfg=model_cfg,
@@ -397,6 +411,7 @@ def main() -> int:
             "schema_version": "sam3d-geometry-probe-0.1",
             "image": str(rel),
             "model_repo": args.model_repo,
+            "model_snapshot": str(snapshot_dir),
             "device": args.device,
             "inference_type": args.inference_type,
             "bbox": bbox_meta,
