@@ -22,7 +22,7 @@ def parse_args() -> argparse.Namespace:
         description=(
             "Fuse Analyze-v2 semantic observations with cached DWPose evidence. "
             "The stage is deliberately audit-first: it preserves raw semantic observations, "
-            "adds deterministic geometry, and downgrades unsupported ownership/action claims."
+            "adds deterministic geometry, and qualifies ownership, laterality, framing, and geometry independently."
         ),
     )
     parser.add_argument("run_dir", type=Path, help="Existing Analyze-v2 validation run directory.")
@@ -63,13 +63,29 @@ def _normalize_undirected_angle(value: Any) -> dict[str, Any]:
     }
 
 
-def _supported_hand_sides(pose: dict[str, Any]) -> set[str]:
-    return {
-        str(item.get("nearest_visible_target_wrist"))
+def _supported_hand_candidates(pose: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        item
         for item in (pose.get("hand_candidates") or [])
         if item.get("supported_by_nearby_visible_target_wrist")
         and item.get("nearest_visible_target_wrist") in {"left", "right"}
+    ]
+
+
+def _supported_hand_sides(pose: dict[str, Any]) -> set[str]:
+    return {
+        str(item.get("nearest_visible_target_wrist"))
+        for item in _supported_hand_candidates(pose)
     }
+
+
+def _strong_target_hand_support(pose: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return hand-root associations that also land on a complete target arm chain."""
+    return [
+        item
+        for item in _supported_hand_candidates(pose)
+        if bool(item.get("target_arm_chain_complete"))
+    ]
 
 
 def _mirror_sensitive(analysis: dict[str, Any]) -> bool:
@@ -83,6 +99,10 @@ def _qualify_body_parts(analysis: dict[str, Any], pose: dict[str, Any]) -> tuple
     subject = analysis.get("target_subject") or {}
     parts = subject.get("visible_body_parts") or []
     supported_sides = _supported_hand_sides(pose)
+    strong_hand_support = _strong_target_hand_support(pose)
+    strong_supported_sides = {
+        str(item.get("nearest_visible_target_wrist")) for item in strong_hand_support
+    }
     mirror_sensitive = _mirror_sensitive(analysis)
     qualified: list[dict[str, Any]] = []
     warnings: list[str] = []
@@ -95,6 +115,7 @@ def _qualify_body_parts(analysis: dict[str, Any], pose: dict[str, Any]) -> tuple
         side = str(item.get("anatomical_side") or "unknown")
         ownership = str(item.get("ownership") or "unknown")
         connectivity = str(item.get("connectivity_to_target_chain") or "unknown")
+        visibility = str(item.get("visibility") or "unknown")
         handish = _is_handish(part)
 
         selection_usable = True
@@ -105,18 +126,26 @@ def _qualify_body_parts(analysis: dict[str, Any], pose: dict[str, Any]) -> tuple
         laterality_reasons: list[str] = []
 
         if handish:
-            deterministic_support = side in supported_sides if side in {"left", "right"} else bool(supported_sides)
+            same_side_support = side in supported_sides if side in {"left", "right"} else False
+            any_support = bool(supported_sides)
+            same_side_strong = side in strong_supported_sides if side in {"left", "right"} else False
+            any_strong = bool(strong_hand_support)
             visible_chain = connectivity == "connected_visible"
             occluded_chain = connectivity == "connected_but_occluded"
             disconnected = connectivity in {"disconnected_in_crop", "unknown"}
+            isolated_finger_fragment = visibility == "fragment" and part.lower() == "fingers"
 
             if ownership == "target":
                 if visible_chain:
                     reasons.append("Analyze-v2 reports a visible target limb chain")
-                elif occluded_chain and deterministic_support:
+                elif occluded_chain and (same_side_support or (side not in {"left", "right"} and any_support)):
                     reasons.append("short semantic occlusion gap is supported by DWPose hand-root/wrist association")
-                elif deterministic_support:
+                elif same_side_support or (side not in {"left", "right"} and any_support):
                     reasons.append("DWPose hand root is near a visible target wrist")
+                elif any_strong and isolated_finger_fragment:
+                    reasons.append(
+                        "target ownership is supported by a hand-root association to a complete target arm chain; anatomical side remains unresolved"
+                    )
                 else:
                     qualified_ownership = "unknown"
                     selection_usable = False
@@ -134,13 +163,18 @@ def _qualify_body_parts(analysis: dict[str, Any], pose: dict[str, Any]) -> tuple
                     qualified_ownership = "unknown"
                 reasons.append("body-part fragment is disconnected or unresolved in the visible crop")
 
-            if str(item.get("visibility") or "") == "fragment" and part.lower() == "fingers":
-                selection_usable = False
-                reasons.append("isolated finger fragment cannot establish an unseen hand/arm chain")
+            if isolated_finger_fragment:
+                if qualified_ownership == "target" and any_strong and not disconnected:
+                    selection_usable = True
+                    reasons.append(
+                        "isolated fingers do not establish the chain by themselves, but deterministic hand-root evidence supports target ownership/action"
+                    )
+                else:
+                    selection_usable = False
+                    reasons.append("isolated finger fragment cannot establish an unseen hand/arm chain")
 
-            # DWPose laterality is useful only as a conflict detector on direct
-            # images. Mirror selfies reverse the depicted body and make detector
-            # left/right unsuitable for validating true anatomical laterality.
+            # Laterality is deliberately independent of target ownership/action.
+            # DWPose side is used as a conflict detector on direct images only.
             if side in {"left", "right"}:
                 if mirror_sensitive:
                     laterality_selection_usable = False
@@ -154,7 +188,9 @@ def _qualify_body_parts(analysis: dict[str, Any], pose: dict[str, Any]) -> tuple
                     warnings.append(
                         f"body part {index} ({part}) anatomical side conflicts with DWPose hand-root/wrist association; laterality downgraded"
                     )
-                elif side in supported_sides:
+                elif same_side_strong:
+                    laterality_reasons.append("Analyze-v2 side agrees with DWPose hand-root/wrist association on a complete target arm chain")
+                elif same_side_support:
                     laterality_reasons.append("Analyze-v2 side agrees with DWPose hand-root/wrist association")
             else:
                 laterality_selection_usable = False
@@ -172,6 +208,17 @@ def _qualify_body_parts(analysis: dict[str, Any], pose: dict[str, Any]) -> tuple
     return qualified, warnings
 
 
+def _actor_side(actor: str) -> str:
+    text = actor.lower()
+    has_left = bool(re.search(r"\bleft\b", text))
+    has_right = bool(re.search(r"\bright\b", text))
+    if has_left and not has_right:
+        return "left"
+    if has_right and not has_left:
+        return "right"
+    return "unknown"
+
+
 def _qualify_interactions(
     analysis: dict[str, Any],
     qualified_parts: list[dict[str, Any]],
@@ -181,10 +228,6 @@ def _qualify_interactions(
     warnings: list[str] = []
     out: list[dict[str, Any]] = []
 
-    # Until body-part IDs are mandatory, a hand interaction may use any compatible
-    # qualified target handish observation as supporting context. Laterality is
-    # intentionally separate: a holding/contact action may remain valid while the
-    # claimed anatomical side is downgraded to unknown.
     qualified_target_handish = [
         part for part in qualified_parts
         if _is_handish(part.get("part"))
@@ -201,7 +244,11 @@ def _qualify_interactions(
         evidence_status = str(item.get("evidence_status") or "unknown")
         selection_usable = evidence_status == "observed"
         qualified_actor_ownership = actor_ownership
+        actor_side = _actor_side(actor)
+        qualified_actor_side = actor_side
+        laterality_selection_usable = actor_side in {"left", "right"}
         reasons: list[str] = []
+        laterality_reasons: list[str] = []
 
         if evidence_status != "observed":
             selection_usable = False
@@ -215,14 +262,38 @@ def _qualify_interactions(
                 warnings.append(
                     f"interaction {index} ({item.get('type')}) target hand ownership downgraded because no qualified hand/arm chain supports it"
                 )
+            elif actor_ownership == "target":
+                reasons.append("target hand/finger interaction is supported by at least one qualified target-owned handish observation")
             elif actor_ownership == "unknown":
                 selection_usable = False
                 reasons.append("actor ownership is unresolved")
 
+            if actor_side in {"left", "right"}:
+                side_matches = [
+                    part for part in qualified_target_handish
+                    if str(part.get("anatomical_side") or "unknown") == actor_side
+                ]
+                if side_matches and any(
+                    bool((part.get("fusion_v2") or {}).get("laterality_selection_usable"))
+                    for part in side_matches
+                ):
+                    laterality_reasons.append("interaction side agrees with a qualified target body-part observation")
+                else:
+                    qualified_actor_side = "unknown"
+                    laterality_selection_usable = False
+                    laterality_reasons.append(
+                        "interaction action/ownership may remain valid, but anatomical side is not independently qualified"
+                    )
+            else:
+                laterality_selection_usable = False
+
         item["fusion_v2"] = {
             "qualified_actor_ownership": qualified_actor_ownership,
+            "qualified_actor_anatomical_side": qualified_actor_side,
             "selection_usable": selection_usable,
+            "laterality_selection_usable": laterality_selection_usable,
             "reasons": reasons,
+            "laterality_reasons": laterality_reasons,
         }
         out.append(item)
     return out, warnings
@@ -231,6 +302,7 @@ def _qualify_interactions(
 _WEAK_EYE_LEVEL_PATTERNS = (
     re.compile(r"eyes?.*(same|approximately same|aligned).*(height|level).*(camera|lens)", re.I),
     re.compile(r"(camera|lens).*(same|approximately same|aligned).*(height|level).*eyes?", re.I),
+    re.compile(r"eyes?.*(same|approximately same|aligned).*(vertical level|plane)", re.I),
     re.compile(r"symmetri(c|cal).*fram", re.I),
     re.compile(r"selfie perspective", re.I),
     re.compile(r"head level to camera", re.I),
@@ -262,8 +334,6 @@ def _camera_evidence_strength(elevation: str, evidence: list[str]) -> tuple[list
         if elevation == "eye_level" and any(token in low for token in ("horizon", "vanishing", "level ground plane")):
             credible.append(text)
             continue
-        # Keep other explicitly geometric statements visible but do not let them
-        # establish authority by themselves.
         weak.append(text)
     return credible, weak
 
@@ -328,6 +398,74 @@ def _scene_audit(analysis: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _visible_semantic_parts(analysis: dict[str, Any]) -> set[str]:
+    parts = ((analysis.get("target_subject") or {}).get("visible_body_parts") or [])
+    out: set[str] = set()
+    for item in parts:
+        if not isinstance(item, dict):
+            continue
+        part = str(item.get("part") or "").strip().lower()
+        if part:
+            out.add(part)
+        for subpart in item.get("visible_subparts") or []:
+            text = str(subpart).strip().lower()
+            if text:
+                out.add(text)
+    return out
+
+
+def _framing_audit(analysis: dict[str, Any], deterministic_geometry: dict[str, Any]) -> dict[str, Any]:
+    framing = analysis.get("framing") or {}
+    semantic_scale = str(framing.get("shot_scale") or "unknown")
+    pose_extent = str(deterministic_geometry.get("pose_extent_hint") or "unknown")
+    connectivity = deterministic_geometry.get("connectivity") or {}
+    semantic_parts = _visible_semantic_parts(analysis)
+
+    complete_legs = sum(
+        bool((connectivity.get(name) or {}).get("complete"))
+        for name in ("left_leg", "right_leg")
+    )
+    feet_reported = any(
+        token == "foot" or "shoe" in token or "ankle" in token
+        for token in semantic_parts
+    )
+
+    qualified_scale = semantic_scale
+    override = False
+    conflict = False
+    reasons: list[str] = []
+
+    full_length_measurement = pose_extent == "full_length" and complete_legs >= 1
+    full_length_semantics = feet_reported
+    if full_length_measurement and full_length_semantics and semantic_scale != "full_length":
+        qualified_scale = "full_length"
+        override = True
+        conflict = True
+        reasons.append(
+            "DWPose reports full-length extent with a complete leg chain and Analyze-v2 reports visible foot/ankle/shoe evidence"
+        )
+        reasons.append(
+            f"semantic shot_scale={semantic_scale} is internally inconsistent with visible distal-leg/foot evidence"
+        )
+    elif pose_extent == "full_length" and semantic_scale != "full_length":
+        reasons.append(
+            "DWPose reports full-length extent, but semantic distal-leg/foot evidence is insufficient for deterministic override"
+        )
+
+    return {
+        "semantic_framing": framing,
+        "deterministic_pose_extent_hint": pose_extent,
+        "complete_leg_chains": complete_legs,
+        "semantic_distal_leg_or_foot_evidence": feet_reported,
+        "qualified_shot_scale": qualified_scale,
+        "override_applied": override,
+        "conflict": conflict,
+        "selection_usable": override,
+        "authority": "deterministic_full_length_reconciliation_only",
+        "reasons": reasons,
+    }
+
+
 def _projected_body_axis_audit(analysis: dict[str, Any], deterministic_geometry: dict[str, Any]) -> dict[str, Any]:
     orientation = ((analysis.get("target_subject") or {}).get("orientation") or {})
     semantic = orientation.get("image_plane_body_axis") or {}
@@ -341,28 +479,36 @@ def _projected_body_axis_audit(analysis: dict[str, Any], deterministic_geometry:
     shoulder_abs = shoulder.get("abs_deg")
 
     conflict = False
+    review_required = False
+    projected_signal = "none"
     reasons: list[str] = []
+
     if torso_axis.get("status") == "usable" and torso_abs is not None and float(torso_abs) >= 15.0:
+        projected_signal = "strong_torso_axis_cant"
+        review_required = True
         if semantic_direction == "upright" and semantic_magnitude in {"none", "slight"} and semantic_confidence >= 0.75:
             conflict = True
             reasons.append(
                 "semantic image-plane body axis is upright while DWPose projected torso axis exceeds 15 degrees"
             )
-    if (
-        torso_axis.get("status") != "usable"
-        and shoulder.get("status") == "usable"
-        and shoulder_abs is not None
-        and float(shoulder_abs) >= 15.0
-    ):
+    elif shoulder.get("status") == "usable" and shoulder_abs is not None and float(shoulder_abs) >= 15.0:
+        projected_signal = "strong_shoulder_cant_only"
+        review_required = True
         reasons.append(
-            "torso-axis keypoints are unavailable, but DWPose reports strong projected shoulder-line cant"
+            "DWPose reports strong projected shoulder-line cant; this is not sufficient to infer torso yaw or recline"
         )
+        if semantic_direction == "upright" and semantic_magnitude in {"none", "slight"} and semantic_confidence >= 0.75:
+            reasons.append(
+                "semantic body-axis description is very neutral despite strong projected shoulder asymmetry; manual/3-D review is warranted"
+            )
 
     return {
         "semantic": semantic,
         "deterministic_torso_axis_from_vertical": torso_axis,
         "deterministic_shoulder_line": shoulder,
+        "projected_signal": projected_signal,
         "conflict": conflict,
+        "review_required": review_required,
         "selection_usable": False,
         "authority": "report_only_projected_2d_geometry",
         "reasons": reasons,
@@ -385,8 +531,14 @@ def fuse_analysis_v2(analysis: dict[str, Any], pose: dict[str, Any]) -> dict[str
 
     warnings = part_warnings + interaction_warnings
     body_axis_audit = _projected_body_axis_audit(analysis, deterministic_geometry)
+    framing_audit = _framing_audit(analysis, deterministic_geometry)
     if body_axis_audit.get("conflict"):
         warnings.append("semantic image-plane body axis conflicts with deterministic projected torso-axis evidence")
+    elif body_axis_audit.get("review_required"):
+        warnings.append("projected 2-D body geometry is strong enough to warrant review but cannot establish 3-D torso orientation")
+    if framing_audit.get("override_applied"):
+        warnings.append("semantic framing was reconciled to full_length using DWPose extent plus distal-leg/foot evidence")
+
     torso_axis = deterministic_geometry["torso_axis_from_vertical"]
     if torso_axis.get("status") == "usable" and float(torso_axis.get("abs_deg") or 0.0) >= 15.0:
         warnings.append(
@@ -394,10 +546,10 @@ def fuse_analysis_v2(analysis: dict[str, Any], pose: dict[str, Any]) -> dict[str
         )
 
     return {
-        "schema_version": "analysis-fusion-2.1",
+        "schema_version": "analysis-fusion-2.2",
         "analysis_schema_version": analysis.get("schema_version"),
-        "image_summary": analysis.get("image_summary"),
-        "framing": analysis.get("framing") or {},
+        "report_only_image_summary": analysis.get("image_summary"),
+        "framing_audit": framing_audit,
         "camera_audit": _camera_audit(analysis),
         "orientation_semantics": ((analysis.get("target_subject") or {}).get("orientation") or {}),
         "projected_body_axis_audit": body_axis_audit,
@@ -410,13 +562,23 @@ def fuse_analysis_v2(analysis: dict[str, Any], pose: dict[str, Any]) -> dict[str
         "nuisance_regions": analysis.get("nuisance_regions") or [],
         "uncertainties": analysis.get("uncertainties") or [],
         "fusion_warnings": warnings,
+        "caption_authority": {
+            "image_summary": "report_only_not_caption_authoritative",
+            "qualified_body_parts": "authoritative_subject_to_per_item_selection_usable",
+            "qualified_interactions": "authoritative_subject_to_action_and_laterality_flags",
+            "framing": "use framing_audit.qualified_shot_scale when override_applied, otherwise semantic framing",
+            "camera": "report_only",
+            "projected_body_axis": "report_only",
+            "scene_structural_specular": "report_only",
+        },
         "selection_policy": {
             "camera_axes": "report_only",
             "scene_structural_specular_axes": "report_only",
             "unsupported_hand_ownership": "not_selection_authoritative",
-            "hand_laterality_conflicts": "laterality_not_selection_authoritative",
+            "hand_laterality_conflicts": "laterality_not_selection_authoritative_but_action_may_survive",
+            "deterministic_full_length_framing": "qualified_reconciliation_available",
             "deterministic_image_plane_geometry": "auditable_secondary_evidence",
-            "note": "Fusion-v2.1 is intentionally audit-first. Do not feed new camera/scene/body-axis fields into V8.1 selection weights until regression validation passes.",
+            "note": "Fusion-v2.2 remains audit-first. V8.1 weights are unchanged; new axes must pass regression validation before portfolio integration.",
         },
     }
 
@@ -506,13 +668,14 @@ def main() -> int:
                 "normalization_actions": normalization_actions,
                 "fusion_warnings": fused.get("fusion_warnings") or [],
                 "camera": fused.get("camera_audit"),
+                "framing": fused.get("framing_audit"),
                 "body_axis": fused.get("projected_body_axis_audit"),
                 "scene": fused.get("scene_audit"),
             }
         )
 
     summary = {
-        "schema_version": "analysis-fusion-2.1-run",
+        "schema_version": "analysis-fusion-2.2-run",
         "run_dir": str(run_dir),
         "analysis_model": model_id,
         "analysis_model_slug": slug,
