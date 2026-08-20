@@ -53,7 +53,31 @@ def _clipped_bbox(person: np.ndarray) -> dict[str, float] | None:
     }
 
 
-def _hand_candidates(raw_pose: dict[str, Any], target: np.ndarray | None) -> list[dict[str, Any]]:
+def _nearest_wrist(point: np.ndarray, wrists: dict[str, np.ndarray]) -> tuple[str | None, float | None]:
+    nearest_side: str | None = None
+    nearest_distance: float | None = None
+    for side, wrist in wrists.items():
+        distance = float(np.linalg.norm(point - wrist))
+        if nearest_distance is None or distance < nearest_distance:
+            nearest_side = side
+            nearest_distance = distance
+    return nearest_side, nearest_distance
+
+
+def _hand_candidates(
+    raw_pose: dict[str, Any],
+    target: np.ndarray | None,
+    connectivity: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Build conservative hand-to-target association evidence.
+
+    easy-dwpose/wholebody hand keypoint 0 is the hand root/wrist-side landmark.
+    Earlier versions used the centroid of all visible hand keypoints, which moves
+    substantially with finger extension and can make a correctly connected hand
+    look far from its body wrist. Association is now based only on the hand root.
+    The centroid and nearest-any-keypoint distances remain diagnostics, but cannot
+    establish target ownership on their own.
+    """
     hands_raw = raw_pose.get("hands")
     scores_raw = raw_pose.get("hands_scores")
     if hands_raw is None or scores_raw is None:
@@ -86,13 +110,30 @@ def _hand_candidates(raw_pose: dict[str, Any], target: np.ndarray | None) -> lis
         visible_pts = pts[mask]
         visible_conf = conf[mask]
         centroid = visible_pts.mean(axis=0)
-        nearest_side = None
-        nearest_distance = None
-        for side, wrist in wrists.items():
-            distance = float(np.linalg.norm(centroid - wrist))
-            if nearest_distance is None or distance < nearest_distance:
-                nearest_side = side
-                nearest_distance = distance
+
+        root_valid = bool(
+            n > 0
+            and np.isfinite(conf[0])
+            and conf[0] >= 0.30
+            and np.isfinite(pts[0]).all()
+        )
+        root = pts[0] if root_valid else None
+        root_side: str | None = None
+        root_distance: float | None = None
+        if root is not None and wrists:
+            root_side, root_distance = _nearest_wrist(root, wrists)
+
+        nearest_any_side: str | None = None
+        nearest_any_distance: float | None = None
+        if wrists:
+            for point in visible_pts:
+                side, distance = _nearest_wrist(point, wrists)
+                if distance is not None and (nearest_any_distance is None or distance < nearest_any_distance):
+                    nearest_any_side = side
+                    nearest_any_distance = distance
+
+        chain = connectivity.get(f"{root_side}_arm") or {} if root_side else {}
+        root_supported = bool(root_distance is not None and root_distance <= 0.10)
 
         out.append(
             {
@@ -101,13 +142,21 @@ def _hand_candidates(raw_pose: dict[str, Any], target: np.ndarray | None) -> lis
                 "mean_confidence": round(float(visible_conf.mean()), 4),
                 "max_confidence": round(float(visible_conf.max()), 4),
                 "centroid_xy": [round(float(centroid[0]), 5), round(float(centroid[1]), 5)],
-                "nearest_visible_target_wrist": nearest_side,
-                "distance_to_nearest_visible_target_wrist": round(nearest_distance, 5)
-                if nearest_distance is not None
+                "hand_root_xy": [round(float(root[0]), 5), round(float(root[1]), 5)] if root is not None else None,
+                "hand_root_confidence": round(float(conf[0]), 4) if root is not None else None,
+                "nearest_visible_target_wrist": root_side,
+                "distance_to_nearest_visible_target_wrist": round(root_distance, 5)
+                if root_distance is not None
                 else None,
-                "supported_by_nearby_visible_target_wrist": bool(
-                    nearest_distance is not None and nearest_distance <= 0.10
-                ),
+                "association_basis": "hand_root" if root is not None else "hand_root_unavailable",
+                "supported_by_nearby_visible_target_wrist": root_supported,
+                "target_arm_chain_visible_count": int(chain.get("visible_count") or 0) if root_side else None,
+                "target_arm_chain_complete": bool(chain.get("complete")) if root_side else None,
+                "nearest_any_hand_keypoint_target_wrist": nearest_any_side,
+                "distance_from_nearest_any_hand_keypoint_to_target_wrist": round(nearest_any_distance, 5)
+                if nearest_any_distance is not None
+                else None,
+                "centroid_is_diagnostic_only": True,
             }
         )
     return out
@@ -155,7 +204,7 @@ def build_pose_evidence(dwpose_record: dict[str, Any]) -> dict[str, Any]:
             small_secondary_people += 1
 
     return {
-        "schema_version": "dwpose-caption-evidence-1.0",
+        "schema_version": "dwpose-caption-evidence-1.1",
         "person_evidence": {
             "detected_person_count": int(derived.get("person_count") or 0),
             "significant_secondary_people": significant_people,
@@ -172,11 +221,12 @@ def build_pose_evidence(dwpose_record: dict[str, Any]) -> dict[str, Any]:
             "predicted_wrists_xy": wrists,
             "connectivity": connectivity,
         },
-        "hand_candidates": _hand_candidates(raw_pose, target),
+        "hand_candidates": _hand_candidates(raw_pose, target, connectivity),
         "interpretation_rules": [
             "Use DWPose as strong secondary evidence for projected 2D geometry, visible-joint extent, and limb-chain consistency.",
             "DWPose does not independently establish front-vs-back torso orientation or metric depth.",
             "DWPose anatomical left/right labels are predictions and can be wrong in ambiguous or rear-facing poses.",
+            "Hand-to-target wrist association uses the detected hand root, not hand centroid; centroid distance is diagnostic only.",
             "A hand candidate without a nearby visible target wrist is evidence against confidently assigning that hand to a visible target arm, not proof that it belongs to another person.",
             "Do not mention numeric angles, DWPose, keypoints, or detector confidence in the final caption; translate only useful supported geometry into natural language.",
         ],
