@@ -28,15 +28,14 @@ def _map_value(
 
 
 def normalize_analysis_v2(data: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Canonicalize only unambiguous Analyze-v2 vocabulary aliases.
+    """Canonicalize only unambiguous Analyze-v2/v2.1 vocabulary aliases.
 
     Raw model text remains preserved by the runner in ``raw_response``. This
-    function deliberately does not change geometry, confidence, ownership, or
-    any other semantic judgement. It only maps obvious lexical aliases onto the
-    schema vocabulary so ``camera`` vs ``camera_lens`` does not turn otherwise
-    usable structured evidence into a schema failure.
+    function deliberately does not change geometry, visibility, confidence,
+    ownership, or any other semantic judgement. It only maps obvious lexical
+    aliases onto the schema vocabulary.
     """
-    if not isinstance(data, dict) or data.get("schema_version") != "2.0":
+    if not isinstance(data, dict) or data.get("schema_version") not in {"2.0", "2.1"}:
         return data, []
 
     out = deepcopy(data)
@@ -93,10 +92,6 @@ def normalize_analysis_v2(data: dict[str, Any]) -> tuple[dict[str, Any], list[di
         for index, part in enumerate(parts):
             if not isinstance(part, dict):
                 continue
-            # The schema is intentionally singular-side only. When the model emits
-            # a collective "both" for a plural part (e.g. shoulders), retain the
-            # fact in raw_response but canonicalize the structured side to unknown
-            # rather than inventing one anatomical side.
             _map_value(
                 part,
                 "anatomical_side",
