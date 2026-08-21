@@ -28,6 +28,15 @@ _HUMAN_DESCRIPTOR_RE = re.compile(
     re.IGNORECASE,
 )
 _TATTOO_RE = re.compile(r"\btattoo(?:s|ed)?\b", re.IGNORECASE)
+# A non-human object may be located relative to the target (for example,
+# "poster partially visible behind subject's head"). Strip those explicit
+# target-self references before checking whether the entity itself is human-like.
+# This preserves real depiction terms such as "portrait", "figure", "silhouette",
+# or "woman" while preventing relational prose from promoting generic media.
+_TARGET_SELF_REFERENCE_RE = re.compile(
+    r"\b(?:target(?:\s+subject)?|subject)(?:['’]s)?\s+(?:face|faces|head|heads|body|bodies)\b",
+    re.IGNORECASE,
+)
 _DESCRIPTOR_FIELDS = ("description", "name", "label", "type", "notes")
 
 
@@ -116,11 +125,14 @@ def _may_describe_competing_human(item: Any) -> bool:
     mention the target's hand/arm without being a person. Human-form tattoos are
     also excluded from bbox-provenance review: they are useful embedded depictions
     for caption auditing but not plausible competing DWPose/SAM3D body targets at
-    the scales exercised by this pipeline.
+    the scales exercised by this pipeline. Explicit references to the target's own
+    face/head/body inside an object's location description are stripped before the
+    human-content test so "poster behind subject's head" remains generic media.
     """
     text = _descriptor_text(item)
     if _TATTOO_RE.search(text):
         return False
+    text = _TARGET_SELF_REFERENCE_RE.sub("", text)
     return bool(_HUMAN_DESCRIPTOR_RE.search(text))
 
 
