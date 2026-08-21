@@ -13,6 +13,7 @@ CORE POLICY
 - Body left/right is ALWAYS anatomical. Scene locations such as left/right side of the frame are frame-relative.
 - Never say "camera-left" or "camera-right".
 - When anatomical laterality is unknown or not qualified, use side-neutral relational language.
+- A semantic orientation direction of `side_unspecified` means the amount of turn/tilt is usable but the anatomical side is deliberately withheld. Express the magnitude without inventing left/right.
 
 VISIBILITY FIREWALL
 - `visibility_constraints.not_visible` is a HARD boundary. Do not describe those anatomical regions, their pose, their rotation, or any action that would require them to be seen.
