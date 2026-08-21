@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from tqdm import tqdm
 
 from .analysis_v2_normalize import normalize_analysis_v2
 from .caption_evidence import build_caption_evidence
+from .caption_lint import lint_caption
 from .pose_evidence import build_pose_evidence
 from .runner import (
     generate_text,
@@ -76,6 +78,13 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         help="Only process result keys containing any supplied string, e.g. 00015 00012.",
     )
+    parser.add_argument(
+        "--run-label",
+        help=(
+            "Label used to isolate outputs for precision/quantization comparisons. "
+            "Default: <backend>-<quantization>-<dtype>."
+        ),
+    )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--max-caption-tokens", type=int, default=450)
     parser.add_argument("--backend", choices=["auto", "transformers", "vllm"], default="auto")
@@ -86,6 +95,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vllm-gpu-memory-utilization", type=float, default=0.80)
     parser.add_argument("--vllm-max-model-len", type=int, default=8192)
     return parser.parse_args()
+
+
+def _safe_label(value: str) -> str:
+    text = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
+    return text.strip("-._") or "default"
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -150,6 +164,7 @@ def _caption_cell(title: str, caption: str | None, metadata: dict[str, Any] | No
     text = html.escape(caption or "")
     words = (metadata or {}).get("word_count")
     seconds = (metadata or {}).get("compose_seconds")
+    lint = (metadata or {}).get("caption_lint") or {}
     stats: list[str] = []
     if words is not None:
         stats.append(f"{words} words")
@@ -158,9 +173,17 @@ def _caption_cell(title: str, caption: str | None, metadata: dict[str, Any] | No
             stats.append(f"{float(seconds):.2f}s")
         except (TypeError, ValueError):
             pass
+    badge = ""
+    if lint:
+        if lint.get("violation_count"):
+            badge = '<span class="badge fail">LINT FAIL</span>'
+        elif lint.get("warning_count"):
+            badge = '<span class="badge warn">LINT WARN</span>'
+        else:
+            badge = '<span class="badge pass">LINT PASS</span>'
     stat_text = " · ".join(stats)
     return (
-        f'<div class="captionbox"><h3>{html.escape(title)}</h3>'
+        f'<div class="captionbox"><h3>{html.escape(title)} {badge}</h3>'
         f'<p>{text or "<em>missing</em>"}</p>'
         f'<div class="stats">{html.escape(stat_text)}</div></div>'
     )
@@ -170,9 +193,10 @@ def _build_html(
     run_dir: Path,
     analysis_slug: str,
     compose_slug: str,
+    run_label: str,
     records: list[dict[str, Any]],
 ) -> Path:
-    out = run_dir / f"compose_fusion_compare_{analysis_slug}__compose__{compose_slug}.html"
+    out = run_dir / f"compose_fusion_compare_{analysis_slug}__compose__{compose_slug}__{run_label}.html"
     cards: list[str] = []
     for record in records:
         image_src = html.escape(record.get("report_image") or "")
@@ -184,6 +208,7 @@ def _build_html(
         metadata = record.get("metadata") or {}
         safe_json = html.escape(json.dumps(record.get("caption_evidence") or {}, indent=2, ensure_ascii=False))
         audit_json = html.escape(json.dumps(record.get("firewall_audit") or {}, indent=2, ensure_ascii=False))
+        lint_json = html.escape(json.dumps((metadata.get("fusion-safe") or {}).get("caption_lint") or {}, indent=2, ensure_ascii=False))
         normalization = html.escape(json.dumps(record.get("normalization_actions") or [], indent=2, ensure_ascii=False))
         raw_summary = html.escape(record.get("image_summary") or "")
         cards.append(
@@ -204,6 +229,7 @@ def _build_html(
     {_caption_cell('B · Analyze + DWPose', dwpose_caption, metadata.get('dwpose'))}
     {_caption_cell('C · Fusion-safe evidence', fusion_caption, metadata.get('fusion-safe'))}
   </div>
+  <details><summary>Caption authority lint for C</summary><pre>{lint_json}</pre></details>
   <details><summary>Caption-safe evidence passed to C</summary><pre>{safe_json}</pre></details>
   <details><summary>Firewall audit — allowed / blocked evidence</summary><pre>{audit_json}</pre></details>
 </section>
@@ -222,15 +248,15 @@ h1{{margin-bottom:6px}} .lede{{color:#555;max-width:1100px}}
 .captionbox h3{{margin-top:0}} .stats{{font-size:12px;color:#666}}
 img{{width:100%;height:auto;max-height:620px;object-fit:contain;background:#111;border-radius:6px}}
 .summary{{font-weight:500}} pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f3f3;padding:12px;border-radius:6px;font-size:12px}}
-.badge{{font-size:11px;border-radius:999px;padding:3px 7px;font-weight:600;vertical-align:middle}}
-.blocked{{background:#f3d6d6;color:#762020}}
+.badge{{font-size:11px;border-radius:999px;padding:3px 7px;font-weight:700;vertical-align:middle}}
+.blocked{{background:#f3d6d6;color:#762020}} .pass{{background:#d9f0df;color:#1d6030}} .warn{{background:#fff0c9;color:#704d00}} .fail{{background:#f3d6d6;color:#762020}}
 details{{margin-top:10px}}
 @media(max-width:1050px){{.captiongrid{{grid-template-columns:1fr}}}}
 @media(max-width:850px){{.topgrid{{grid-template-columns:1fr}}}}
 </style></head><body>
 <h1>Analyze vs DWPose vs governed Fusion Compose</h1>
-<p class="lede">All three captions are text-only generations from cached evidence; the image is shown only for human review. Variant C receives only the caption-safe evidence view. Raw SAM3D reconstruction, signed depth, report-only camera/projected geometry, unqualified ownership/laterality, and the raw image summary are withheld.</p>
-<p class="lede"><strong>Analyze source:</strong> {html.escape(analysis_slug)} &nbsp; <strong>Compose model:</strong> {html.escape(compose_slug)}</p>
+<p class="lede">All captions are text-only generations from cached evidence; the image is shown only for human review. Variant C receives caption-evidence-1.1 and is checked by a deterministic post-generation authority linter. Raw SAM3D reconstruction, signed depth, free-form uncertainties, target body-part frame locations, report-only camera/projected geometry, unqualified ownership/laterality, and the raw image summary are withheld.</p>
+<p class="lede"><strong>Analyze source:</strong> {html.escape(analysis_slug)} &nbsp; <strong>Compose model:</strong> {html.escape(compose_slug)} &nbsp; <strong>Run:</strong> {html.escape(run_label)}</p>
 {''.join(cards)}
 </body></html>"""
     out.write_text(document, encoding="utf-8")
@@ -255,6 +281,8 @@ def main() -> int:
 
     compose_model_id = resolve_model_id(args.compose_model)
     compose_slug = model_slug(compose_model_id)
+    default_label = f"{args.backend}-{args.quantization}-{args.dtype}"
+    run_label = _safe_label(args.run_label or default_label)
     dwpose_dir = (args.dwpose_dir or (run_dir / "dwpose")).expanduser().resolve()
     fusion_dir = (
         args.fusion_dir.expanduser().resolve()
@@ -286,7 +314,7 @@ def main() -> int:
     if args.limit is not None:
         image_records = image_records[: args.limit]
 
-    compare_dir = run_dir / "compose_fusion_compare" / f"{analysis_slug}__compose__{compose_slug}"
+    compare_dir = run_dir / "compose_fusion_compare" / f"{analysis_slug}__compose__{compose_slug}__{run_label}"
     compare_dir.mkdir(parents=True, exist_ok=True)
 
     prepared: list[dict[str, Any]] = []
@@ -354,7 +382,7 @@ def main() -> int:
     if pending_count:
         print(
             f"Loading {compose_model_id} for text-only governed Compose comparison "
-            f"({pending_count} generation(s)) ..."
+            f"({pending_count} generation(s); run={run_label}) ..."
         )
         loaded = load_model(
             compose_model_id,
@@ -403,6 +431,10 @@ def main() -> int:
                     "subject_token": subject_token,
                     "detail": detail,
                     "image_conditioned": False,
+                    "run_label": run_label,
+                    "backend_requested": args.backend,
+                    "dtype_requested": args.dtype,
+                    "quantization_requested": args.quantization,
                     "normalization_actions": item.get("normalization_actions") or [],
                 }
                 if variant == "dwpose":
@@ -410,6 +442,7 @@ def main() -> int:
                 if variant == "fusion-safe":
                     metadata["caption_evidence"] = item["caption_evidence"]
                     metadata["firewall_audit"] = item["firewall_audit"]
+                    metadata["caption_lint"] = lint_caption(caption, item["caption_evidence"] or {})
                 _write_caption(files["txt"], files["meta"], caption, metadata)
     finally:
         if loaded is not None:
@@ -439,9 +472,13 @@ def main() -> int:
         )
 
     summary = {
-        "schema_version": "compose-fusion-compare-1.0",
+        "schema_version": "compose-fusion-compare-1.1",
         "analysis_model": analysis_model_id,
         "compose_model": compose_model_id,
+        "run_label": run_label,
+        "backend_requested": args.backend,
+        "dtype_requested": args.dtype,
+        "quantization_requested": args.quantization,
         "analysis_source": str(analysis_dir),
         "dwpose_source": str(dwpose_dir) if dwpose_dir.is_dir() else None,
         "fusion_source": str(fusion_dir) if fusion_dir.is_dir() else None,
@@ -451,9 +488,10 @@ def main() -> int:
         "image_conditioned_compose": False,
         "records": summary_records,
     }
-    summary_path = run_dir / f"compose_fusion_compare_{analysis_slug}__compose__{compose_slug}.json"
+    stem = f"compose_fusion_compare_{analysis_slug}__compose__{compose_slug}__{run_label}"
+    summary_path = run_dir / f"{stem}.json"
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    html_path = _build_html(run_dir, analysis_slug, compose_slug, summary_records)
+    html_path = _build_html(run_dir, analysis_slug, compose_slug, run_label, summary_records)
     print(f"Done. JSON:   {summary_path}")
     print(f"      Report: {html_path}")
     print(f"      Captions: {compare_dir}")
