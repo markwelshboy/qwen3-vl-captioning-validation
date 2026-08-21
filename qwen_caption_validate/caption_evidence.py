@@ -4,19 +4,26 @@ import re
 from typing import Any
 
 
-# Treat underscores/hyphens as separators for labels such as right_hand as well
-# as ordinary prose such as "right hand". Do not match substrings inside words.
+_ANATOMICAL_SIDE_RE = re.compile(
+    r"(?<![A-Za-z0-9])anatomical[\s_-]*(?:left|right)(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
 _SIDE_WORD_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:left|right)(?=$|[^A-Za-z0-9])[\s_-]*",
     re.IGNORECASE,
 )
+_PLURAL_HAND_RE = re.compile(r"\bboth\s+hands\b|\bhands\b", re.IGNORECASE)
 
 
 def _redact_laterality_text(value: Any) -> Any:
     if not isinstance(value, str):
         return value
-    text = _SIDE_WORD_RE.sub("", value)
-    return re.sub(r"\s{2,}", " ", text).strip()
+    text = _ANATOMICAL_SIDE_RE.sub("side-unspecified", value)
+    text = _SIDE_WORD_RE.sub("", text)
+    text = re.sub(r"\banatomical\b(?=\s*(?:$|[,;:.]))", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"[_-]{2,}", "-", text)
+    text = re.sub(r"\s+([,;:.])", r"\1", text)
+    return re.sub(r"\s{2,}", " ", text).strip(" _-")
 
 
 def _axis(value: Any) -> dict[str, Any] | None:
@@ -47,6 +54,31 @@ def _depth_band(value: Any) -> str | None:
     if magnitude < 50.0:
         return "high"
     return "very_high"
+
+
+def _frame_location(value: Any) -> dict[str, Any] | None:
+    if value in (None, ""):
+        return None
+    return {
+        "reference": "image_frame_only",
+        "description": str(value),
+    }
+
+
+def _compact_gaze(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    direction = str(value.get("image_direction") or "unknown")
+    direction_map = {
+        "image_left": "left_side_of_image_frame",
+        "image_center": "center_of_image_frame",
+        "image_right": "right_side_of_image_frame",
+        "unknown": "unknown",
+    }
+    return {
+        "target": value.get("target"),
+        "frame_direction": direction_map.get(direction, "unknown"),
+    }
 
 
 def _compact_body_part(item: dict[str, Any], audit: dict[str, Any]) -> dict[str, Any] | None:
@@ -88,6 +120,18 @@ def _compact_body_part(item: dict[str, Any], audit: dict[str, Any]) -> dict[str,
         contact = _redact_laterality_text(contact)
         support = _redact_laterality_text(support)
 
+    # Image-space location is deliberately withheld for target anatomy. In the
+    # first firewall experiment 4B sometimes converted frame-right into
+    # anatomical right. Target-part position is rarely worth that ambiguity.
+    if item.get("image_location"):
+        audit["blocked"].append(
+            {
+                "path": "fusion.qualified_body_parts[].image_location",
+                "reason": "target_frame_location_can_be_confused_with_anatomical_laterality",
+                "part": item.get("part"),
+            }
+        )
+
     return {
         "part": part,
         "anatomical_side": side,
@@ -99,13 +143,41 @@ def _compact_body_part(item: dict[str, Any], audit: dict[str, Any]) -> dict[str,
         "contact": contact,
         "support": support,
         "foreshortening": item.get("foreshortening"),
-        "image_location": item.get("image_location"),
         "confidence": item.get("confidence"),
         "laterality_qualified": laterality_ok,
     }
 
 
-def _compact_interaction(item: dict[str, Any], audit: dict[str, Any]) -> dict[str, Any] | None:
+def _is_explicit_hand_observation(item: dict[str, Any]) -> bool:
+    text = " ".join(
+        [str(item.get("part") or ""), *[str(v) for v in (item.get("visible_subparts") or [])]]
+    ).lower()
+    return "hand" in text or "finger" in text
+
+
+def _qualified_distinct_hand_sides(items: list[dict[str, Any]]) -> set[str]:
+    sides: set[str] = set()
+    for item in items:
+        fusion = item.get("fusion_v2") or {}
+        if not fusion.get("selection_usable"):
+            continue
+        if (fusion.get("qualified_ownership") or item.get("ownership")) != "target":
+            continue
+        if not fusion.get("laterality_selection_usable"):
+            continue
+        if not _is_explicit_hand_observation(item):
+            continue
+        side = fusion.get("qualified_anatomical_side") or item.get("anatomical_side")
+        if side in {"left", "right"}:
+            sides.add(str(side))
+    return sides
+
+
+def _compact_interaction(
+    item: dict[str, Any],
+    audit: dict[str, Any],
+    qualified_hand_sides: set[str],
+) -> dict[str, Any] | None:
     fusion = item.get("fusion_v2") or {}
     if not fusion.get("selection_usable"):
         audit["blocked"].append(
@@ -118,9 +190,24 @@ def _compact_interaction(item: dict[str, Any], audit: dict[str, Any]) -> dict[st
         )
         return None
 
+    actor_part_raw = str(item.get("actor_part") or "unknown")
+    notes_raw = str(item.get("notes") or "")
+    if _PLURAL_HAND_RE.search(actor_part_raw) or _PLURAL_HAND_RE.search(notes_raw):
+        if qualified_hand_sides != {"left", "right"}:
+            audit["blocked"].append(
+                {
+                    "path": "fusion.qualified_interactions",
+                    "reason": "plural_hand_interaction_lacks_two_distinct_qualified_hands",
+                    "type": item.get("type"),
+                    "actor_part": item.get("actor_part"),
+                    "qualified_hand_sides": sorted(qualified_hand_sides),
+                }
+            )
+            return None
+
     laterality_ok = bool(fusion.get("laterality_selection_usable"))
-    actor_part = str(item.get("actor_part") or "unknown")
-    notes = item.get("notes")
+    actor_part = actor_part_raw
+    notes: Any = item.get("notes")
     if not laterality_ok:
         actor_part = _redact_laterality_text(actor_part)
         notes = _redact_laterality_text(notes)
@@ -232,6 +319,35 @@ def _qualified_3d_geometry(sam3d_audit: dict[str, Any], audit: dict[str, Any]) -
     return out
 
 
+def _required_claims(qualified_3d: dict[str, Any]) -> list[dict[str, Any]]:
+    claims: list[dict[str, Any]] = []
+    descriptions = {
+        "shoulder_girdle_depth_rotation": "Mention the visible shoulder depth staggering/rotation in side-neutral language.",
+        "pelvis_depth_rotation": "Mention the visible pelvis/hip depth rotation in side-neutral language.",
+        "combined_torso_depth_rotation": "Mention the qualified visible torso depth rotation in side-neutral language.",
+    }
+    for name, value in qualified_3d.items():
+        if not isinstance(value, dict):
+            continue
+        band = value.get("magnitude_band")
+        if band not in {"high", "very_high"}:
+            continue
+        claims.append(
+            {
+                "id": name,
+                "priority": "required",
+                "magnitude_band": band,
+                "instruction": descriptions.get(name),
+                "constraints": [
+                    "unsigned",
+                    "do_not_name_anatomical_side_from_this_claim",
+                    "do_not_use_numeric_angle",
+                ],
+            }
+        )
+    return claims
+
+
 def _compact_nuisance_regions(items: Any) -> list[dict[str, Any]]:
     if not isinstance(items, list):
         return []
@@ -250,7 +366,7 @@ def _compact_nuisance_regions(items: Any) -> list[dict[str, Any]]:
             out.append(
                 {
                     "description": item.get("description"),
-                    "image_location": item.get("image_location"),
+                    "frame_location": _frame_location(item.get("image_location")),
                     "frame_coverage": item.get("frame_coverage"),
                 }
             )
@@ -264,14 +380,15 @@ def build_caption_evidence(
     """Project Fusion-v2.3 into a caption-safe evidence object.
 
     The returned evidence deliberately does not expose raw SAM3D reconstruction,
-    signed depth diagnostics, report-only camera claims, or body/interactions that
-    failed Fusion qualification. The second return value is an audit trail for
-    human inspection and must not be passed to the caption model as evidence.
+    signed depth diagnostics, report-only camera claims, raw uncertainty prose,
+    target-part frame locations, or body/interactions that failed qualification.
+    The second return value is an audit trail for human inspection and must not be
+    passed to the caption model as evidence.
     """
     fusion = fused_payload.get("fusion") if isinstance(fused_payload.get("fusion"), dict) else fused_payload
     fusion = fusion if isinstance(fusion, dict) else {}
     audit: dict[str, Any] = {
-        "schema_version": "caption-evidence-firewall-audit-1.0",
+        "schema_version": "caption-evidence-firewall-audit-1.1",
         "source_fusion_schema": fusion.get("schema_version"),
         "allowed": [],
         "blocked": [],
@@ -318,21 +435,26 @@ def build_caption_evidence(
             {"path": "fusion.camera_audit", "reason": "camera_axis_report_only"},
             {"path": "fusion.projected_body_axis_audit", "reason": "projected_2d_geometry_report_only"},
             {"path": "fusion.scene_audit.structural_axes", "reason": "scene_structural_axes_report_only"},
+            {"path": "fusion.uncertainties", "reason": "free_form_uncertainty_text_not_caption_authoritative"},
+            {"path": "analysis.uncertainties", "reason": "free_form_uncertainty_text_not_caption_authoritative"},
         ]
     )
 
+    raw_parts = [
+        raw for raw in (fusion.get("qualified_body_parts") or []) if isinstance(raw, dict)
+    ]
     safe_parts = [
         compact
-        for raw in (fusion.get("qualified_body_parts") or [])
-        if isinstance(raw, dict)
+        for raw in raw_parts
         for compact in [_compact_body_part(raw, audit)]
         if compact is not None
     ]
+    qualified_hand_sides = _qualified_distinct_hand_sides(raw_parts)
     safe_interactions = [
         compact
         for raw in (fusion.get("qualified_interactions") or [])
         if isinstance(raw, dict)
-        for compact in [_compact_interaction(raw, audit)]
+        for compact in [_compact_interaction(raw, audit, qualified_hand_sides)]
         if compact is not None
     ]
 
@@ -341,6 +463,7 @@ def build_caption_evidence(
     sam3d_audit = fusion.get("sam3d_geometry_audit") or {}
     visibility = _visibility_constraints(analysis, sam3d_audit)
     qualified_3d = _qualified_3d_geometry(sam3d_audit, audit)
+    required_claims = _required_claims(qualified_3d)
 
     non_target_entities: list[dict[str, Any]] = []
     for raw in fusion.get("non_target_entities") or analysis.get("non_target_entities") or []:
@@ -349,7 +472,7 @@ def build_caption_evidence(
         non_target_entities.append(
             {
                 "description": raw.get("description"),
-                "image_location": raw.get("image_location"),
+                "frame_location": _frame_location(raw.get("image_location")),
                 "geometry": raw.get("geometry"),
                 "confidence": raw.get("confidence"),
             }
@@ -362,13 +485,13 @@ def build_caption_evidence(
                 {
                     "description": raw.get("description"),
                     "type": raw.get("type"),
-                    "image_location": raw.get("image_location"),
+                    "frame_location": _frame_location(raw.get("image_location")),
                     "confidence": raw.get("confidence"),
                 }
             )
 
     evidence = {
-        "schema_version": "caption-evidence-1.0",
+        "schema_version": "caption-evidence-1.1",
         "source_fusion_schema": fusion.get("schema_version"),
         "framing": {
             "shot_scale": shot_scale,
@@ -377,12 +500,13 @@ def build_caption_evidence(
             "photographic_archetype": semantic_framing.get("photographic_archetype"),
         },
         "semantic_orientation": orientation,
-        "gaze": target.get("gaze"),
+        "gaze": _compact_gaze(target.get("gaze")),
         "expression_state": target.get("expression_state") or [],
         "visibility_constraints": visibility,
         "visible_subject_parts": safe_parts,
         "qualified_interactions": safe_interactions,
         "qualified_3d_geometry": qualified_3d,
+        "required_claims": required_claims,
         "scene": {
             "environment_type": scene.get("environment_type"),
             "environment_confidence": scene.get("environment_confidence"),
@@ -393,12 +517,16 @@ def build_caption_evidence(
         "important_nuisance_regions": _compact_nuisance_regions(
             fusion.get("nuisance_regions") or analysis.get("nuisance_regions") or []
         ),
-        "uncertainties": fusion.get("uncertainties") or analysis.get("uncertainties") or [],
         "evidence_policy": {
             "not_visible_is_hard_boundary": True,
             "sam3d_direction_is_never_exposed": True,
             "unqualified_laterality_is_redacted": True,
             "unqualified_semantic_anatomical_direction_is_redacted": True,
+            "target_body_frame_locations_are_withheld": True,
+            "remaining_frame_locations_are_explicitly_non_anatomical": True,
+            "plural_hand_interactions_require_two_distinct_qualified_hands": True,
+            "high_3d_geometry_is_promoted_to_required_claims": True,
+            "raw_uncertainties_are_withheld": True,
             "report_only_camera_and_projected_geometry_are_withheld": True,
             "raw_image_summary_is_withheld": True,
         },
@@ -412,12 +540,16 @@ def build_caption_evidence(
             "fusion.framing_audit",
             "fusion.orientation_semantics",
             "fusion.qualified_body_parts[selection_usable]",
-            "fusion.qualified_interactions[selection_usable]",
-            "analysis.target_subject.gaze",
+            "fusion.qualified_interactions[selection_usable_and_cardinality_safe]",
+            "analysis.target_subject.gaze[target+frame_direction_only]",
             "analysis.target_subject.expression_state",
             "analysis.scene.environment_type",
             "analysis.scene.illumination",
             "analysis.nuisance_regions[important]",
         ]
     )
+    if required_claims:
+        audit["notes"].append(
+            "High/very-high qualified 3-D geometry is promoted to required_claims for Compose and checked by the post-generation linter."
+        )
     return evidence, audit
