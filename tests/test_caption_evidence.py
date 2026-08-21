@@ -183,6 +183,13 @@ class CaptionEvidenceTests(unittest.TestCase):
         self.assertNotIn("right", interaction["actor_part"].lower())
         self.assertNotIn("right", str(interaction["notes"]).lower())
 
+    def test_unqualified_semantic_anatomical_direction_becomes_side_unspecified(self) -> None:
+        evidence, audit = build_caption_evidence(_fusion(), _analysis())
+        self.assertEqual(evidence["semantic_orientation"]["torso_yaw"]["direction"], "side_unspecified")
+        self.assertTrue(
+            any(item.get("reason") == "anatomical_direction_not_independently_qualified" for item in audit["blocked"])
+        )
+
     def test_projected_geometry_conflict_withholds_semantic_image_plane_axis(self) -> None:
         evidence, audit = build_caption_evidence(_fusion(projected_conflict=True), _analysis())
         self.assertNotIn("image_plane_body_axis", evidence["semantic_orientation"])
