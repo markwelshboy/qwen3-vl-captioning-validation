@@ -99,6 +99,11 @@ def _enrich_v23(base_fusion: dict[str, Any], analysis: dict[str, Any], sam3d_rec
     return fused
 
 
+def _bump(counter: dict[str, int], key: Any) -> None:
+    name = str(key or "unavailable")
+    counter[name] = counter.get(name, 0) + 1
+
+
 def main() -> int:
     args = parse_args()
     run_dir = args.run_dir.expanduser().resolve()
@@ -132,6 +137,13 @@ def main() -> int:
     normalized_count = 0
     v21_count = 0
     qualified_sam3d = 0
+    qualified_sam3d_shoulders = 0
+    qualified_sam3d_hips = 0
+    provenance_review = 0
+    shoulder_authority_counts: dict[str, int] = {}
+    hip_authority_counts: dict[str, int] = {}
+    torso_authority_counts: dict[str, int] = {}
+    torso_support_counts: dict[str, int] = {}
     index: list[dict[str, Any]] = []
 
     for analysis_path in analysis_paths:
@@ -191,9 +203,28 @@ def main() -> int:
 
         base_fused = fuse_analysis_v2(normalized, pose)
         fused = _enrich_v23(base_fused, normalized, sam3d_record)
-        sam3d_authority = (((fused.get("sam3d_geometry_audit") or {}).get("torso_depth_rotation") or {}).get("authority"))
-        if sam3d_authority == "qualified_3d_geometry":
+        sam3d = fused.get("sam3d_geometry_audit") or {}
+        shoulder = sam3d.get("shoulder_depth_rotation") or {}
+        hip = sam3d.get("hip_depth_rotation") or {}
+        torso = sam3d.get("torso_depth_rotation") or {}
+        provenance = sam3d.get("target_provenance") or {}
+
+        shoulder_authority = shoulder.get("authority")
+        hip_authority = hip.get("authority")
+        torso_authority = torso.get("authority")
+        _bump(shoulder_authority_counts, shoulder_authority)
+        _bump(hip_authority_counts, hip_authority)
+        _bump(torso_authority_counts, torso_authority)
+        _bump(torso_support_counts, torso.get("support_state"))
+
+        if shoulder_authority == "qualified_component_geometry":
+            qualified_sam3d_shoulders += 1
+        if hip_authority == "qualified_component_geometry":
+            qualified_sam3d_hips += 1
+        if torso_authority == "qualified_3d_geometry":
             qualified_sam3d += 1
+        if provenance.get("context_risk") == "requires_review":
+            provenance_review += 1
 
         payload = {
             "image": result.get("image"),
@@ -217,7 +248,7 @@ def main() -> int:
                 "camera": fused.get("camera_audit"),
                 "framing": fused.get("framing_audit"),
                 "body_axis": fused.get("projected_body_axis_audit"),
-                "sam3d": fused.get("sam3d_geometry_audit"),
+                "sam3d": sam3d,
             }
         )
 
@@ -236,7 +267,16 @@ def main() -> int:
         "invalid_or_unsupported_analysis": invalid,
         "missing_dwpose": missing_dwpose,
         "missing_sam3d": missing_sam3d,
+        "qualified_sam3d_shoulder_depth_records": qualified_sam3d_shoulders,
+        "qualified_sam3d_hip_depth_records": qualified_sam3d_hips,
         "qualified_sam3d_torso_depth_records": qualified_sam3d,
+        "sam3d_target_provenance_review_records": provenance_review,
+        "sam3d_authority_counts": {
+            "shoulder_depth_rotation": shoulder_authority_counts,
+            "hip_depth_rotation": hip_authority_counts,
+            "torso_depth_rotation": torso_authority_counts,
+            "torso_support_state": torso_support_counts,
+        },
         "records": index,
     }
     _write_json(output_dir / "fusion_v2_3.index.json", summary)
@@ -245,7 +285,8 @@ def main() -> int:
     print(
         f"Written: {written}; reused: {skipped}; v2.1: {v21_count}; normalized: {normalized_count}; "
         f"invalid: {invalid}; missing DWPose: {missing_dwpose}; missing SAM3D: {missing_sam3d}; "
-        f"qualified SAM3D torso-depth: {qualified_sam3d}"
+        f"qualified SAM3D shoulder-depth: {qualified_sam3d_shoulders}; hip-depth: {qualified_sam3d_hips}; "
+        f"torso-depth: {qualified_sam3d}; provenance review: {provenance_review}"
     )
     return 0
 
