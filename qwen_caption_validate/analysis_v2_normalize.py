@@ -86,10 +86,15 @@ def normalize_analysis_v2(data: dict[str, Any]) -> tuple[dict[str, Any], list[di
     """Canonicalize unambiguous Analyze-v2/v2.1 schema drift.
 
     Raw model text remains preserved by the runner in ``raw_response``. This
-    function does not change geometry, visibility, confidence, ownership, or any
-    other semantic judgement. It maps obvious lexical aliases and converts only
+    function does not change geometry, landmark visibility, confidence, ownership,
+    or any other semantic judgement. It maps obvious lexical aliases, converts
     schema-declared opaque text fields from accidental object/array shapes into
-    compact text so otherwise valid evidence is not discarded.
+    compact text, and removes explicitly absent items from ``visible_body_parts``.
+
+    The latter is a structural cleanup only: Analyze-v2.1 has a dedicated
+    ``geometry_landmark_visibility`` map for ``not_visible`` anatomy, while
+    ``visible_body_parts`` intentionally describes only pixels actually represented
+    in the crop. The untouched raw response remains available for audit.
     """
     if not isinstance(data, dict) or data.get("schema_version") not in {"2.0", "2.1"}:
         return data, []
@@ -145,9 +150,26 @@ def normalize_analysis_v2(data: dict[str, Any]) -> tuple[dict[str, Any], list[di
 
     parts = subject.get("visible_body_parts") or []
     if isinstance(parts, list):
+        normalized_parts: list[Any] = []
         for index, part in enumerate(parts):
             if not isinstance(part, dict):
+                normalized_parts.append(part)
                 continue
+
+            # ``not_visible`` is meaningful in geometry_landmark_visibility, but
+            # self-contradictory inside a list named visible_body_parts. Qwen
+            # occasionally emits zero-confidence absent limbs here. Preserve the
+            # raw response, record the normalization action, and omit the item from
+            # the normalized visible-only list rather than inventing a visibility.
+            if str(part.get("visibility") or "").strip().lower() == "not_visible":
+                _record(
+                    actions,
+                    f"target_subject.visible_body_parts.{index}",
+                    part,
+                    None,
+                )
+                continue
+
             _map_value(
                 part,
                 "anatomical_side",
@@ -162,5 +184,7 @@ def normalize_analysis_v2(data: dict[str, Any]) -> tuple[dict[str, Any], list[di
                     f"target_subject.visible_body_parts.{index}.{field}",
                     actions,
                 )
+            normalized_parts.append(part)
+        subject["visible_body_parts"] = normalized_parts
 
     return out, actions
