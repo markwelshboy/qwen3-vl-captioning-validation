@@ -103,6 +103,7 @@ export HF_HOME="$WORK_ROOT/huggingface"
 export HF_HUB_CACHE="$WORK_ROOT/huggingface/hub"
 export HF_XET_CACHE="$WORK_ROOT/huggingface/xet"
 export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
+export PYOPENGL_PLATFORM="${PYOPENGL_PLATFORM:-egl}"
 unset HF_HUB_ENABLE_HF_TRANSFER || true
 
 find_uv() {
@@ -141,9 +142,44 @@ echo "Torch index:       $TORCH_INDEX_URL"
 echo "Upstream repo:     $UPSTREAM_REPO"
 echo "Pinned upstream:   $UPSTREAM_REF"
 echo "Checkpoint repo:   $HF_REPO"
+echo "OpenGL platform:   $PYOPENGL_PLATFORM"
 echo
 
 df -h "$WORK_ROOT" / 2>/dev/null || true
+
+# PyOpenGL's EGL backend loads the GLVND dispatcher (libEGL.so.1), not the
+# NVIDIA vendor library directly. GPU container runtimes commonly inject
+# libEGL_nvidia.so.0 while omitting the generic dispatcher package, which makes
+# pyrender fail with "EGL: cannot open shared object file" even though the
+# NVIDIA EGL vendor library is visible in ldconfig.
+echo
+echo "Checking system EGL runtime ..."
+if ldconfig -p 2>/dev/null | grep -q 'libEGL\.so\.1'; then
+    echo "System EGL dispatcher: OK"
+else
+    echo "libEGL.so.1 is missing. Installing the GLVND EGL dispatcher (libegl1) ..."
+    if [[ "$(id -u)" -ne 0 ]]; then
+        cat >&2 <<'EOF'
+ERROR: libEGL.so.1 is required by PyOpenGL/pyrender and is not installed.
+Run as root:
+  apt-get update && apt-get install -y --no-install-recommends libegl1
+Then rerun this build script.
+EOF
+        exit 1
+    fi
+    if ! command -v apt-get >/dev/null 2>&1; then
+        echo "ERROR: apt-get is unavailable; install the system package providing libEGL.so.1." >&2
+        exit 1
+    fi
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libegl1
+    ldconfig
+    if ! ldconfig -p 2>/dev/null | grep -q 'libEGL\.so\.1'; then
+        echo "ERROR: libegl1 installed but libEGL.so.1 is still unavailable." >&2
+        exit 1
+    fi
+    echo "System EGL dispatcher: installed"
+fi
 
 if [[ ! -d "$UPSTREAM_DIR/.git" ]]; then
     echo
@@ -240,10 +276,30 @@ print("torch CUDA:", torch.version.cuda)
 print("CUDA available:", torch.cuda.is_available())
 print("sam_3d_body:", getattr(sam_3d_body, "__version__", "unknown"))
 print("upstream PYTHONPATH:", os.environ.get("PYTHONPATH"))
+print("PYOPENGL_PLATFORM:", os.environ.get("PYOPENGL_PLATFORM"))
 if not torch.cuda.is_available():
     raise SystemExit("ERROR: CUDA is not available to PyTorch.")
 print("GPU:", torch.cuda.get_device_name(0))
 print("VRAM GiB:", round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 1))
+PY
+
+echo
+echo "=== Headless EGL renderer preflight ==="
+"$PY" - <<'PY'
+import ctypes
+import os
+
+print("PYOPENGL_PLATFORM:", os.environ.get("PYOPENGL_PLATFORM"))
+ctypes.CDLL("libEGL.so.1")
+print("libEGL.so.1 load: OK")
+
+import pyrender
+from sam_3d_body.visualization.renderer import Renderer
+
+renderer = pyrender.OffscreenRenderer(viewport_width=16, viewport_height=16)
+renderer.delete()
+print("pyrender EGL context: OK")
+print("SAM3D Renderer import: OK")
 PY
 
 echo
