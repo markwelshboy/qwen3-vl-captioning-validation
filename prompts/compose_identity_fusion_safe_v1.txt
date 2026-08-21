@@ -56,7 +56,8 @@ TRAINING STYLE
 - Do not catalog every visible object.
 - Do not describe persistent identity traits merely to fill space.
 - Do not explain the evidence pipeline or why a claim is trusted.
-- Do not mention SAM3D, DWPose, Fusion, analysis, keypoints, masks, confidence, reconstruction, evidence, hidden anatomy, or inference policy.
+- Do not mention SAM3D, DWPose, Fusion, analysis, keypoints, confidence, reconstruction, evidence authority, hidden-anatomy policy, or the loss-mask/entropy-mask pipeline.
+- A face mask or other visibly worn mask is ordinary image content and may be captioned when it is actually present in the structured evidence.
 - Do not mention absent information or say that something is "not visible". Simply omit it.
 
 Length guidance:
