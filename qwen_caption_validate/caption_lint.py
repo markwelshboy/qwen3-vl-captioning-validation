@@ -10,7 +10,7 @@ _ANATOMICAL_LATERALITY_RE = re.compile(
 )
 _BOTH_HANDS_RE = re.compile(r"\bboth\s+hands\b|\bhands\b", re.IGNORECASE)
 _META_RE = re.compile(
-    r"\b(?:sam3d|dwpose|fusion|keypoints?|evidence|confidence|reconstruction|mask|hidden anatomy|not visible|inferred)\b",
+    r"\b(?:sam3d|dwpose|fusion|keypoints?|evidence|confidence|reconstruction|hidden anatomy|not visible|inferred)\b",
     re.IGNORECASE,
 )
 
