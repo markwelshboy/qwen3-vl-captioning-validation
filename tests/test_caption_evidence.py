@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import unittest
 
 from qwen_caption_validate.caption_evidence import build_caption_evidence
@@ -28,7 +29,7 @@ def _analysis() -> dict:
                 "head_pitch": {"direction": "neutral", "magnitude": "none", "confidence": 0.95},
                 "head_roll": {"direction": "neutral", "magnitude": "none", "confidence": 0.95},
             },
-            "gaze": {"target": "camera_lens", "image_direction": "image_center", "notes": None},
+            "gaze": {"target": "camera_lens", "image_direction": "image_right", "notes": "looks to the right"},
             "expression_state": ["neutral"],
             "geometry_landmark_visibility": {
                 "head": vis("visible"),
@@ -52,7 +53,7 @@ def _analysis() -> dict:
         "non_target_entities": [],
         "embedded_depictions": [],
         "nuisance_regions": [],
-        "uncertainties": [],
+        "uncertainties": ["left hand may be outside the crop"],
     }
 
 
@@ -75,11 +76,11 @@ def _fusion(*, provenance_risk: bool = False, projected_conflict: bool = False) 
                     "visibility": "full",
                     "visible_subparts": ["hand", "fingers"],
                     "connectivity_to_target_chain": "connected_visible",
-                    "geometry": "right hand raised near chest",
+                    "geometry": "right hand raised with a slight lean to anatomical_left",
                     "contact": None,
                     "support": None,
                     "foreshortening": "mild",
-                    "image_location": "lower center",
+                    "image_location": "right side of frame",
                     "confidence": 0.95,
                     "fusion_v2": {
                         "qualified_ownership": "target",
@@ -129,7 +130,7 @@ def _fusion(*, provenance_risk: bool = False, projected_conflict: bool = False) 
             "non_target_entities": [],
             "embedded_depictions": [],
             "nuisance_regions": [],
-            "uncertainties": [],
+            "uncertainties": ["both hands may be near the abdomen"],
             "sam3d_geometry_audit": {
                 "landmark_visibility": _analysis()["target_subject"]["geometry_landmark_visibility"],
                 "target_provenance": {
@@ -156,6 +157,7 @@ def _fusion(*, provenance_risk: bool = False, projected_conflict: bool = False) 
 class CaptionEvidenceTests(unittest.TestCase):
     def test_only_qualified_visible_sam3d_component_is_exposed(self) -> None:
         evidence, audit = build_caption_evidence(_fusion(), _analysis())
+        self.assertEqual(evidence["schema_version"], "caption-evidence-1.1")
         self.assertEqual(
             evidence["qualified_3d_geometry"]["shoulder_girdle_depth_rotation"]["magnitude_band"],
             "very_high",
@@ -165,9 +167,16 @@ class CaptionEvidenceTests(unittest.TestCase):
         self.assertIn("left_hip", evidence["visibility_constraints"]["not_visible"])
         self.assertTrue(any(item.get("reason") == "reconstructed_prior_only" for item in audit["blocked"]))
 
+    def test_high_qualified_3d_geometry_becomes_required_claim(self) -> None:
+        evidence, _ = build_caption_evidence(_fusion(), _analysis())
+        self.assertEqual(len(evidence["required_claims"]), 1)
+        self.assertEqual(evidence["required_claims"][0]["id"], "shoulder_girdle_depth_rotation")
+        self.assertEqual(evidence["required_claims"][0]["magnitude_band"], "very_high")
+
     def test_provenance_risk_blocks_even_qualified_sam3d_components(self) -> None:
         evidence, audit = build_caption_evidence(_fusion(provenance_risk=True), _analysis())
         self.assertEqual(evidence["qualified_3d_geometry"], {})
+        self.assertEqual(evidence["required_claims"], [])
         self.assertTrue(any(item.get("reason") == "target_provenance_requires_review" for item in audit["blocked"]))
 
     def test_unqualified_body_part_is_removed_and_laterality_is_redacted(self) -> None:
@@ -177,11 +186,32 @@ class CaptionEvidenceTests(unittest.TestCase):
         self.assertEqual(part["anatomical_side"], "unknown")
         self.assertNotIn("right", part["part"].lower())
         self.assertNotIn("right", str(part["geometry"]).lower())
+        self.assertNotIn("anatomical_left", str(part["geometry"]).lower())
+        self.assertIn("side-unspecified", str(part["geometry"]).lower())
+        self.assertNotIn("image_location", part)
 
         interaction = evidence["qualified_interactions"][0]
         self.assertEqual(interaction["actor_anatomical_side"], "unknown")
         self.assertNotIn("right", interaction["actor_part"].lower())
         self.assertNotIn("right", str(interaction["notes"]).lower())
+
+    def test_plural_hand_interaction_requires_two_distinct_qualified_hands(self) -> None:
+        fused = copy.deepcopy(_fusion())
+        fused["fusion"]["qualified_interactions"][0]["actor_part"] = "both hands"
+        fused["fusion"]["qualified_interactions"][0]["notes"] = "both hands hold the cup"
+        evidence, audit = build_caption_evidence(fused, _analysis())
+        self.assertEqual(evidence["qualified_interactions"], [])
+        self.assertTrue(
+            any(
+                item.get("reason") == "plural_hand_interaction_lacks_two_distinct_qualified_hands"
+                for item in audit["blocked"]
+            )
+        )
+
+    def test_gaze_direction_is_explicitly_frame_relative_and_notes_are_withheld(self) -> None:
+        evidence, _ = build_caption_evidence(_fusion(), _analysis())
+        self.assertEqual(evidence["gaze"]["frame_direction"], "right_side_of_image_frame")
+        self.assertNotIn("notes", evidence["gaze"])
 
     def test_unqualified_semantic_anatomical_direction_becomes_side_unspecified(self) -> None:
         evidence, audit = build_caption_evidence(_fusion(), _analysis())
@@ -197,10 +227,12 @@ class CaptionEvidenceTests(unittest.TestCase):
             any(item.get("reason") == "conflicts_with_deterministic_projected_geometry" for item in audit["blocked"])
         )
 
-    def test_raw_image_summary_is_not_exposed_to_compose(self) -> None:
+    def test_raw_summary_and_uncertainties_are_not_exposed_to_compose(self) -> None:
         evidence, audit = build_caption_evidence(_fusion(), _analysis())
         self.assertNotIn("image_summary", evidence)
+        self.assertNotIn("uncertainties", evidence)
         self.assertTrue(any(item.get("path") == "analysis.image_summary" for item in audit["blocked"]))
+        self.assertTrue(any(item.get("path") == "fusion.uncertainties" for item in audit["blocked"]))
 
 
 if __name__ == "__main__":
