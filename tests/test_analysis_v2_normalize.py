@@ -40,6 +40,61 @@ class AnalyzeV21NormalizeTests(unittest.TestCase):
         self.assertIsNone(parts[1]["support"])
         self.assertEqual(len(actions), 5)
 
+    def test_not_visible_body_part_is_removed_from_visible_only_list(self) -> None:
+        analysis = {
+            "schema_version": "2.1",
+            "target_subject": {
+                "geometry_landmark_visibility": {
+                    "left_hip": {
+                        "visibility": "not_visible",
+                        "confidence": 0.99,
+                        "evidence": "below crop",
+                    }
+                },
+                "visible_body_parts": [
+                    {
+                        "part": "left_hand",
+                        "anatomical_side": "left",
+                        "ownership": "unknown",
+                        "visibility": "not_visible",
+                        "visible_subparts": [],
+                        "connectivity_to_target_chain": "disconnected_in_crop",
+                        "geometry": None,
+                        "contact": None,
+                        "support": None,
+                        "foreshortening": "none",
+                        "image_location": "not_visible",
+                        "confidence": 0.0,
+                    },
+                    {
+                        "part": "right_hand",
+                        "anatomical_side": "right",
+                        "ownership": "target",
+                        "visibility": "partial",
+                        "visible_subparts": ["fingers"],
+                        "connectivity_to_target_chain": "connected_visible",
+                        "geometry": "partly cropped",
+                        "contact": None,
+                        "support": None,
+                        "foreshortening": "none",
+                        "image_location": "lower_right",
+                        "confidence": 0.9,
+                    },
+                ],
+            },
+        }
+
+        normalized, actions = normalize_analysis_v2(analysis)
+        parts = normalized["target_subject"]["visible_body_parts"]
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(parts[0]["part"], "right_hand")
+        self.assertEqual(
+            normalized["target_subject"]["geometry_landmark_visibility"],
+            analysis["target_subject"]["geometry_landmark_visibility"],
+        )
+        self.assertEqual(len(actions), 1)
+        self.assertIsNone(actions[0]["to"])
+
     def test_semantics_are_not_changed(self) -> None:
         analysis = {
             "schema_version": "2.1",
