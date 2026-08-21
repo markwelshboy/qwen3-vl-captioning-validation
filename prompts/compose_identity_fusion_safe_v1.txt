@@ -1,0 +1,61 @@
+You are composing a natural-language training caption for a single-identity LoRA dataset from a caption-safe evidence object.
+
+Target trigger token: {{SUBJECT_TOKEN}}
+Detail profile: {{DETAIL_PROFILE}}
+
+Return only the final caption as plain text. Do not return JSON, evidence labels, confidence scores, tool names, or commentary.
+
+CORE POLICY
+- Begin by anchoring the primary target as {{SUBJECT_TOKEN}}.
+- Describe only the simplest correct explanation of what the supplied evidence says is visible in the crop.
+- Prefer an incomplete but well-supported caption over a detailed speculative one.
+- Do not invent clothing, objects, pose, anatomy, interactions, camera angle, or surroundings that are absent from the evidence.
+- Body left/right is ALWAYS anatomical. Scene locations such as left/right side of the frame are frame-relative.
+- Never say "camera-left" or "camera-right".
+- When anatomical laterality is unknown or not qualified, use side-neutral relational language.
+
+VISIBILITY FIREWALL
+- `visibility_constraints.not_visible` is a HARD boundary. Do not describe those anatomical regions, their pose, their rotation, or any action that would require them to be seen.
+- `visibility_constraints.partial` means only the visibly supported portion may be described. Do not complete the body from a likely human pose.
+- Never infer hips, knees, ankles, limbs, hands, or other anatomy merely because a normal human body would contain them.
+- `visible_subject_parts` and `qualified_interactions` have already been filtered for usable ownership evidence. Do not restore omitted body parts or interactions.
+- If `laterality_qualified` is false or an anatomical side is `unknown`, preserve the action/geometry but omit left/right wording.
+
+QUALIFIED 3-D GEOMETRY POLICY
+- `qualified_3d_geometry` contains only image-supported geometry that passed the upstream visibility/provenance governor.
+- A `magnitude_band` describes the strength of depth staggering/rotation, not a numeric angle. Translate it into ordinary natural language; never mention degrees or measurements.
+- The 3-D geometry is UNSIGNED. It can support wording such as "the shoulders are strongly staggered in depth" or "the upper body has pronounced three-dimensional rotation", but it cannot by itself establish which anatomical side is nearer.
+- Never infer signed left/right depth direction from the 3-D evidence.
+- Do not infer hidden pelvis/leg geometry from shoulder evidence. Shoulder-girdle evidence applies only to the visible shoulder/upper-body relationship.
+
+EVIDENCE PRECEDENCE
+1. Hard visibility constraints and qualified ownership/laterality.
+2. Qualified 3-D geometry for depth magnitude only.
+3. Qualified visible body parts and interactions.
+4. Semantic orientation, gaze, expression, framing, scene, and structured nuisance/context evidence.
+5. Uncertainties should make wording less specific, not create additional facts.
+
+CAPTION CONTENT PRIORITY
+- Framing/archetype when meaningful.
+- Defining visible pose geometry and relative rotations.
+- Contact, support, foreshortening, and observed interactions.
+- Gaze and transient expression.
+- Transient appearance details only when actually present in the structured evidence.
+- Non-target entities or embedded depictions that could otherwise be confused with the target.
+- Large or confusing nuisance/background structure, compactly.
+
+TRAINING STYLE
+- Do not catalog every visible object.
+- Do not describe persistent identity traits merely to fill space.
+- Do not explain the evidence pipeline or why a claim is trusted.
+- Do not mention SAM3D, DWPose, Fusion, analysis, keypoints, masks, confidence, reconstruction, or evidence authority.
+- Do not mention absent information. Simply omit it.
+
+Length guidance:
+- concise: roughly 35-60 words
+- balanced: roughly 55-90 words
+- detailed: roughly 80-120 words
+These are targets, not hard requirements. Information density and correctness matter more than exact length.
+
+CAPTION-SAFE EVIDENCE
+{{CAPTION_EVIDENCE_JSON}}
