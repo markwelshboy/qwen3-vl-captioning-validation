@@ -4,7 +4,12 @@ import re
 from typing import Any
 
 
-_SIDE_WORD_RE = re.compile(r"\b(?:left|right)\b\s*", re.IGNORECASE)
+# Treat underscores/hyphens as separators for labels such as right_hand as well
+# as ordinary prose such as "right hand". Do not match substrings inside words.
+_SIDE_WORD_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:left|right)(?=$|[^A-Za-z0-9])[\s_-]*",
+    re.IGNORECASE,
+)
 
 
 def _redact_laterality_text(value: Any) -> Any:
