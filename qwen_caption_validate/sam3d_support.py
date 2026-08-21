@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import re
 from typing import Any
 
 
@@ -15,27 +15,20 @@ LANDMARKS = (
     "left_ankle",
     "right_ankle",
 )
-HUMAN_CONTEXT_TOKENS = (
-    "person",
-    "people",
-    "human",
-    "man",
-    "woman",
-    "boy",
-    "girl",
-    "child",
-    "face",
-    "head",
-    "hand",
-    "arm",
-    "body",
-    "portrait",
-    "photo",
-    "photograph",
-    "painting",
-    "poster",
-    "reflection",
+
+# Target-provenance review is intended to catch another actual/depicted human
+# that could plausibly have generated a competing pose bbox. It must not fire
+# merely because an object description says "held by right hand", nor because a
+# generic painting/poster exists. Match human content in the entity's own
+# descriptor fields with word boundaries rather than substrings ("arm" in
+# "warm" was a particularly entertaining blind-set false positive).
+_HUMAN_DESCRIPTOR_RE = re.compile(
+    r"\b(?:person|people|human|man|men|woman|women|boy|boys|girl|girls|child|children|"
+    r"face|faces|head|heads|body|bodies|portrait|portraits|figure|figures|silhouette|silhouettes)\b",
+    re.IGNORECASE,
 )
+_TATTOO_RE = re.compile(r"\btattoo(?:s|ed)?\b", re.IGNORECASE)
+_DESCRIPTOR_FIELDS = ("description", "name", "label", "type", "notes")
 
 
 def _visibility_map(analysis: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -103,22 +96,47 @@ def _metric(metrics: dict[str, Any], new_key: str, old_key: str | None = None) -
     return None
 
 
-def _may_describe_human_context(item: Any) -> bool:
+def _descriptor_text(item: Any) -> str:
     if isinstance(item, str):
-        text = item.lower()
-    else:
-        try:
-            text = json.dumps(item, ensure_ascii=False).lower()
-        except TypeError:
-            text = str(item).lower()
-    return any(token in text for token in HUMAN_CONTEXT_TOKENS)
+        return item
+    if not isinstance(item, dict):
+        return str(item)
+    values: list[str] = []
+    for field in _DESCRIPTOR_FIELDS:
+        value = item.get(field)
+        if value is not None:
+            values.append(str(value))
+    return " ".join(values)
+
+
+def _may_describe_competing_human(item: Any) -> bool:
+    """Return whether an entity itself describes another plausible human figure.
+
+    Contact/support prose is intentionally ignored because an ordinary object can
+    mention the target's hand/arm without being a person. Human-form tattoos are
+    also excluded from bbox-provenance review: they are useful embedded depictions
+    for caption auditing but not plausible competing DWPose/SAM3D body targets at
+    the scales exercised by this pipeline.
+    """
+    text = _descriptor_text(item)
+    if _TATTOO_RE.search(text):
+        return False
+    return bool(_HUMAN_DESCRIPTOR_RE.search(text))
 
 
 def _target_provenance_audit(analysis: dict[str, Any], sam3d_record: dict[str, Any]) -> dict[str, Any]:
     embedded = analysis.get("embedded_depictions") or []
     non_target = analysis.get("non_target_entities") or []
-    embedded_human_like = [item for item in embedded if _may_describe_human_context(item)] if isinstance(embedded, list) else []
-    non_target_human_like = [item for item in non_target if _may_describe_human_context(item)] if isinstance(non_target, list) else []
+    embedded_human_like = (
+        [item for item in embedded if _may_describe_competing_human(item)]
+        if isinstance(embedded, list)
+        else []
+    )
+    non_target_human_like = (
+        [item for item in non_target if _may_describe_competing_human(item)]
+        if isinstance(non_target, list)
+        else []
+    )
     has_context_risk = bool(embedded_human_like or non_target_human_like)
     bbox = sam3d_record.get("bbox") or {}
 
@@ -136,7 +154,7 @@ def _target_provenance_audit(analysis: dict[str, Any], sam3d_record: dict[str, A
         ),
         "note": (
             "SAM 3D Body reconstructs the supplied bbox; it does not prove that the bbox belongs to the intended identity. "
-            "Human-like embedded depictions/non-target people therefore remain an upstream target-selection concern."
+            "Only human-like embedded depictions/non-target people trigger provenance review; generic objects/media and target-body tattoos do not."
         ),
     }
 
