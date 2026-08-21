@@ -5,7 +5,7 @@ import unittest
 from qwen_caption_validate.sam3d_support import qualify_sam3d_geometry
 
 
-def _analysis(shoulders: str = "visible", hips: str = "visible", embedded: bool = False) -> dict:
+def _analysis(shoulders: str = "visible", hips: str = "visible", embedded: object | None = None, non_target: object | None = None) -> dict:
     def item(state: str, confidence: float = 0.95) -> dict:
         return {"visibility": state, "confidence": confidence, "evidence": f"synthetic {state}"}
 
@@ -24,8 +24,8 @@ def _analysis(shoulders: str = "visible", hips: str = "visible", embedded: bool 
                 "right_ankle": item("not_visible"),
             }
         },
-        "embedded_depictions": ([{"type": "framed_photo"}] if embedded else []),
-        "non_target_entities": [],
+        "embedded_depictions": ([embedded] if embedded is not None else []),
+        "non_target_entities": ([non_target] if non_target is not None else []),
     }
 
 
@@ -70,13 +70,33 @@ class Sam3DSupportTests(unittest.TestCase):
             "report_only_requires_analyze_v2_1_visibility",
         )
 
-    def test_embedded_depiction_requires_target_provenance_review(self) -> None:
-        audit = qualify_sam3d_geometry(_analysis(embedded=True), _sam3d())
+    def test_human_portrait_depiction_requires_target_provenance_review(self) -> None:
+        audit = qualify_sam3d_geometry(
+            _analysis(embedded={"type": "framed_photo", "description": "framed portrait of another man"}),
+            _sam3d(),
+        )
         self.assertEqual(
             audit["torso_depth_rotation"]["authority"],
             "qualified_geometry_pending_target_provenance",
         )
         self.assertEqual(audit["target_provenance"]["context_risk"], "requires_review")
+
+    def test_generic_media_or_object_hand_reference_does_not_trigger_provenance(self) -> None:
+        analysis = _analysis(
+            embedded={"description": "blue patterned poster or flag", "type": "poster"},
+            non_target={"description": "white ceramic mug", "contact": "held by right hand"},
+        )
+        audit = qualify_sam3d_geometry(analysis, _sam3d())
+        self.assertEqual(audit["target_provenance"]["context_risk"], "no_semantic_multi_subject_risk_detected")
+        self.assertEqual(audit["torso_depth_rotation"]["authority"], "qualified_3d_geometry")
+
+    def test_human_form_tattoo_does_not_trigger_bbox_provenance_review(self) -> None:
+        audit = qualify_sam3d_geometry(
+            _analysis(embedded={"type": "tattoo", "description": "tattoo portrait of a bearded man"}),
+            _sam3d(),
+        )
+        self.assertEqual(audit["target_provenance"]["context_risk"], "no_semantic_multi_subject_risk_detected")
+        self.assertEqual(audit["torso_depth_rotation"]["authority"], "qualified_3d_geometry")
 
 
 if __name__ == "__main__":
