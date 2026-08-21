@@ -77,11 +77,13 @@ def _compact_body_part(item: dict[str, Any], audit: dict[str, Any]) -> dict[str,
         side = "unknown"
 
     part = str(item.get("part") or "unknown")
+    visible_subparts = [str(value) for value in (item.get("visible_subparts") or [])]
     geometry = item.get("geometry")
     contact = item.get("contact")
     support = item.get("support")
     if not laterality_ok:
         part = _redact_laterality_text(part)
+        visible_subparts = [_redact_laterality_text(value) for value in visible_subparts]
         geometry = _redact_laterality_text(geometry)
         contact = _redact_laterality_text(contact)
         support = _redact_laterality_text(support)
@@ -91,7 +93,7 @@ def _compact_body_part(item: dict[str, Any], audit: dict[str, Any]) -> dict[str,
         "anatomical_side": side,
         "ownership": fusion.get("qualified_ownership") or item.get("ownership") or "unknown",
         "visibility": item.get("visibility"),
-        "visible_subparts": item.get("visible_subparts") or [],
+        "visible_subparts": visible_subparts,
         "connectivity": item.get("connectivity_to_target_chain"),
         "geometry": geometry,
         "contact": contact,
@@ -289,6 +291,14 @@ def build_caption_evidence(
     for name in ("torso_yaw", "torso_pitch", "torso_roll", "head_yaw", "head_pitch", "head_roll"):
         value = _axis(orientation_source.get(name))
         if value is not None:
+            if value.get("direction") in {"anatomical_left", "anatomical_right"}:
+                audit["blocked"].append(
+                    {
+                        "path": f"fusion.orientation_semantics.{name}.direction",
+                        "reason": "anatomical_direction_not_independently_qualified",
+                    }
+                )
+                value["direction"] = "side_unspecified"
             orientation[name] = value
     if projected_axis.get("conflict"):
         audit["blocked"].append(
@@ -388,6 +398,7 @@ def build_caption_evidence(
             "not_visible_is_hard_boundary": True,
             "sam3d_direction_is_never_exposed": True,
             "unqualified_laterality_is_redacted": True,
+            "unqualified_semantic_anatomical_direction_is_redacted": True,
             "report_only_camera_and_projected_geometry_are_withheld": True,
             "raw_image_summary_is_withheld": True,
         },
