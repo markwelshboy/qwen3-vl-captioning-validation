@@ -90,6 +90,21 @@ class Sam3DSupportTests(unittest.TestCase):
         self.assertEqual(audit["target_provenance"]["context_risk"], "no_semantic_multi_subject_risk_detected")
         self.assertEqual(audit["torso_depth_rotation"]["authority"], "qualified_3d_geometry")
 
+    def test_generic_media_located_behind_target_head_does_not_trigger_provenance(self) -> None:
+        audit = qualify_sam3d_geometry(
+            _analysis(non_target={"description": "decorative poster partially visible behind subject's head"}),
+            _sam3d(),
+        )
+        self.assertEqual(audit["target_provenance"]["context_risk"], "no_semantic_multi_subject_risk_detected")
+        self.assertEqual(audit["torso_depth_rotation"]["authority"], "qualified_3d_geometry")
+
+    def test_real_depiction_still_triggers_when_located_behind_target_head(self) -> None:
+        audit = qualify_sam3d_geometry(
+            _analysis(non_target={"description": "portrait of another woman behind subject's head"}),
+            _sam3d(),
+        )
+        self.assertEqual(audit["target_provenance"]["context_risk"], "requires_review")
+
     def test_human_form_tattoo_does_not_trigger_bbox_provenance_review(self) -> None:
         audit = qualify_sam3d_geometry(
             _analysis(embedded={"type": "tattoo", "description": "tattoo portrait of a bearded man"}),
