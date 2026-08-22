@@ -76,7 +76,6 @@ _ITEM = (
 _COLORED_ITEM_RE = re.compile(rf"\b{_COLOR}(?:\s+[A-Za-z][A-Za-z0-9'-]*){{0,1}}\s+{_ITEM}\b", re.IGNORECASE)
 _BARE_ITEM_RE = re.compile(rf"\b{_ITEM}\b", re.IGNORECASE)
 _SHIRTLESS_RE = re.compile(r"\bshirtless\b", re.IGNORECASE)
-_SUMMARY_CONTEXT_BLOCK = ("background", "environment", "setting", "surroundings", "behind him", "behind her", "behind them")
 
 
 def _fusion_root(payload: dict[str, Any]) -> dict[str, Any]:
@@ -204,17 +203,8 @@ def _extract_transient_phrases(value: Any) -> list[str]:
 
 
 def _summary_appearance_text(value: Any) -> str:
-    """Keep subject-facing summary sentences; discard obvious scene/background sentences."""
-    if not isinstance(value, str):
-        return ""
-    sentences = re.split(r"(?<=[.!?])\s+", value.strip())
-    kept: list[str] = []
-    for sentence in sentences:
-        low = sentence.lower()
-        if any(token in low for token in _SUMMARY_CONTEXT_BLOCK):
-            continue
-        kept.append(sentence)
-    return " ".join(kept)
+    """Return summary text only as input to strict transient-appearance extraction."""
+    return value if isinstance(value, str) else ""
 
 
 def _transient_appearance(
@@ -265,9 +255,11 @@ def _transient_appearance(
                     }
                 )
 
-    # Analyze-v2.1 did not have a dedicated transient-appearance object. Salvage only
-    # whitelisted clothing/accessory/temporary-hair phrases from subject-facing summary
-    # sentences. The raw summary itself is never exposed to Compose.
+    # Analyze-v2.1 did not have a dedicated transient-appearance object. Run its full
+    # summary through the strict appearance extractor so mixed sentences such as
+    # "shirtless ... in a wooded environment" do not lose the appearance fact. Only
+    # extracted whitelist phrases cross this boundary; raw summary prose never reaches
+    # Compose, so pose/camera/laterality and background wording cannot become authority.
     summary = _summary_appearance_text(analysis.get("image_summary"))
     for descriptor in _extract_transient_phrases(summary):
         add(descriptor, source="analysis.image_summary[appearance-only quarantine]")
