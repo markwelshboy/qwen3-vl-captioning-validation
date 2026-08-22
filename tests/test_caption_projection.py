@@ -250,6 +250,56 @@ class CaptionProjectionTests(unittest.TestCase):
             )
         )
 
+    def test_mixed_scene_summary_keeps_appearance_without_reclassifying_background_objects(self) -> None:
+        analysis = _analysis()
+        analysis["image_summary"] = (
+            "A shirtless person stands in a wooded outdoor environment, wearing blue shorts, white socks, "
+            "and dark shoes. A yellow bag and boxes are visible in the background."
+        )
+        analysis["scene"]["background_structure"] = {
+            "texture_complexity": "high",
+            "structural_complexity": "high",
+            "specular_reflective": "none",
+            "repeated_geometry": None,
+            "strong_lines_or_angles": "medium",
+            "reflections_present": False,
+            "notes": "dense trees, moss-covered logs, and green undergrowth",
+        }
+        fusion = _fusion()
+        fusion["fusion"]["nuisance_regions"] = [
+            {
+                "description": "yellow bag and boxes in background",
+                "image_location": "background",
+                "frame_coverage": "medium",
+                "texture_complexity": "medium",
+                "structural_complexity": "medium",
+                "specular_reflective": "none",
+                "identity_relevance": "low",
+                "pose_relevance": "low",
+                "entropy_focus_candidate": True,
+            }
+        ]
+
+        evidence, audit = build_caption_projection(fusion, analysis, caption_policy={"trigger_token": "sH1Vx"})
+        descriptors = {value.lower() for value in evidence["transient_appearance"]["descriptors"]}
+        self.assertIn("shirtless", descriptors)
+        self.assertIn("blue shorts", descriptors)
+        self.assertIn("white socks", descriptors)
+        self.assertIn("dark shoes", descriptors)
+        self.assertFalse(any("bag" in value or "box" in value for value in descriptors))
+
+        background = evidence["environment_lighting"]["scene"]["background_structure"]
+        self.assertIn("dense trees", background["notes"])
+        regions = evidence["environment_lighting"]["important_background_or_nuisance_regions"]
+        self.assertTrue(any("yellow bag" in str(item.get("description") or "") for item in regions))
+        self.assertTrue(
+            any(
+                item.get("path") == "analysis.scene.background_structure"
+                and item.get("reason") == "structured_scene_context_is_caption_safe"
+                for item in audit["projection"]["allowed"]
+            )
+        )
+
     def test_side_unspecified_internal_label_never_reaches_compose(self) -> None:
         evidence, _ = build_caption_projection(_fusion(), _analysis(), caption_policy={"trigger_token": "sH1Vx"})
         orientation = evidence["pose_orientation"]["semantic_orientation"]
