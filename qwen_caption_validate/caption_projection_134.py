@@ -21,9 +21,9 @@ _NON_SQUARE_TORSO_RE = re.compile(
 )
 _FRONTAL_TERM_RE = re.compile(r"\b(?:frontal|square[- ]on|straight[- ]on)\b", re.IGNORECASE)
 _TORSO_TERM_RE = re.compile(r"\b(?:torso|upper body|body)\b", re.IGNORECASE)
-_SUBJECT_LYING_RE = re.compile(
-    r"\b(?:BLIND7|subject|person|woman|man|she|he|they)\b[^.!?]{0,70}?\b(?:lies|lying)\b|"
-    r"\b(?:lying)\b[^.!?]{0,40}?\b(?:BLIND7|subject|person|woman|man|her|him|them)\b",
+_GENERIC_SUBJECT_LYING_RE = re.compile(
+    r"\b(?:subject|person|woman|man|she|he|they)\b[^.!?]{0,70}?\b(?:lies|lying)\b|"
+    r"\b(?:lying)\b[^.!?]{0,40}?\b(?:subject|person|woman|man|her|him|them)\b",
     re.IGNORECASE,
 )
 _SUPPORT_RE = re.compile(r"\bsupport(?:s|ed|ing)?\b", re.IGNORECASE)
@@ -82,6 +82,20 @@ def _positive_frontal_torso_claim(caption: str) -> bool:
             if re.search(r"(?:\bnot\b|\brather\s+than\b|\binstead\s+of\b|\bas\s+opposed\s+to\b)(?:\s+being)?\s*$", prefix):
                 continue
             return True
+    return False
+
+
+def _subject_lying_claim_present(caption: str, evidence: dict[str, Any]) -> bool:
+    if _GENERIC_SUBJECT_LYING_RE.search(caption):
+        return True
+    trigger = str((evidence.get("caption_policy") or {}).get("trigger_token") or "").strip()
+    if not trigger:
+        return False
+    token = re.escape(trigger)
+    if re.search(rf"(?<!\w){token}(?!\w)[^.!?]{{0,70}}?\b(?:lies|lying)\b", caption, re.IGNORECASE):
+        return True
+    if re.search(rf"\blying\b[^.!?]{{0,40}}?(?<!\w){token}(?!\w)", caption, re.IGNORECASE):
+        return True
     return False
 
 
@@ -166,7 +180,7 @@ def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
 
     for violation in result.get("violations") or []:
         if violation.get("type") == "unsupported_whole_body_posture" and violation.get("posture") == "lying":
-            if not _SUBJECT_LYING_RE.search(caption):
+            if not _subject_lying_claim_present(caption, evidence):
                 continue
         if violation.get("type") == "contradicts_signed_torso_depth":
             if not _positive_frontal_torso_claim(caption):
@@ -184,10 +198,11 @@ def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
                 "text": match.group(0),
             })
 
-    if _NON_SQUARE_TORSO_RE.search(caption) and not _torso_non_square_authorized(evidence):
+    torso_match = _NON_SQUARE_TORSO_RE.search(caption)
+    if torso_match and not _torso_non_square_authorized(evidence):
         violations.append({
             "type": "unqualified_torso_depth_relation",
-            "text": _NON_SQUARE_TORSO_RE.search(caption).group(0),
+            "text": torso_match.group(0),
         })
 
     warnings = list(result.get("warnings") or [])
