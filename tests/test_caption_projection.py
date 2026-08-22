@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 from qwen_caption_validate.caption_lint import lint_caption
@@ -12,9 +13,9 @@ def _analysis() -> dict:
 
     orientation = {
         "torso_yaw": {"direction": "anatomical_left", "magnitude": "moderate", "confidence": 0.9},
-        "torso_pitch": {"direction": "reclined", "magnitude": "strong", "confidence": 0.95},
+        "torso_pitch": {"direction": "backward", "magnitude": "moderate", "confidence": 0.9},
         "torso_roll": {"direction": "neutral", "magnitude": "none", "confidence": 0.9},
-        "image_plane_body_axis": {"direction": "near_horizontal", "magnitude": "strong", "confidence": 0.95},
+        "image_plane_body_axis": {"direction": "near-horizontal", "magnitude": "strong", "confidence": 0.95},
         "head_yaw": {"direction": "anatomical_right", "magnitude": "moderate", "confidence": 0.9},
         "head_pitch": {"direction": "neutral", "magnitude": "none", "confidence": 0.9},
         "head_roll": {"direction": "neutral", "magnitude": "none", "confidence": 0.9},
@@ -32,7 +33,10 @@ def _analysis() -> dict:
     }
     return {
         "schema_version": "2.1",
-        "image_summary": "Synthetic summary with identity traits and clothing.",
+        "image_summary": (
+            "A person with brown hair and a beard wears a purple hoodie, black pants and a headband, "
+            "with hair pulled back. Tattoos are visible on both arms."
+        ),
         "framing": {
             "shot_scale": "medium_close_up",
             "subject_extent": "head through waist",
@@ -100,8 +104,8 @@ def _fusion() -> dict:
                     "visible_subparts": ["face", "eyes", "hair", "beard", "sunglasses"],
                     "connectivity_to_target_chain": "connected_visible",
                     "geometry": "head turned moderately to anatomical_right",
-                    "contact": None,
-                    "support": None,
+                    "contact": "resting on bedspread",
+                    "support": "supported by bedspread",
                     "foreshortening": "none",
                     "image_location": "upper right",
                     "confidence": 0.95,
@@ -119,9 +123,9 @@ def _fusion() -> dict:
                     "visibility": "full",
                     "visible_subparts": ["upper chest", "black tank top"],
                     "connectivity_to_target_chain": "connected_visible",
-                    "geometry": "reclined on back",
-                    "contact": "resting on bed",
-                    "support": "supported by bed",
+                    "geometry": "reclined, lying on back",
+                    "contact": "resting on bedspread",
+                    "support": "supported by bedspread",
                     "foreshortening": "mild",
                     "image_location": "center",
                     "confidence": 0.95,
@@ -215,7 +219,7 @@ def _fusion() -> dict:
 
 
 class CaptionProjectionTests(unittest.TestCase):
-    def test_projection_is_task_shaped_and_filters_identity_descriptors(self) -> None:
+    def test_projection_13_is_task_shaped_and_salvages_only_transient_appearance(self) -> None:
         evidence, audit = build_caption_projection(
             _fusion(),
             _analysis(),
@@ -227,15 +231,31 @@ class CaptionProjectionTests(unittest.TestCase):
                 "protected_traits": ["facial hair"],
             },
         )
-        self.assertEqual(evidence["schema_version"], "caption-evidence-1.2")
+        self.assertEqual(evidence["schema_version"], "caption-evidence-1.3")
         descriptors = {value.lower() for value in evidence["transient_appearance"]["descriptors"]}
         self.assertIn("sunglasses", descriptors)
         self.assertIn("black tank top", descriptors)
+        self.assertIn("purple hoodie", descriptors)
+        self.assertIn("black pants", descriptors)
+        self.assertIn("headband", descriptors)
+        self.assertIn("hair pulled back", descriptors)
         self.assertNotIn("hair", descriptors)
         self.assertNotIn("beard", descriptors)
-        self.assertIn("facial hair", evidence["caption_policy"]["protected_traits"])
-        self.assertIn("natural hair color", evidence["caption_policy"]["protected_traits"])
-        self.assertIn("projection", audit)
+        self.assertNotIn("tattoo", " ".join(descriptors))
+        self.assertNotIn("coverage_limitations", evidence)
+        self.assertTrue(
+            any(
+                item.get("path") == "analysis.image_summary[appearance-only quarantine]"
+                for item in audit["projection"]["allowed"]
+            )
+        )
+
+    def test_side_unspecified_internal_label_never_reaches_compose(self) -> None:
+        evidence, _ = build_caption_projection(_fusion(), _analysis(), caption_policy={"trigger_token": "sH1Vx"})
+        orientation = evidence["pose_orientation"]["semantic_orientation"]
+        self.assertEqual(orientation["torso_yaw"]["relation"], "turned_from_frontal")
+        self.assertEqual(orientation["head_yaw"]["relation"], "turned_from_frontal")
+        self.assertNotIn("side_unspecified", json.dumps(evidence))
 
     def test_distal_pruning_removes_phantom_hand_and_plural_interaction(self) -> None:
         evidence, audit = build_caption_projection(_fusion(), _analysis(), caption_policy={"trigger_token": "sH1Vx"})
@@ -243,13 +263,11 @@ class CaptionProjectionTests(unittest.TestCase):
         unknown_arm = next(item for item in parts if item["part"] == "arm")
         self.assertNotIn("hand", str(unknown_arm.get("geometry") or "").lower())
         self.assertNotIn("hand", str(unknown_arm.get("contact") or "").lower())
-        interactions = evidence["pose_orientation"]["qualified_interactions"]
-        self.assertEqual(interactions, [])
-        blocked = audit["projection"]["blocked"]
+        self.assertEqual(evidence["pose_orientation"]["qualified_interactions"], [])
         self.assertTrue(
             any(
                 item.get("reason") == "distal_hand_claim_withheld_without_deterministic_wrist_or_hand_root_support"
-                for item in blocked
+                for item in audit["projection"]["blocked"]
             )
         )
 
@@ -263,24 +281,42 @@ class CaptionProjectionTests(unittest.TestCase):
             )
         )
 
+    def test_direct_support_qualifies_lying_and_reclined_but_not_standing(self) -> None:
+        evidence, _ = build_caption_projection(_fusion(), _analysis(), caption_policy={"trigger_token": "sH1Vx"})
+        allowed = set(evidence["pose_orientation"]["whole_body_posture"]["allowed"])
+        self.assertEqual(allowed, {"lying", "reclined"})
+
+        bad = lint_caption(
+            "sH1Vx stands in a medium close-up with the shoulders strongly staggered in depth.",
+            evidence,
+        )
+        self.assertFalse(bad["passed"])
+        self.assertTrue(any(item.get("type") == "unsupported_whole_body_posture" for item in bad["violations"]))
+
+        good = lint_caption(
+            "sH1Vx lies reclined with the shoulders strongly staggered in depth.",
+            evidence,
+        )
+        self.assertTrue(good["passed"])
+
     def test_high_shoulder_depth_remains_required(self) -> None:
         evidence, _ = build_caption_projection(_fusion(), _analysis(), caption_policy={"trigger_token": "sH1Vx"})
         self.assertEqual(evidence["required_claims"][0]["id"], "shoulder_girdle_depth_rotation")
         self.assertEqual(evidence["required_claims"][0]["magnitude_band"], "very_high")
 
-    def test_linter_catches_side_invented_from_side_unspecified(self) -> None:
+    def test_linter_catches_side_invented_from_side_neutral_relation(self) -> None:
         evidence, _ = build_caption_projection(_fusion(), _analysis(), caption_policy={"trigger_token": "sH1Vx"})
         bad = lint_caption(
-            "sH1Vx reclines with the head turned moderately to the right and the shoulders strongly staggered in depth.",
+            "sH1Vx lies reclined with the head turned moderately to the right and the shoulders strongly staggered in depth.",
             evidence,
         )
         self.assertFalse(bad["passed"])
         self.assertTrue(
-            any(item.get("type") == "orientation_side_invented_from_side_unspecified" for item in bad["violations"])
+            any(item.get("type") == "orientation_side_invented_from_side_neutral_relation" for item in bad["violations"])
         )
 
         good = lint_caption(
-            "sH1Vx reclines with the head turned moderately to one side and the shoulders strongly staggered in depth.",
+            "sH1Vx lies reclined with the head turned moderately away from frontal and the shoulders strongly staggered in depth.",
             evidence,
         )
         self.assertTrue(good["passed"])
