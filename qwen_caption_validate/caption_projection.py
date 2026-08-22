@@ -76,6 +76,15 @@ _ITEM = (
 _COLORED_ITEM_RE = re.compile(rf"\b{_COLOR}(?:\s+[A-Za-z][A-Za-z0-9'-]*){{0,1}}\s+{_ITEM}\b", re.IGNORECASE)
 _BARE_ITEM_RE = re.compile(rf"\b{_ITEM}\b", re.IGNORECASE)
 _SHIRTLESS_RE = re.compile(r"\bshirtless\b", re.IGNORECASE)
+_SCENE_BACKGROUND_KEYS = (
+    "texture_complexity",
+    "structural_complexity",
+    "specular_reflective",
+    "repeated_geometry",
+    "strong_lines_or_angles",
+    "reflections_present",
+    "notes",
+)
 
 
 def _fusion_root(payload: dict[str, Any]) -> dict[str, Any]:
@@ -393,6 +402,30 @@ def _without_frame_location(items: Any, audit: dict[str, Any], path: str) -> lis
     return out
 
 
+def _project_scene(base_scene: Any, analysis_scene: Any, audit: dict[str, Any]) -> dict[str, Any]:
+    """Keep governed scene facts plus Analyze's structured background description."""
+    out = dict(base_scene) if isinstance(base_scene, dict) else {}
+    source = analysis_scene if isinstance(analysis_scene, dict) else {}
+    raw_background = source.get("background_structure")
+    if not isinstance(raw_background, dict):
+        return out
+
+    background = {
+        key: raw_background.get(key)
+        for key in _SCENE_BACKGROUND_KEYS
+        if raw_background.get(key) is not None
+    }
+    if background:
+        out["background_structure"] = background
+        audit["allowed"].append(
+            {
+                "path": "analysis.scene.background_structure",
+                "reason": "structured_scene_context_is_caption_safe",
+            }
+        )
+    return out
+
+
 def build_caption_projection(
     fused_payload: dict[str, Any],
     analysis: dict[str, Any],
@@ -428,6 +461,7 @@ def build_caption_projection(
 
     projected_orientation = _project_orientation(base.get("semantic_orientation") or {}, projection_audit)
     posture = _qualified_whole_body_posture(parts)
+    scene = _project_scene(base.get("scene") or {}, analysis.get("scene") or {}, projection_audit)
 
     evidence = {
         "schema_version": "caption-evidence-1.3",
@@ -451,7 +485,7 @@ def build_caption_projection(
             "camera_relationship": None,
         },
         "environment_lighting": {
-            "scene": base.get("scene") or {},
+            "scene": scene,
             "important_background_or_nuisance_regions": _without_frame_location(
                 base.get("important_nuisance_regions") or [],
                 projection_audit,
