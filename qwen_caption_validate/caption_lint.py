@@ -185,6 +185,32 @@ def _required_claim_present(caption: str, claim: dict[str, Any]) -> bool:
     return True
 
 
+def _scene_keyword_present(caption: str, keyword: str) -> bool:
+    word = re.escape(str(keyword).lower())
+    if not word:
+        return False
+    if str(keyword).lower().endswith("y") and len(keyword) > 2:
+        stem = re.escape(str(keyword).lower()[:-1])
+        pattern = rf"\b(?:{word}|{stem}ies)\b"
+    elif re.search(r"(?:x|z|ch|sh|ss)$", str(keyword).lower()):
+        pattern = rf"\b{word}(?:es)?\b"
+    else:
+        pattern = rf"\b{word}s?\b"
+    return bool(re.search(pattern, caption, re.IGNORECASE))
+
+
+def _required_scene_claim_present(caption: str, claim: dict[str, Any]) -> bool:
+    keywords = [str(value).strip().lower() for value in (claim.get("keywords") or []) if str(value).strip()]
+    if not keywords:
+        return True
+    try:
+        minimum = int(claim.get("minimum_keyword_matches") or 1)
+    except (TypeError, ValueError):
+        minimum = 1
+    matched = sum(1 for keyword in keywords if _scene_keyword_present(caption, keyword))
+    return matched >= max(1, min(minimum, len(keywords)))
+
+
 def _orientation_side_is_withheld(evidence: dict[str, Any], body: str) -> bool:
     orientation = _orientation(evidence)
     keys = ("head_yaw", "head_roll") if body == "head" else ("torso_yaw", "torso_roll")
@@ -313,6 +339,16 @@ def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
                     "type": "required_claim_not_detected",
                     "claim_id": claim.get("id"),
                     "magnitude_band": claim.get("magnitude_band"),
+                }
+            )
+
+    for claim in evidence.get("required_scene_claims") or []:
+        if isinstance(claim, dict) and not _required_scene_claim_present(text, claim):
+            warnings.append(
+                {
+                    "type": "required_scene_claim_not_detected",
+                    "claim_id": claim.get("id"),
+                    "description": claim.get("description"),
                 }
             )
 
