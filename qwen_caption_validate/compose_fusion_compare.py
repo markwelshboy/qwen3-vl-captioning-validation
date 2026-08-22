@@ -254,7 +254,7 @@ def _build_html(
     {_caption_cell('C · Governed task-shaped evidence', fusion_caption, metadata.get('fusion-safe'))}
   </div>
   <details><summary>Caption authority lint for C</summary><pre>{lint_json}</pre></details>
-  <details><summary>Caption Evidence 1.2 passed to C</summary><pre>{safe_json}</pre></details>
+  <details><summary>Caption Evidence 1.3 passed to C</summary><pre>{safe_json}</pre></details>
   <details><summary>Firewall + projection audit</summary><pre>{audit_json}</pre></details>
 </section>
 """
@@ -279,7 +279,7 @@ details{{margin-top:10px}}
 @media(max-width:850px){{.topgrid{{grid-template-columns:1fr}}}}
 </style></head><body>
 <h1>Analyze vs DWPose vs governed task-shaped Compose</h1>
-<p class="lede">All captions are text-only generations from cached evidence; the image is shown only for human review. Variant C receives caption-evidence-1.2: transient appearance, pose/orientation, framing/camera, environment/lighting, required claims, and hard constraints. Raw reconstruction, free-form uncertainty prose, horizontal frame-side hints, intrinsic-identity subparts, and unsupported distal anatomy are withheld.</p>
+<p class="lede">All captions are text-only generations from cached evidence; the image is shown only for human review. Variant C receives caption-evidence-1.3: quarantined transient appearance, side-neutral pose/orientation, directly qualified whole-body posture, framing/camera, environment/lighting, required claims, and hard constraints. Raw reconstruction, raw summary prose, free-form uncertainty prose, horizontal frame-side hints, intrinsic-identity subparts, unsupported posture, and unsupported distal anatomy are withheld.</p>
 <p class="lede"><strong>Analyze source:</strong> {html.escape(analysis_slug)} &nbsp; <strong>Compose model:</strong> {html.escape(compose_slug)} &nbsp; <strong>Run:</strong> {html.escape(run_label)}</p>
 {''.join(cards)}
 </body></html>"""
@@ -504,8 +504,8 @@ def main() -> int:
         )
 
     summary = {
-        "schema_version": "compose-fusion-compare-1.2",
-        "caption_evidence_schema": "caption-evidence-1.2",
+        "schema_version": "compose-fusion-compare-1.3",
+        "caption_evidence_schema": "caption-evidence-1.3",
         "analysis_model": analysis_model_id,
         "compose_model": compose_model_id,
         "compose_model_load_seconds": model_load_seconds,
