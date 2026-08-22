@@ -50,8 +50,6 @@ _TRANSIENT_APPEARANCE_TOKENS = (
     "earring",
     "jewelry",
     "ring",
-    "bag",
-    "backpack",
     "sock",
     "shoe",
     "boot",
@@ -73,12 +71,12 @@ _COLOR = (
 _ITEM = (
     r"(?:t-?shirt|tee|tank\s+top|blouse|sweater|hoodie|jacket|coat|robe|dress|skirt|trousers?|"
     r"pants|jeans|shorts|suit|tie|scarf|hat|cap|headband|sunglasses|eyeglasses|glasses|mask|"
-    r"smartwatch|watch|bracelet|necklace|earrings?|jewelry|ring|bag|backpack|socks?|shoes?|boots?|"
-    r"sandals?|gloves?)"
+    r"smartwatch|watch|bracelet|necklace|earrings?|jewelry|ring|socks?|shoes?|boots?|sandals?|gloves?)"
 )
 _COLORED_ITEM_RE = re.compile(rf"\b{_COLOR}(?:\s+[A-Za-z][A-Za-z0-9'-]*){{0,1}}\s+{_ITEM}\b", re.IGNORECASE)
 _BARE_ITEM_RE = re.compile(rf"\b{_ITEM}\b", re.IGNORECASE)
 _SHIRTLESS_RE = re.compile(r"\bshirtless\b", re.IGNORECASE)
+_SUMMARY_CONTEXT_BLOCK = ("background", "environment", "setting", "surroundings", "behind him", "behind her", "behind them")
 
 
 def _fusion_root(payload: dict[str, Any]) -> dict[str, Any]:
@@ -158,8 +156,7 @@ def _sanitize_distal_arm_claims(
 
 
 def _normalize_phrase(value: str) -> str:
-    text = re.sub(r"\s+", " ", value.strip(" ,.;:-"))
-    return text
+    return re.sub(r"\s+", " ", value.strip(" ,.;:-"))
 
 
 def _extract_transient_phrases(value: Any) -> list[str]:
@@ -204,6 +201,20 @@ def _extract_transient_phrases(value: Any) -> list[str]:
             seen.add(key)
             out.append(phrase)
     return out
+
+
+def _summary_appearance_text(value: Any) -> str:
+    """Keep subject-facing summary sentences; discard obvious scene/background sentences."""
+    if not isinstance(value, str):
+        return ""
+    sentences = re.split(r"(?<=[.!?])\s+", value.strip())
+    kept: list[str] = []
+    for sentence in sentences:
+        low = sentence.lower()
+        if any(token in low for token in _SUMMARY_CONTEXT_BLOCK):
+            continue
+        kept.append(sentence)
+    return " ".join(kept)
 
 
 def _transient_appearance(
@@ -255,10 +266,9 @@ def _transient_appearance(
                 )
 
     # Analyze-v2.1 did not have a dedicated transient-appearance object. Salvage only
-    # whitelisted clothing/accessory/temporary-hair phrases from its summary. The raw
-    # summary itself is never exposed to Compose, and pose/camera/laterality prose from
-    # it cannot cross this projection boundary.
-    summary = analysis.get("image_summary")
+    # whitelisted clothing/accessory/temporary-hair phrases from subject-facing summary
+    # sentences. The raw summary itself is never exposed to Compose.
+    summary = _summary_appearance_text(analysis.get("image_summary"))
     for descriptor in _extract_transient_phrases(summary):
         add(descriptor, source="analysis.image_summary[appearance-only quarantine]")
 
