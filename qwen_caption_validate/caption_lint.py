@@ -108,6 +108,19 @@ def _qualified_laterality(evidence: dict[str, Any]) -> set[tuple[str, str]]:
             family = _body_family(value)
             if family:
                 allowed.add((side, family))
+        detail = " ".join(
+            str(item.get(field) or "") for field in ("geometry", "contact", "support")
+        ).lower()
+        if "hand" in detail or "finger" in detail:
+            allowed.add((side, "hand"))
+        if "wrist" in detail:
+            allowed.add((side, "wrist"))
+        if "forearm" in detail:
+            allowed.add((side, "forearm"))
+        if "elbow" in detail:
+            allowed.add((side, "elbow"))
+        if "shoulder" in detail:
+            allowed.add((side, "shoulder"))
     for item in _interactions(evidence):
         if not item.get("laterality_qualified"):
             continue
