@@ -13,8 +13,14 @@ Do NOT describe intrinsic identity traits that the LoRA itself should learn. In 
 
 Temporary appearance states MAY be described when they are explicitly present in `transient_appearance`, including clothing, glasses, masks, watches, jewelry, hats/headwear, shirtless state, and temporary hair states such as tied-back, wet, windblown, braided, covered, or unusually arranged hair.
 
+TRAINING-CAPTION DENSITY
+- This is a training caption, not an inference prompt. Favor dense, context-rich supervision when the governed evidence supports it.
+- Describe useful image-specific facts rather than omitting them merely to make the prose shorter or more elegant.
+- Aim for broad evidence coverage without repetition: transient appearance, meaningful pose/orientation, framing, environment, lighting, salient scene objects, and qualified interactions can all be useful supervision.
+- Do not add unsupported detail to reach a length target. Evidence coverage and correctness matter more than word count.
+
 CONTENT PRIORITY
-Cover only useful transient information, in this order:
+Cover useful transient information in this order, but do not treat lower-priority supported information as disposable when there is room to describe it naturally:
 
 1. TRANSIENT APPEARANCE
 - Use `transient_appearance.descriptors` for clothing/accessories/temporary appearance.
@@ -22,7 +28,7 @@ Cover only useful transient information, in this order:
 - Do not manufacture appearance details that are absent from this section.
 
 2. POSE & ORIENTATION
-- Give non-neutral geometry priority over background detail.
+- Give meaningful non-neutral geometry strong priority while still preserving other useful supported image context.
 - Distinguish torso orientation, lean, shoulder relationship, head orientation, gaze, contact/support, and foreshortening when supplied.
 - `pose_orientation.semantic_orientation` may use a side-neutral `relation` such as `turned_from_frontal` or `tilted_from_upright`. Translate that into natural prose without adding left/right.
 - An upright or near-upright torso/body axis describes orientation only. It does NOT mean the person is standing.
@@ -30,7 +36,7 @@ Cover only useful transient information, in this order:
 - If `pose_orientation.whole_body_posture.allowed` is empty, do not guess standing/sitting/lying/reclining from framing, torso pitch, or ordinary human expectations.
 - `pose_orientation.qualified_3d_geometry` is unsigned. It can establish the magnitude of depth staggering/rotation but NOT which anatomical side is nearer.
 - `required_claims` contains high-value facts that MUST appear once in natural language unless they would violate a hard visibility constraint.
-- Prefer concise, useful geometry over forensic left/right detail whenever anatomical direction is not independently qualified.
+- Prefer useful side-neutral geometry over forensic left/right detail whenever anatomical direction is not independently qualified.
 - Never convert an image-frame position into anatomical left/right.
 - Do not pluralize anatomy or interactions unless the evidence explicitly supports the plural.
 
@@ -39,10 +45,10 @@ Cover only useful transient information, in this order:
 - Mention a high/low/unusual camera relationship only when `framing_camera.camera_relationship` actually contains qualified evidence. Do not infer one from head pitch, ceiling, floor, or selfie appearance.
 
 4. ENVIRONMENT & LIGHTING
-- Briefly describe `environment_lighting` after pose/framing.
+- Describe useful supported environment and lighting context rather than reducing it to a generic indoor/outdoor label when richer structured evidence is present.
 - Use `environment_lighting.scene.background_structure` when present for concrete visible scene context such as walls, furniture, trees, coastline, vehicle interior, reflective surfaces, or a plain backdrop.
 - Mention salient visible background objects and `important_background_or_nuisance_regions` when they help distinguish those image-specific details from the trigger identity. A visible bag, box, lamp, tree, sign, piece of furniture, or similar scene object should not be silently absorbed into the trigger just because it is not part of the subject.
-- Keep background secondary to the subject rather than cataloging every minor object.
+- Background should remain clearly attributed as scene context, but do not omit useful background evidence solely for compactness. Avoid exhaustive inventories of trivial objects or repetitive wording.
 
 EVIDENCE FIREWALL
 - `hard_constraints.visibility.not_visible` is a HARD boundary. Do not describe those anatomical regions, their pose, rotation, or actions requiring them to be seen.
@@ -54,21 +60,24 @@ EVIDENCE FIREWALL
 - Do not restore facts that have been omitted by the governed projection.
 
 NON-TARGET CONTENT
-- Mention `non_target_entities` or `embedded_depictions` when they are visually important, materially describe the scene, or could otherwise be confused with the target.
+- Mention `non_target_entities` or `embedded_depictions` when they are visibly meaningful, materially describe the scene, or could otherwise be confused with the target.
+- Correct attribution is more important than omission: scene objects should remain scene objects and must not be assigned to the trigger subject.
 - Do not assign their limbs/objects to the trigger subject.
 
 STYLE
-- Use natural prose, not tag lists.
+- Use dense but natural prose, not tag lists.
+- Prefer several information-rich sentences over compressing unrelated facts into an awkward single sentence.
+- Avoid repetition, filler, and ornamental description; density should come from supported visual facts.
 - Never open with "This image shows" or similar preambles.
 - Do not explain missing information, unavailable descriptors, uncertainty, laterality policy, evidence authority, or why a claim is trusted. Simply omit unsupported details.
 - Never mention SAM3D, DWPose, Fusion, analysis, evidence, confidence, reconstruction, masks, keypoints, hidden anatomy, descriptors, or policy mechanics.
 - Do not add style/quality commentary.
 
 Length guidance:
-- concise: roughly 35-60 words
-- balanced: roughly 55-90 words
-- detailed: roughly 80-120 words
-These are targets, not hard requirements. Correctness and useful information density matter more than exact length.
+- concise: roughly 45-75 words
+- balanced: roughly 90-140 words
+- detailed: roughly 130-190 words
+These are guidance ranges, not quotas. Use fewer words when the governed packet is sparse and more when it is information-rich. Never invent detail to reach a range, and never omit useful supported detail merely to stay under it.
 
 CAPTION EVIDENCE
 {{CAPTION_EVIDENCE_JSON}}
