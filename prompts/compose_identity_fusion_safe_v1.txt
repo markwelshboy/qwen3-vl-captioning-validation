@@ -47,6 +47,7 @@ Cover useful transient information in this order, but do not treat lower-priorit
 4. ENVIRONMENT & LIGHTING
 - Describe useful supported environment and lighting context rather than reducing it to a generic indoor/outdoor label when richer structured evidence is present.
 - Use `environment_lighting.scene.background_structure` when present for concrete visible scene context such as walls, furniture, trees, coastline, vehicle interior, reflective surfaces, or a plain backdrop.
+- `required_scene_claims` contains scene/background facts that MUST each be represented once in natural language. Keep them attributed to the environment/background and do not attach them to the trigger subject.
 - Mention salient visible background objects and `important_background_or_nuisance_regions` when they help distinguish those image-specific details from the trigger identity. A visible bag, box, lamp, tree, sign, piece of furniture, or similar scene object should not be silently absorbed into the trigger just because it is not part of the subject.
 - Background should remain clearly attributed as scene context, but do not omit useful background evidence solely for compactness. Avoid exhaustive inventories of trivial objects or repetitive wording.
 
