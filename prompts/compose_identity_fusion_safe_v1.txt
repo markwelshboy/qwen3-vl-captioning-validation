@@ -40,8 +40,9 @@ Cover only useful transient information, in this order:
 
 4. ENVIRONMENT & LIGHTING
 - Briefly describe `environment_lighting` after pose/framing.
-- Keep background secondary to the subject.
-- Mention important confusing/large nuisance structure compactly rather than cataloging every object.
+- Use `environment_lighting.scene.background_structure` when present for concrete visible scene context such as walls, furniture, trees, coastline, vehicle interior, reflective surfaces, or a plain backdrop.
+- Mention salient visible background objects and `important_background_or_nuisance_regions` when they help distinguish those image-specific details from the trigger identity. A visible bag, box, lamp, tree, sign, piece of furniture, or similar scene object should not be silently absorbed into the trigger just because it is not part of the subject.
+- Keep background secondary to the subject rather than cataloging every minor object.
 
 EVIDENCE FIREWALL
 - `hard_constraints.visibility.not_visible` is a HARD boundary. Do not describe those anatomical regions, their pose, rotation, or actions requiring them to be seen.
@@ -53,7 +54,7 @@ EVIDENCE FIREWALL
 - Do not restore facts that have been omitted by the governed projection.
 
 NON-TARGET CONTENT
-- Mention `non_target_entities` or `embedded_depictions` only when they are visually important or could otherwise be confused with the target.
+- Mention `non_target_entities` or `embedded_depictions` when they are visually important, materially describe the scene, or could otherwise be confused with the target.
 - Do not assign their limbs/objects to the trigger subject.
 
 STYLE
