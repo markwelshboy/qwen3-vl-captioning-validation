@@ -52,17 +52,33 @@ _TRANSIENT_APPEARANCE_TOKENS = (
     "ring",
     "bag",
     "backpack",
+    "sock",
     "shoe",
     "boot",
     "sandal",
     "glove",
 )
 _HAIR_STATE_RE = re.compile(
-    r"(?:hair.*(?:tied|ponytail|bun|wet|windblown|windswept|braid|covered|tucked)|"
-    r"(?:tied|ponytail|bun|wet|windblown|windswept|braid|covered|tucked).*hair)",
+    r"(?:hair.{0,30}(?:tied(?: back)?|pulled back|ponytail|bun|wet|windblown|windswept|braid(?:ed)?|covered|tucked)|"
+    r"(?:tied(?: back)?|pulled back|ponytail|bun|wet|windblown|windswept|braid(?:ed)?|covered|tucked).{0,30}hair)",
     re.IGNORECASE,
 )
 _HANDISH_RE = re.compile(r"\b(?:hand|hands|finger|fingers|fingertip|fingertips)\b", re.IGNORECASE)
+
+_COLOR = (
+    r"(?:dark\s+(?:gray|grey|blue|green|brown|red)|light\s+(?:gray|grey|blue|green|brown|red)|"
+    r"black|white|gray|grey|dark|light|blue|purple|red|green|yellow|pink|orange|navy|teal|"
+    r"maroon|brown|beige|tan|cream)"
+)
+_ITEM = (
+    r"(?:t-?shirt|tee|tank\s+top|blouse|sweater|hoodie|jacket|coat|robe|dress|skirt|trousers?|"
+    r"pants|jeans|shorts|suit|tie|scarf|hat|cap|headband|sunglasses|eyeglasses|glasses|mask|"
+    r"smartwatch|watch|bracelet|necklace|earrings?|jewelry|ring|bag|backpack|socks?|shoes?|boots?|"
+    r"sandals?|gloves?)"
+)
+_COLORED_ITEM_RE = re.compile(rf"\b{_COLOR}(?:\s+[A-Za-z][A-Za-z0-9'-]*){{0,1}}\s+{_ITEM}\b", re.IGNORECASE)
+_BARE_ITEM_RE = re.compile(rf"\b{_ITEM}\b", re.IGNORECASE)
+_SHIRTLESS_RE = re.compile(r"\bshirtless\b", re.IGNORECASE)
 
 
 def _fusion_root(payload: dict[str, Any]) -> dict[str, Any]:
@@ -99,12 +115,7 @@ def _sanitize_distal_arm_claims(
     fused_payload: dict[str, Any],
     audit: dict[str, Any],
 ) -> dict[str, Any]:
-    """Remove semantic hand claims when deterministic arm evidence stops before the wrist.
-
-    Analyze can occasionally complete an arm through a hand that is outside the crop.
-    Fusion-v2.3 intentionally remains frozen, so the caption projection applies this
-    stricter task-specific governor before constructing caption-safe evidence.
-    """
+    """Remove semantic hand claims when deterministic arm evidence stops before the wrist."""
     payload = copy.deepcopy(fused_payload)
     fusion = _fusion_root(payload)
     deterministic = fusion.get("deterministic_geometry") or {}
@@ -146,31 +157,142 @@ def _sanitize_distal_arm_claims(
     return payload
 
 
-def _transient_appearance(parts: list[dict[str, Any]], audit: dict[str, Any]) -> list[str]:
+def _normalize_phrase(value: str) -> str:
+    text = re.sub(r"\s+", " ", value.strip(" ,.;:-"))
+    return text
+
+
+def _extract_transient_phrases(value: Any) -> list[str]:
+    """Extract only tightly whitelisted transient appearance phrases from free text."""
+    if not isinstance(value, str) or not value.strip():
+        return []
+    text = value
+    found: list[str] = []
+
+    for match in _COLORED_ITEM_RE.finditer(text):
+        found.append(_normalize_phrase(match.group(0)))
+
+    for match in _BARE_ITEM_RE.finditer(text):
+        bare = _normalize_phrase(match.group(0))
+        if any(existing.lower().endswith(bare.lower()) for existing in found):
+            continue
+        found.append(bare)
+
+    if _SHIRTLESS_RE.search(text):
+        found.append("shirtless")
+
+    low = text.lower()
+    hair_states = (
+        (r"hair.{0,30}pulled back|pulled back.{0,30}hair", "hair pulled back"),
+        (r"hair.{0,30}tied back|tied back.{0,30}hair", "hair tied back"),
+        (r"\bwet hair\b|hair.{0,20}\bwet\b", "wet hair"),
+        (r"\bwindblown hair\b|hair.{0,20}\bwindblown\b", "windblown hair"),
+        (r"\bwindswept hair\b|hair.{0,20}\bwindswept\b", "windswept hair"),
+        (r"hair.{0,30}\bponytail\b|\bponytail\b.{0,30}hair", "hair in a ponytail"),
+        (r"hair.{0,30}\bbun\b|\bbun\b.{0,30}hair", "hair in a bun"),
+        (r"hair.{0,30}\bbraid(?:ed)?\b|\bbraid(?:ed)?\b.{0,30}hair", "braided hair"),
+    )
+    for pattern, normalized in hair_states:
+        if re.search(pattern, low, re.IGNORECASE):
+            found.append(normalized)
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for phrase in found:
+        key = phrase.lower()
+        if key not in seen:
+            seen.add(key)
+            out.append(phrase)
+    return out
+
+
+def _transient_appearance(
+    parts: list[dict[str, Any]],
+    analysis: dict[str, Any],
+    audit: dict[str, Any],
+) -> list[str]:
     values: list[str] = []
     seen: set[str] = set()
+
+    def add(text: str, *, source: str) -> None:
+        key = text.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        values.append(text)
+        audit["allowed"].append(
+            {
+                "path": source,
+                "reason": "strict_transient_appearance_whitelist",
+                "descriptor": text,
+            }
+        )
+
     for item in parts:
-        for raw in item.get("visible_subparts") or []:
-            text = str(raw).strip()
-            low = text.lower()
+        source_values = [
+            *(item.get("visible_subparts") or []),
+            item.get("geometry"),
+            item.get("contact"),
+            item.get("support"),
+        ]
+        for raw in source_values:
+            text = str(raw or "").strip()
             if not text:
                 continue
-            allowed = any(token in low for token in _TRANSIENT_APPEARANCE_TOKENS) or bool(_HAIR_STATE_RE.search(text))
-            if not allowed:
-                if any(token in low for token in ("hair", "beard", "eye", "face", "nose", "mouth", "ear", "skin", "tattoo")):
-                    audit["blocked"].append(
-                        {
-                            "path": "caption_projection.transient_appearance",
-                            "reason": "intrinsic_or_identity_like_descriptor_not_caption_authoritative",
-                            "descriptor": text,
-                        }
-                    )
-                continue
-            key = low
-            if key not in seen:
-                seen.add(key)
-                values.append(text)
+            extracted = _extract_transient_phrases(text)
+            for descriptor in extracted:
+                add(descriptor, source="caption-evidence-1.1.visible_subject_parts")
+            low = text.lower()
+            if not extracted and any(
+                token in low for token in ("hair", "beard", "eye", "face", "nose", "mouth", "ear", "skin", "tattoo")
+            ):
+                audit["blocked"].append(
+                    {
+                        "path": "caption_projection.transient_appearance",
+                        "reason": "intrinsic_or_identity_like_descriptor_not_caption_authoritative",
+                        "descriptor": text,
+                    }
+                )
+
+    # Analyze-v2.1 did not have a dedicated transient-appearance object. Salvage only
+    # whitelisted clothing/accessory/temporary-hair phrases from its summary. The raw
+    # summary itself is never exposed to Compose, and pose/camera/laterality prose from
+    # it cannot cross this projection boundary.
+    summary = analysis.get("image_summary")
+    for descriptor in _extract_transient_phrases(summary):
+        add(descriptor, source="analysis.image_summary[appearance-only quarantine]")
+
     return values
+
+
+def _project_orientation(
+    orientation: Any,
+    audit: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(orientation, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for name, raw in orientation.items():
+        if not isinstance(raw, dict):
+            continue
+        value = dict(raw)
+        direction = str(value.get("direction") or "unknown")
+        if direction in {"side_unspecified", "anatomical_left", "anatomical_right"}:
+            value.pop("direction", None)
+            if name.endswith("_yaw"):
+                value["relation"] = "turned_from_frontal"
+            elif name.endswith("_roll"):
+                value["relation"] = "tilted_from_upright"
+            else:
+                value["relation"] = "deviated_from_neutral"
+            audit["blocked"].append(
+                {
+                    "path": f"caption-evidence-1.1.semantic_orientation.{name}.direction",
+                    "reason": "anatomical_side_direction_replaced_with_side_neutral_relation",
+                }
+            )
+        out[name] = value
+    return out
 
 
 def _pose_parts(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -189,6 +311,51 @@ def _pose_parts(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+def _qualified_whole_body_posture(parts: list[dict[str, Any]]) -> dict[str, Any]:
+    allowed: set[str] = set()
+    evidence: list[str] = []
+
+    for item in parts:
+        geometry = str(item.get("geometry") or "")
+        contact = str(item.get("contact") or "")
+        support = str(item.get("support") or "")
+        text = " ".join((geometry, contact, support)).lower()
+
+        if ("weight-bearing" in text or "weight bearing" in text) and re.search(
+            r"\b(?:foot|feet)\b.{0,25}\b(?:ground|floor|planted)\b|\bplanted\b.{0,20}\b(?:foot|feet)\b",
+            text,
+        ):
+            allowed.add("standing")
+            evidence.append(f"{item.get('part')}: visible weight-bearing foot/ground support")
+
+        if re.search(r"\b(?:seated|sitting)\b", text) or re.search(
+            r"\b(?:pelvis|torso|body)\b.{0,35}\b(?:chair|seat|bench)\b",
+            text,
+        ):
+            allowed.add("seated")
+            evidence.append(f"{item.get('part')}: explicit seated/support relationship")
+
+        if re.search(r"\b(?:lying|lies|lie)\b", text) and re.search(
+            r"\b(?:bed|bedspread|ground|floor|couch|sofa|surface)\b",
+            text,
+        ):
+            allowed.add("lying")
+            evidence.append(f"{item.get('part')}: explicit lying/support relationship")
+
+        if re.search(r"\breclin(?:e|es|ed|ing)\b", text) and re.search(
+            r"\b(?:bed|bedspread|chair|seat|couch|sofa|surface|supported|resting)\b",
+            text,
+        ):
+            allowed.add("reclined")
+            evidence.append(f"{item.get('part')}: explicit reclined/support relationship")
+
+    return {
+        "allowed": sorted(allowed),
+        "authority": "direct_visible_support_only",
+        "evidence": evidence,
+    }
 
 
 def _compact_gaze(gaze: Any, audit: dict[str, Any]) -> dict[str, Any] | None:
@@ -230,14 +397,10 @@ def build_caption_projection(
     *,
     caption_policy: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Build a task-shaped caption contract from governed Fusion evidence.
-
-    Caption Evidence 1.1 is a source-oriented firewall. This projection is deliberately
-    task-oriented: it exposes only the categories the caption writer needs, while
-    retaining hard constraints and required claims separately.
-    """
+    """Build a task-shaped caption contract from governed Fusion evidence."""
     projection_audit: dict[str, Any] = {
-        "schema_version": "caption-projection-audit-1.2",
+        "schema_version": "caption-projection-audit-1.3",
+        "allowed": [],
         "blocked": [],
         "notes": [],
     }
@@ -253,17 +416,29 @@ def build_caption_projection(
             protected.append(text)
     policy["protected_traits"] = protected
 
+    for limitation in base.get("coverage_limitations") or []:
+        projection_audit["notes"].append(
+            {
+                "type": "coverage_limitation_withheld_from_compose",
+                "text": str(limitation),
+            }
+        )
+
+    projected_orientation = _project_orientation(base.get("semantic_orientation") or {}, projection_audit)
+    posture = _qualified_whole_body_posture(parts)
+
     evidence = {
-        "schema_version": "caption-evidence-1.2",
+        "schema_version": "caption-evidence-1.3",
         "source_caption_evidence_schema": base.get("schema_version"),
         "source_fusion_schema": base.get("source_fusion_schema"),
         "caption_policy": policy,
         "transient_appearance": {
-            "descriptors": _transient_appearance(parts, projection_audit),
+            "descriptors": _transient_appearance(parts, analysis, projection_audit),
             "expression": base.get("expression_state") or [],
         },
         "pose_orientation": {
-            "semantic_orientation": base.get("semantic_orientation") or {},
+            "semantic_orientation": projected_orientation,
+            "whole_body_posture": posture,
             "gaze": _compact_gaze(base.get("gaze"), projection_audit),
             "visible_subject_parts": _pose_parts(parts),
             "qualified_interactions": base.get("qualified_interactions") or [],
@@ -297,13 +472,13 @@ def build_caption_projection(
             "never_infer_unqualified_anatomical_laterality": True,
             "never_convert_frame_position_to_anatomical_side": True,
             "never_complete_missing_distal_anatomy": True,
+            "whole_body_posture_must_be_listed_in_pose_orientation": True,
             "do_not_caption_intrinsic_identity_traits": True,
             "protected_traits": protected,
         },
-        "coverage_limitations": base.get("coverage_limitations") or [],
     }
     audit = {
-        "schema_version": "caption-firewall-and-projection-audit-1.2",
+        "schema_version": "caption-firewall-and-projection-audit-1.3",
         "firewall": firewall_audit,
         "projection": projection_audit,
     }
