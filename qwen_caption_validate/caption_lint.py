@@ -254,7 +254,7 @@ def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
     for match in _META_RE.finditer(text):
         violations.append(
             {
-                "type": "pipeline_or_policy_meta_language",
+                "type": "pipeline_meta_language",
                 "text": match.group(0),
             }
         )
