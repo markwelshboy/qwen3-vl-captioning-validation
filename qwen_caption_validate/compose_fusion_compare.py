@@ -11,8 +11,8 @@ from typing import Any
 from tqdm import tqdm
 
 from .analysis_v2_normalize import normalize_analysis_v2
-from .caption_evidence import build_caption_evidence
 from .caption_lint import lint_caption
+from .caption_projection import build_caption_projection
 from .pose_evidence import build_pose_evidence
 from .runner import (
     generate_text,
@@ -67,6 +67,16 @@ def parse_args() -> argparse.Namespace:
         help="Caption variants to generate (default: analysis dwpose fusion-safe).",
     )
     parser.add_argument("--subject-token", help="Override trigger token; otherwise inherit run.json.")
+    parser.add_argument("--gender-grammar", help="Optional grammar label carried into the caption policy.")
+    parser.add_argument("--subject-pronoun", help="Optional subject pronoun, e.g. she/he/they.")
+    parser.add_argument("--object-pronoun", help="Optional object pronoun, e.g. her/him/them.")
+    parser.add_argument("--possessive-pronoun", help="Optional possessive pronoun, e.g. her/his/their.")
+    parser.add_argument(
+        "--protected-trait",
+        action="append",
+        default=[],
+        help="Additional project-protected identity trait. May be repeated.",
+    )
     parser.add_argument(
         "--detail",
         choices=["concise", "balanced", "detailed"],
@@ -146,6 +156,20 @@ def _render_fusion_prompt(
     )
 
 
+def _caption_policy(args: argparse.Namespace, manifest: dict[str, Any], subject_token: str) -> dict[str, Any]:
+    stored = manifest.get("caption_policy") or {}
+    protected = [str(value) for value in (stored.get("protected_traits") or []) if str(value).strip()]
+    protected.extend(str(value) for value in args.protected_trait if str(value).strip())
+    return {
+        "trigger_token": subject_token,
+        "gender_grammar": args.gender_grammar or stored.get("gender_grammar"),
+        "subject_pronoun": args.subject_pronoun or stored.get("subject_pronoun"),
+        "object_pronoun": args.object_pronoun or stored.get("object_pronoun"),
+        "possessive_pronoun": args.possessive_pronoun or stored.get("possessive_pronoun"),
+        "protected_traits": protected,
+    }
+
+
 def _write_caption(
     path: Path,
     meta_path: Path,
@@ -218,7 +242,7 @@ def _build_html(
   <div class="topgrid">
     <div><img src="{image_src}" loading="lazy"></div>
     <div>
-      <h3>Raw Analyze summary <span class="badge blocked">withheld from safe Compose</span></h3>
+      <h3>Raw Analyze summary <span class="badge blocked">withheld from governed Compose</span></h3>
       <p class="summary">{raw_summary or '<em>none</em>'}</p>
       <h3>Existing caption</h3><p>{existing or '<em>none</em>'}</p>
       <details><summary>Normalization actions</summary><pre>{normalization}</pre></details>
@@ -227,11 +251,11 @@ def _build_html(
   <div class="captiongrid">
     {_caption_cell('A · Analyze-only', analysis_caption, metadata.get('analysis'))}
     {_caption_cell('B · Analyze + DWPose', dwpose_caption, metadata.get('dwpose'))}
-    {_caption_cell('C · Fusion-safe evidence', fusion_caption, metadata.get('fusion-safe'))}
+    {_caption_cell('C · Governed task-shaped evidence', fusion_caption, metadata.get('fusion-safe'))}
   </div>
   <details><summary>Caption authority lint for C</summary><pre>{lint_json}</pre></details>
-  <details><summary>Caption-safe evidence passed to C</summary><pre>{safe_json}</pre></details>
-  <details><summary>Firewall audit — allowed / blocked evidence</summary><pre>{audit_json}</pre></details>
+  <details><summary>Caption Evidence 1.2 passed to C</summary><pre>{safe_json}</pre></details>
+  <details><summary>Firewall + projection audit</summary><pre>{audit_json}</pre></details>
 </section>
 """
         )
@@ -254,8 +278,8 @@ details{{margin-top:10px}}
 @media(max-width:1050px){{.captiongrid{{grid-template-columns:1fr}}}}
 @media(max-width:850px){{.topgrid{{grid-template-columns:1fr}}}}
 </style></head><body>
-<h1>Analyze vs DWPose vs governed Fusion Compose</h1>
-<p class="lede">All captions are text-only generations from cached evidence; the image is shown only for human review. Variant C receives caption-evidence-1.1 and is checked by a deterministic post-generation authority linter. Raw SAM3D reconstruction, signed depth, free-form uncertainties, target body-part frame locations, report-only camera/projected geometry, unqualified ownership/laterality, and the raw image summary are withheld.</p>
+<h1>Analyze vs DWPose vs governed task-shaped Compose</h1>
+<p class="lede">All captions are text-only generations from cached evidence; the image is shown only for human review. Variant C receives caption-evidence-1.2: transient appearance, pose/orientation, framing/camera, environment/lighting, required claims, and hard constraints. Raw reconstruction, free-form uncertainty prose, horizontal frame-side hints, intrinsic-identity subparts, and unsupported distal anatomy are withheld.</p>
 <p class="lede"><strong>Analyze source:</strong> {html.escape(analysis_slug)} &nbsp; <strong>Compose model:</strong> {html.escape(compose_slug)} &nbsp; <strong>Run:</strong> {html.escape(run_label)}</p>
 {''.join(cards)}
 </body></html>"""
@@ -302,6 +326,7 @@ def main() -> int:
     fusion_template = args.fusion_prompt.read_text(encoding="utf-8")
     subject_token = args.subject_token or manifest.get("subject_token") or "sH1Vx"
     detail = args.detail or manifest.get("detail") or "balanced"
+    caption_policy = _caption_policy(args, manifest, subject_token)
 
     image_records = list(manifest.get("images") or [])
     if args.only:
@@ -344,7 +369,11 @@ def main() -> int:
             if fusion_payload is None:
                 print(f"WARNING: missing Fusion-v2.3 record for {key}; safe variant unavailable", file=sys.stderr)
             else:
-                caption_evidence, firewall_audit = build_caption_evidence(fusion_payload, analysis)
+                caption_evidence, firewall_audit = build_caption_projection(
+                    fusion_payload,
+                    analysis,
+                    caption_policy=caption_policy,
+                )
 
         variant_files: dict[str, dict[str, Any]] = {}
         for variant in args.variants:
@@ -379,6 +408,7 @@ def main() -> int:
         return 2
 
     loaded = None
+    model_load_seconds: float | None = None
     if pending_count:
         print(
             f"Loading {compose_model_id} for text-only governed Compose comparison "
@@ -394,6 +424,7 @@ def main() -> int:
             vllm_gpu_memory_utilization=args.vllm_gpu_memory_utilization,
             vllm_max_model_len=args.vllm_max_model_len,
         )
+        model_load_seconds = loaded.load_seconds
         print(f"Loaded in {loaded.load_seconds:.1f}s. No image-conditioned inference will be run.")
 
     try:
@@ -435,6 +466,7 @@ def main() -> int:
                     "backend_requested": args.backend,
                     "dtype_requested": args.dtype,
                     "quantization_requested": args.quantization,
+                    "caption_policy": caption_policy,
                     "normalization_actions": item.get("normalization_actions") or [],
                 }
                 if variant == "dwpose":
@@ -472,9 +504,11 @@ def main() -> int:
         )
 
     summary = {
-        "schema_version": "compose-fusion-compare-1.1",
+        "schema_version": "compose-fusion-compare-1.2",
+        "caption_evidence_schema": "caption-evidence-1.2",
         "analysis_model": analysis_model_id,
         "compose_model": compose_model_id,
+        "compose_model_load_seconds": model_load_seconds,
         "run_label": run_label,
         "backend_requested": args.backend,
         "dtype_requested": args.dtype,
@@ -483,6 +517,7 @@ def main() -> int:
         "dwpose_source": str(dwpose_dir) if dwpose_dir.is_dir() else None,
         "fusion_source": str(fusion_dir) if fusion_dir.is_dir() else None,
         "subject_token": subject_token,
+        "caption_policy": caption_policy,
         "detail": detail,
         "variants": args.variants,
         "image_conditioned_compose": False,
