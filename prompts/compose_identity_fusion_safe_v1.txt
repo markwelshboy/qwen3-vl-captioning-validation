@@ -11,7 +11,7 @@ CAPTION POLICY
 CRITICAL IDENTITY POLICY
 Do NOT describe intrinsic identity traits that the LoRA itself should learn. In particular, omit natural hair color, baseline hair length, eye color, facial structure, apparent age, skin tone, and all project-protected traits. Generic body-part evidence such as face, eyes, ears, hair, beard, skin, or tattoo is not a reason to caption those identity features.
 
-Temporary appearance states MAY be described when they are explicitly present in `transient_appearance`, including clothing, glasses, masks, watches, jewelry, hats/headwear, and temporary hair states such as tied-back, wet, windblown, braided, covered, or unusually arranged hair.
+Temporary appearance states MAY be described when they are explicitly present in `transient_appearance`, including clothing, glasses, masks, watches, jewelry, hats/headwear, shirtless state, and temporary hair states such as tied-back, wet, windblown, braided, covered, or unusually arranged hair.
 
 CONTENT PRIORITY
 Cover only useful transient information, in this order:
@@ -24,11 +24,13 @@ Cover only useful transient information, in this order:
 2. POSE & ORIENTATION
 - Give non-neutral geometry priority over background detail.
 - Distinguish torso orientation, lean, shoulder relationship, head orientation, gaze, contact/support, and foreshortening when supplied.
-- If the body is bent, twisted, reclined, leaning diagonally, turned away, entering the frame asymmetrically, or otherwise geometrically unusual, state that clearly.
+- `pose_orientation.semantic_orientation` may use a side-neutral `relation` such as `turned_from_frontal` or `tilted_from_upright`. Translate that into natural prose without adding left/right.
+- An upright or near-upright torso/body axis describes orientation only. It does NOT mean the person is standing.
+- Whole-body posture words such as standing, seated, lying, or reclined may be used ONLY when that exact posture appears in `pose_orientation.whole_body_posture.allowed`.
+- If `pose_orientation.whole_body_posture.allowed` is empty, do not guess standing/sitting/lying/reclining from framing, torso pitch, or ordinary human expectations.
 - `pose_orientation.qualified_3d_geometry` is unsigned. It can establish the magnitude of depth staggering/rotation but NOT which anatomical side is nearer.
 - `required_claims` contains high-value facts that MUST appear once in natural language unless they would violate a hard visibility constraint.
 - Prefer concise, useful geometry over forensic left/right detail whenever anatomical direction is not independently qualified.
-- If orientation direction is `side_unspecified`, describe the amount/type of turn without adding left/right.
 - Never convert an image-frame position into anatomical left/right.
 - Do not pluralize anatomy or interactions unless the evidence explicitly supports the plural.
 
@@ -57,8 +59,8 @@ NON-TARGET CONTENT
 STYLE
 - Use natural prose, not tag lists.
 - Never open with "This image shows" or similar preambles.
-- Do not explain missing information, uncertainty, laterality policy, evidence authority, or why a claim is trusted. Simply omit unsupported details.
-- Never mention SAM3D, DWPose, Fusion, analysis, evidence, confidence, reconstruction, masks, keypoints, hidden anatomy, or policy mechanics.
+- Do not explain missing information, unavailable descriptors, uncertainty, laterality policy, evidence authority, or why a claim is trusted. Simply omit unsupported details.
+- Never mention SAM3D, DWPose, Fusion, analysis, evidence, confidence, reconstruction, masks, keypoints, hidden anatomy, descriptors, or policy mechanics.
 - Do not add style/quality commentary.
 
 Length guidance:
