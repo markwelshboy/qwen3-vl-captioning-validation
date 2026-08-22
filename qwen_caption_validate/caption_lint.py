@@ -5,7 +5,8 @@ from typing import Any
 
 
 _ANATOMICAL_LATERALITY_RE = re.compile(
-    r"\b(left|right)\s+(hand|wrist|forearm|arm|elbow|shoulder|hip|knee|ankle|leg|foot|torso|body|head|eye|ear|side)\b",
+    r"\b(left|right)\s+(hand|wrist|forearm|upper\s+arm|arm|elbow|shoulder|hip|pelvis|thigh|knee|"
+    r"ankle|lower\s+leg|leg|foot|feet|torso|body|head|eye|ear|side)\b",
     re.IGNORECASE,
 )
 _BOTH_HANDS_RE = re.compile(r"\bboth\s+hands\b|\bhands\b", re.IGNORECASE)
@@ -19,14 +20,21 @@ _MISSING_INFO_RE = re.compile(
     r"(?:descriptor(?:s)?|details?|information)\b|\bnot\s+(?:specified|provided|available)\b",
     re.IGNORECASE,
 )
+_CONSTRAINT_NARRATION_RE = re.compile(
+    r"\b(?:no|without)\s+(?:signed\s+)?anatomical\s+(?:side|direction)(?:\s+is)?\s+"
+    r"(?:specified|given|provided|available)\b|"
+    r"\b(?:unsigned|signed)\s+anatomical\s+(?:side|direction)\b|"
+    r"\b(?:anatomical\s+)?(?:side|direction)\s+(?:is\s+)?(?:not|never)\s+(?:specified|qualified|given|provided)\b",
+    re.IGNORECASE,
+)
 _ORIENTATION_SIDE_RE = re.compile(
     r"\b(head|torso|upper body|body)\b.{0,55}?\b(?:turn(?:ed|ing)?|rotat(?:ed|ing|ion)?|"
-    r"lean(?:ed|ing)?|tilt(?:ed|ing)?|angle(?:d|ing)?)\b.{0,30}?\b(left|right)\b",
+    r"lean(?:ed|ing)?|tilt(?:ed|ing)?|angle(?:d|ing)?)\b.{0,40}?\b(left|right)\b",
     re.IGNORECASE,
 )
 _POSTURE_PATTERNS = {
-    "standing": re.compile(r"\b(?:stands?|standing)\b", re.IGNORECASE),
-    "seated": re.compile(r"\b(?:sits?|sitting|seated)\b", re.IGNORECASE),
+    "standing": re.compile(r"\b(?:stands?|standing|stood)\b", re.IGNORECASE),
+    "seated": re.compile(r"\b(?:sits?|sitting|seated|sat)\b", re.IGNORECASE),
     "lying": re.compile(r"\b(?:lies|lying|lie)\b", re.IGNORECASE),
     "reclined": re.compile(r"\b(?:reclines?|reclined|reclining)\b", re.IGNORECASE),
 }
@@ -52,19 +60,11 @@ def _pose_section(evidence: dict[str, Any]) -> dict[str, Any]:
 
 
 def _visible_parts(evidence: dict[str, Any]) -> list[dict[str, Any]]:
-    return [
-        item
-        for item in (_pose_section(evidence).get("visible_subject_parts") or [])
-        if isinstance(item, dict)
-    ]
+    return [item for item in (_pose_section(evidence).get("visible_subject_parts") or []) if isinstance(item, dict)]
 
 
 def _interactions(evidence: dict[str, Any]) -> list[dict[str, Any]]:
-    return [
-        item
-        for item in (_pose_section(evidence).get("qualified_interactions") or [])
-        if isinstance(item, dict)
-    ]
+    return [item for item in (_pose_section(evidence).get("qualified_interactions") or []) if isinstance(item, dict)]
 
 
 def _visibility(evidence: dict[str, Any]) -> dict[str, Any]:
@@ -112,7 +112,21 @@ def _body_family(value: Any) -> str | None:
 
 
 def _qualified_laterality(evidence: dict[str, Any]) -> set[tuple[str, str]]:
-    allowed: set[tuple[str, str]] = set()
+    pose = _pose_section(evidence)
+    explicit = pose.get("qualified_laterality")
+    if isinstance(explicit, list):
+        allowed: set[tuple[str, str]] = set()
+        for item in explicit:
+            if not isinstance(item, dict):
+                continue
+            side = str(item.get("side") or "unknown").lower()
+            family = str(item.get("body_family") or "").lower()
+            if side in {"left", "right"} and family:
+                allowed.add((side, family))
+        if allowed:
+            return allowed
+
+    allowed = set()
     for item in _visible_parts(evidence):
         if not item.get("laterality_qualified"):
             continue
@@ -126,19 +140,6 @@ def _qualified_laterality(evidence: dict[str, Any]) -> set[tuple[str, str]]:
             family = _body_family(value)
             if family:
                 allowed.add((side, family))
-        detail = " ".join(
-            str(item.get(field) or "") for field in ("geometry", "contact", "support")
-        ).lower()
-        if "hand" in detail or "finger" in detail:
-            allowed.add((side, "hand"))
-        if "wrist" in detail:
-            allowed.add((side, "wrist"))
-        if "forearm" in detail:
-            allowed.add((side, "forearm"))
-        if "elbow" in detail:
-            allowed.add((side, "elbow"))
-        if "shoulder" in detail:
-            allowed.add((side, "shoulder"))
     for item in _interactions(evidence):
         if not item.get("laterality_qualified"):
             continue
@@ -150,19 +151,10 @@ def _qualified_laterality(evidence: dict[str, Any]) -> set[tuple[str, str]]:
 
 
 def _qualified_hand_sides(evidence: dict[str, Any]) -> set[str]:
-    sides: set[str] = set()
-    for item in _visible_parts(evidence):
-        if item.get("ownership") not in {None, "target"} or not item.get("laterality_qualified"):
-            continue
-        family = _body_family(item.get("part"))
-        subfamilies = {_body_family(value) for value in (item.get("visible_subparts") or [])}
-        geometry = str(item.get("geometry") or "").lower()
-        if family != "hand" and "hand" not in subfamilies and "hand" not in geometry:
-            continue
-        side = str(item.get("anatomical_side") or "unknown").lower()
-        if side in {"left", "right"}:
-            sides.add(side)
-    return sides
+    explicit = _pose_section(evidence).get("qualified_hand_sides")
+    if isinstance(explicit, list):
+        return {str(value).lower() for value in explicit if str(value).lower() in {"left", "right"}}
+    return {side for side, family in _qualified_laterality(evidence) if family == "hand"}
 
 
 def _visibility_family(name: str) -> tuple[str | None, str | None]:
@@ -213,8 +205,14 @@ def _required_scene_claim_present(caption: str, claim: dict[str, Any]) -> bool:
 
 def _orientation_side_is_withheld(evidence: dict[str, Any], body: str) -> bool:
     orientation = _orientation(evidence)
-    keys = ("head_yaw", "head_roll") if body == "head" else ("torso_yaw", "torso_roll")
-    side_neutral_relations = {"turned_from_frontal", "tilted_from_upright", "deviated_from_neutral"}
+    keys = ("head_yaw", "head_roll") if body == "head" else ("torso_yaw", "torso_roll", "image_plane_body_axis")
+    side_neutral_relations = {
+        "turned_from_frontal",
+        "tilted_from_upright",
+        "deviated_from_neutral",
+        "canted_from_vertical_in_image_plane",
+        "deviated_from_vertical_in_image_plane",
+    }
     for key in keys:
         value = orientation.get(key)
         if not isinstance(value, dict):
@@ -233,30 +231,18 @@ def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
     policy = evidence.get("caption_policy") or {}
     trigger = str(policy.get("trigger_token") or "").strip()
     if trigger and not text.startswith(trigger):
-        violations.append(
-            {
-                "type": "trigger_not_grammatical_opening",
-                "expected_trigger": trigger,
-            }
-        )
+        violations.append({"type": "trigger_not_grammatical_opening", "expected_trigger": trigger})
 
     allowed_laterality = _qualified_laterality(evidence)
     for match in _ANATOMICAL_LATERALITY_RE.finditer(text):
         side = match.group(1).lower()
         body = match.group(2).lower()
-        if body == "side" and re.match(r"\s+of\s+(?:the\s+)?(?:image\s+)?frame\b", text[match.end() :], re.I):
+        if body == "side" and re.match(r"\s+of\s+(?:the\s+)?(?:image\s+)?frame\b", text[match.end():], re.I):
             continue
-        family = "arm" if body == "body" else body
-        if family == "side":
-            family = "torso"
+        family = _body_family(body) or ("torso" if body in {"body", "side"} else body)
         if (side, family) not in allowed_laterality:
             violations.append(
-                {
-                    "type": "unqualified_anatomical_laterality",
-                    "text": match.group(0),
-                    "side": side,
-                    "body_family": family,
-                }
+                {"type": "unqualified_anatomical_laterality", "text": match.group(0), "side": side, "body_family": family}
             )
 
     for match in _ORIENTATION_SIDE_RE.finditer(text):
@@ -277,83 +263,47 @@ def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
     for family in ("hip", "knee", "ankle"):
         sides = {side for side, found_family in not_visible_pairs if found_family == family and side}
         if sides == {"left", "right"}:
-            pattern = re.compile(rf"\b{family}s?\b", re.I)
-            if pattern.search(text):
+            if re.compile(rf"\b{family}s?\b", re.I).search(text):
                 violations.append(
-                    {
-                        "type": "mentions_hard_not_visible_anatomy",
-                        "body_family": family,
-                        "visibility": "both_sides_not_visible",
-                    }
+                    {"type": "mentions_hard_not_visible_anatomy", "body_family": family, "visibility": "both_sides_not_visible"}
                 )
         else:
             for side in sides:
-                pattern = re.compile(rf"\b{side}\s+{family}\b", re.I)
-                if pattern.search(text):
-                    violations.append(
-                        {
-                            "type": "mentions_hard_not_visible_anatomy",
-                            "body_family": family,
-                            "side": side,
-                        }
-                    )
+                if re.compile(rf"\b{side}\s+{family}\b", re.I).search(text):
+                    violations.append({"type": "mentions_hard_not_visible_anatomy", "body_family": family, "side": side})
 
     if _BOTH_HANDS_RE.search(text) and len(_qualified_hand_sides(evidence)) < 2:
         violations.append(
-            {
-                "type": "unsupported_plural_hands",
-                "qualified_distinct_hand_sides": sorted(_qualified_hand_sides(evidence)),
-            }
+            {"type": "unsupported_plural_hands", "qualified_distinct_hand_sides": sorted(_qualified_hand_sides(evidence))}
         )
 
     allowed_postures = _allowed_postures(evidence)
     for posture, pattern in _POSTURE_PATTERNS.items():
         if pattern.search(text) and posture not in allowed_postures:
             violations.append(
-                {
-                    "type": "unsupported_whole_body_posture",
-                    "posture": posture,
-                    "allowed_postures": sorted(allowed_postures),
-                }
+                {"type": "unsupported_whole_body_posture", "posture": posture, "allowed_postures": sorted(allowed_postures)}
             )
 
     for match in _META_RE.finditer(text):
-        violations.append(
-            {
-                "type": "pipeline_meta_language",
-                "text": match.group(0),
-            }
-        )
+        violations.append({"type": "pipeline_meta_language", "text": match.group(0)})
     for match in _MISSING_INFO_RE.finditer(text):
-        violations.append(
-            {
-                "type": "missing_information_meta_language",
-                "text": match.group(0),
-            }
-        )
+        violations.append({"type": "missing_information_meta_language", "text": match.group(0)})
+    for match in _CONSTRAINT_NARRATION_RE.finditer(text):
+        violations.append({"type": "constraint_narration_meta_language", "text": match.group(0)})
 
     for claim in evidence.get("required_claims") or []:
         if isinstance(claim, dict) and not _required_claim_present(text, claim):
             warnings.append(
-                {
-                    "type": "required_claim_not_detected",
-                    "claim_id": claim.get("id"),
-                    "magnitude_band": claim.get("magnitude_band"),
-                }
+                {"type": "required_claim_not_detected", "claim_id": claim.get("id"), "magnitude_band": claim.get("magnitude_band")}
             )
-
     for claim in evidence.get("required_scene_claims") or []:
         if isinstance(claim, dict) and not _required_scene_claim_present(text, claim):
             warnings.append(
-                {
-                    "type": "required_scene_claim_not_detected",
-                    "claim_id": claim.get("id"),
-                    "description": claim.get("description"),
-                }
+                {"type": "required_scene_claim_not_detected", "claim_id": claim.get("id"), "description": claim.get("description")}
             )
 
     return {
-        "schema_version": "caption-authority-lint-1.2",
+        "schema_version": "caption-authority-lint-1.3",
         "passed": not violations,
         "violation_count": len(violations),
         "warning_count": len(warnings),
