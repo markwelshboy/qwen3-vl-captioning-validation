@@ -1,70 +1,71 @@
-You are composing a natural-language training caption for a single-identity LoRA dataset from a caption-safe evidence object.
+You are writing a factual training caption for a single-identity LoRA dataset from a governed caption-evidence object.
 
-Target trigger token: {{SUBJECT_TOKEN}}
-Detail profile: {{DETAIL_PROFILE}}
+Return only the final caption as plain text. Do not return JSON, evidence labels, confidence scores, tool names, explanations, or commentary.
 
-Return only the final caption as plain text. Do not return JSON, evidence labels, confidence scores, tool names, or commentary.
+CAPTION POLICY
+- `caption_policy.trigger_token` MUST be the grammatical subject at the beginning of the first sentence, exactly as supplied.
+- Do not replace the trigger with generic subject terms such as "a woman", "a man", "a person", or "the subject".
+- If subject/object/possessive pronouns are supplied in `caption_policy`, use them naturally after the first sentence where appropriate. If they are absent, prefer repeating the trigger or using grammar that does not require inventing gendered pronouns.
+- Treat `caption_policy.protected_traits` as facts that must NOT be described.
 
-CORE POLICY
-- Begin by anchoring the primary target as {{SUBJECT_TOKEN}}.
-- Describe only the simplest correct explanation of what the supplied evidence says is visible in the crop.
-- Prefer an incomplete but well-supported caption over a detailed speculative one.
-- Do not invent clothing, objects, pose, anatomy, interactions, camera angle, or surroundings that are absent from the evidence.
-- Body left/right is ALWAYS anatomical. Never convert a frame-relative location into anatomical laterality.
-- A `frame_location` or gaze `frame_direction` is explicitly about the 2-D image frame only. If you mention it, say "left/right side of the frame" or equivalent. It says nothing about the subject's anatomical left/right.
-- Never say "camera-left" or "camera-right".
-- When anatomical laterality is unknown or not qualified, use side-neutral relational language.
-- A semantic orientation direction of `side_unspecified` means the amount of turn/tilt is usable but the anatomical side is deliberately withheld. Express the magnitude without inventing left/right.
+CRITICAL IDENTITY POLICY
+Do NOT describe intrinsic identity traits that the LoRA itself should learn. In particular, omit natural hair color, baseline hair length, eye color, facial structure, apparent age, skin tone, and all project-protected traits. Generic body-part evidence such as face, eyes, ears, hair, beard, skin, or tattoo is not a reason to caption those identity features.
 
-VISIBILITY FIREWALL
-- `visibility_constraints.not_visible` is a HARD boundary. Do not describe those anatomical regions, their pose, their rotation, or any action that would require them to be seen.
-- `visibility_constraints.partial` means only the visibly supported portion may be described. Do not complete the body from a likely human pose.
-- Never infer hips, knees, ankles, limbs, hands, or other anatomy merely because a normal human body would contain them.
-- `visible_subject_parts` and `qualified_interactions` have already been filtered for usable ownership evidence. Do not restore omitted body parts or interactions.
-- If `laterality_qualified` is false or an anatomical side is `unknown`, preserve the action/geometry but omit left/right wording.
-- Do not pluralize a body part or interaction unless the supplied evidence explicitly supports the plural. In particular, never change one qualified hand into "both hands".
+Temporary appearance states MAY be described when they are explicitly present in `transient_appearance`, including clothing, glasses, masks, watches, jewelry, hats/headwear, and temporary hair states such as tied-back, wet, windblown, braided, covered, or unusually arranged hair.
 
-REQUIRED CLAIMS
-- `required_claims` contains high-value facts that MUST be represented in the caption unless doing so would contradict a hard visibility constraint.
-- Satisfy each required claim once, naturally and compactly. Do not copy its instruction text verbatim.
-- Required 3-D claims remain unsigned: describe magnitude/relationship without inventing which anatomical side is nearer.
+CONTENT PRIORITY
+Cover only useful transient information, in this order:
 
-QUALIFIED 3-D GEOMETRY POLICY
-- `qualified_3d_geometry` contains only image-supported geometry that passed the upstream visibility/provenance governor.
-- A `magnitude_band` describes the strength of depth staggering/rotation, not a numeric angle. Translate it into ordinary natural language; never mention degrees or measurements.
-- The 3-D geometry is UNSIGNED. It can support wording such as "the shoulders are strongly staggered in depth" or "the visible torso has pronounced three-dimensional rotation", but it cannot by itself establish which anatomical side is nearer.
-- Never infer signed left/right depth direction from the 3-D evidence.
-- Do not infer hidden pelvis/leg geometry from shoulder evidence. Shoulder-girdle evidence applies only to the visible shoulder/upper-body relationship.
+1. TRANSIENT APPEARANCE
+- Use `transient_appearance.descriptors` for clothing/accessories/temporary appearance.
+- Use `transient_appearance.expression` for visible transient expression.
+- Do not manufacture appearance details that are absent from this section.
 
-EVIDENCE PRECEDENCE
-1. Hard visibility constraints and qualified ownership/laterality.
-2. Required claims.
-3. Qualified 3-D geometry for depth magnitude only.
-4. Qualified visible body parts and interactions.
-5. Semantic orientation, gaze, expression, framing, scene, and structured nuisance/context evidence.
+2. POSE & ORIENTATION
+- Give non-neutral geometry priority over background detail.
+- Distinguish torso orientation, lean, shoulder relationship, head orientation, gaze, contact/support, and foreshortening when supplied.
+- If the body is bent, twisted, reclined, leaning diagonally, turned away, entering the frame asymmetrically, or otherwise geometrically unusual, state that clearly.
+- `pose_orientation.qualified_3d_geometry` is unsigned. It can establish the magnitude of depth staggering/rotation but NOT which anatomical side is nearer.
+- `required_claims` contains high-value facts that MUST appear once in natural language unless they would violate a hard visibility constraint.
+- Prefer concise, useful geometry over forensic left/right detail whenever anatomical direction is not independently qualified.
+- If orientation direction is `side_unspecified`, describe the amount/type of turn without adding left/right.
+- Never convert an image-frame position into anatomical left/right.
+- Do not pluralize anatomy or interactions unless the evidence explicitly supports the plural.
 
-CAPTION CONTENT PRIORITY
-- Framing/archetype when meaningful.
-- Required claims and defining visible pose geometry/relative rotations.
-- Contact, support, foreshortening, and observed interactions.
-- Gaze and transient expression.
-- Transient appearance details only when actually present in the structured evidence.
-- Non-target entities or embedded depictions that could otherwise be confused with the target.
-- Large or confusing nuisance/background structure, compactly.
+3. FRAMING & CAMERA RELATIONSHIP
+- Describe the shot/framing naturally from `framing_camera.framing` when useful: close-up, medium close-up, waist-up, full-body, selfie-like, etc.
+- Mention a high/low/unusual camera relationship only when `framing_camera.camera_relationship` actually contains qualified evidence. Do not infer one from head pitch, ceiling, floor, or selfie appearance.
 
-TRAINING STYLE
-- Do not catalog every visible object.
-- Do not describe persistent identity traits merely to fill space.
-- Do not explain the evidence pipeline or why a claim is trusted.
-- Do not mention SAM3D, DWPose, Fusion, analysis, keypoints, confidence, reconstruction, evidence authority, hidden-anatomy policy, or the loss-mask/entropy-mask pipeline.
-- A face mask or other visibly worn mask is ordinary image content and may be captioned when it is actually present in the structured evidence.
-- Do not mention absent information or say that something is "not visible". Simply omit it.
+4. ENVIRONMENT & LIGHTING
+- Briefly describe `environment_lighting` after pose/framing.
+- Keep background secondary to the subject.
+- Mention important confusing/large nuisance structure compactly rather than cataloging every object.
+
+EVIDENCE FIREWALL
+- `hard_constraints.visibility.not_visible` is a HARD boundary. Do not describe those anatomical regions, their pose, rotation, or actions requiring them to be seen.
+- `hard_constraints.visibility.partial` means only the visibly supported portion may be described. Never complete a likely human pose from missing anatomy.
+- Never invent hidden hips, knees, ankles, wrists, hands, or other distal anatomy.
+- If anatomical laterality is unknown or not qualified, keep the useful action/geometry but omit left/right.
+- Never infer a signed anatomical side from unsigned 3-D geometry.
+- Do not infer pelvis/leg geometry from shoulder evidence.
+- Do not restore facts that have been omitted by the governed projection.
+
+NON-TARGET CONTENT
+- Mention `non_target_entities` or `embedded_depictions` only when they are visually important or could otherwise be confused with the target.
+- Do not assign their limbs/objects to the trigger subject.
+
+STYLE
+- Use natural prose, not tag lists.
+- Never open with "This image shows" or similar preambles.
+- Do not explain missing information, uncertainty, laterality policy, evidence authority, or why a claim is trusted. Simply omit unsupported details.
+- Never mention SAM3D, DWPose, Fusion, analysis, evidence, confidence, reconstruction, masks, keypoints, hidden anatomy, or policy mechanics.
+- Do not add style/quality commentary.
 
 Length guidance:
 - concise: roughly 35-60 words
 - balanced: roughly 55-90 words
 - detailed: roughly 80-120 words
-These are targets, not hard requirements. Information density and correctness matter more than exact length.
+These are targets, not hard requirements. Correctness and useful information density matter more than exact length.
 
-CAPTION-SAFE EVIDENCE
+CAPTION EVIDENCE
 {{CAPTION_EVIDENCE_JSON}}
