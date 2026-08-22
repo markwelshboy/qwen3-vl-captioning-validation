@@ -11,7 +11,12 @@ _ANATOMICAL_LATERALITY_RE = re.compile(
 _BOTH_HANDS_RE = re.compile(r"\bboth\s+hands\b|\bhands\b", re.IGNORECASE)
 _META_RE = re.compile(
     r"\b(?:sam3d|dwpose|fusion|keypoints?|evidence|confidence|reconstruction|hidden anatomy|"
-    r"not visible|inferred|laterality|unspecified)\b",
+    r"not visible|inferred|laterality|unspecified|descriptors?)\b",
+    re.IGNORECASE,
+)
+_MISSING_INFO_RE = re.compile(
+    r"\b(?:no|none)\s+(?:clothing|appearance|pose|camera|laterality|anatomy)\s+"
+    r"(?:descriptor(?:s)?|details?|information)\b|\bnot\s+(?:specified|provided|available)\b",
     re.IGNORECASE,
 )
 _ORIENTATION_SIDE_RE = re.compile(
@@ -19,6 +24,12 @@ _ORIENTATION_SIDE_RE = re.compile(
     r"lean(?:ed|ing)?|tilt(?:ed|ing)?|angle(?:d|ing)?)\b.{0,30}?\b(left|right)\b",
     re.IGNORECASE,
 )
+_POSTURE_PATTERNS = {
+    "standing": re.compile(r"\b(?:stands?|standing)\b", re.IGNORECASE),
+    "seated": re.compile(r"\b(?:sits?|sitting|seated)\b", re.IGNORECASE),
+    "lying": re.compile(r"\b(?:lies|lying|lie)\b", re.IGNORECASE),
+    "reclined": re.compile(r"\b(?:reclines?|reclined|reclining)\b", re.IGNORECASE),
+}
 
 _DEPTH_TERMS = r"(?:stagger|depth|three[- ]dimensional|3d|rotat|turn|closer|farther|forward|back)"
 _SHOULDER_DEPTH_RE = re.compile(
@@ -68,6 +79,13 @@ def _visibility(evidence: dict[str, Any]) -> dict[str, Any]:
 def _orientation(evidence: dict[str, Any]) -> dict[str, Any]:
     value = _pose_section(evidence).get("semantic_orientation")
     return value if isinstance(value, dict) else {}
+
+
+def _allowed_postures(evidence: dict[str, Any]) -> set[str]:
+    value = _pose_section(evidence).get("whole_body_posture")
+    if not isinstance(value, dict):
+        return set()
+    return {str(item) for item in (value.get("allowed") or [])}
 
 
 def _body_family(value: Any) -> str | None:
@@ -170,20 +188,18 @@ def _required_claim_present(caption: str, claim: dict[str, Any]) -> bool:
 def _orientation_side_is_withheld(evidence: dict[str, Any], body: str) -> bool:
     orientation = _orientation(evidence)
     keys = ("head_yaw", "head_roll") if body == "head" else ("torso_yaw", "torso_roll")
+    side_neutral_relations = {"turned_from_frontal", "tilted_from_upright", "deviated_from_neutral"}
     for key in keys:
         value = orientation.get(key)
-        if isinstance(value, dict) and value.get("direction") == "side_unspecified":
+        if not isinstance(value, dict):
+            continue
+        if value.get("direction") == "side_unspecified" or value.get("relation") in side_neutral_relations:
             return True
     return False
 
 
 def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
-    """Lint generated prose against the governed caption contract.
-
-    The linter is intentionally conservative. It catches clear authority breaks
-    and records required-claim omissions as warnings so validation remains visible
-    rather than silently regenerating until something happens to pass.
-    """
+    """Lint generated prose against the governed caption contract."""
     text = caption.strip()
     violations: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
@@ -223,7 +239,7 @@ def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
         if _orientation_side_is_withheld(evidence, body):
             violations.append(
                 {
-                    "type": "orientation_side_invented_from_side_unspecified",
+                    "type": "orientation_side_invented_from_side_neutral_relation",
                     "text": match.group(0),
                     "body_family": body,
                     "side": match.group(2).lower(),
@@ -264,10 +280,28 @@ def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
+    allowed_postures = _allowed_postures(evidence)
+    for posture, pattern in _POSTURE_PATTERNS.items():
+        if pattern.search(text) and posture not in allowed_postures:
+            violations.append(
+                {
+                    "type": "unsupported_whole_body_posture",
+                    "posture": posture,
+                    "allowed_postures": sorted(allowed_postures),
+                }
+            )
+
     for match in _META_RE.finditer(text):
         violations.append(
             {
                 "type": "pipeline_meta_language",
+                "text": match.group(0),
+            }
+        )
+    for match in _MISSING_INFO_RE.finditer(text):
+        violations.append(
+            {
+                "type": "missing_information_meta_language",
                 "text": match.group(0),
             }
         )
@@ -283,7 +317,7 @@ def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
             )
 
     return {
-        "schema_version": "caption-authority-lint-1.1",
+        "schema_version": "caption-authority-lint-1.2",
         "passed": not violations,
         "violation_count": len(violations),
         "warning_count": len(warnings),
