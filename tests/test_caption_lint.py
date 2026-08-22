@@ -95,6 +95,19 @@ class CaptionLintTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertTrue(any(item["type"] == "pipeline_meta_language" for item in result["violations"]))
 
+    def test_missing_descriptor_meta_language_fails(self) -> None:
+        result = lint_caption(
+            "sH1Vx has strongly staggered shoulders. No clothing descriptors are present.",
+            _evidence(),
+        )
+        self.assertFalse(result["passed"])
+        self.assertTrue(
+            any(
+                item["type"] in {"pipeline_meta_language", "missing_information_meta_language"}
+                for item in result["violations"]
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
