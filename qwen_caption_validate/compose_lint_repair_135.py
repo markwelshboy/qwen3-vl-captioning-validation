@@ -73,6 +73,91 @@ def _render_repair_prompt(caption: str, evidence: dict[str, Any], lint: dict[str
     )
 
 
+def _safe_relative_caption_path(image_ref: Any, key: str) -> Path:
+    """Map an original dataset-relative image path to a matching .txt sidecar path.
+
+    Caption export should use the user's image naming/layout, not internal result keys.
+    Unsafe/absolute paths fall back to the deterministic result key.
+    """
+    text = str(image_ref or "").strip().replace("\\", "/")
+    candidate = Path(text) if text else Path(f"{key}.txt")
+    if candidate.is_absolute() or any(part == ".." for part in candidate.parts):
+        return Path(f"{key}.txt")
+    if candidate.suffix:
+        return candidate.with_suffix(".txt")
+    return candidate.parent / f"{candidate.name}.txt"
+
+
+def _export_final_captions(
+    target_dir: Path,
+    source_meta_paths: list[Path],
+    export_dir: Path,
+) -> dict[str, Any]:
+    """Write final post-repair captions as training sidecars using image-relative stems."""
+    export_dir.mkdir(parents=True, exist_ok=True)
+    records: list[dict[str, Any]] = []
+    written = review_required = missing = 0
+
+    for source_meta in source_meta_paths:
+        key = source_meta.name.removesuffix(".fusion-safe.json")
+        final_meta_path = target_dir / source_meta.name
+        final = _read_json(final_meta_path)
+        if final is None:
+            missing += 1
+            records.append({
+                "image_key": key,
+                "status": "missing_final_metadata",
+                "metadata_path": str(final_meta_path),
+            })
+            continue
+
+        caption = str(final.get("caption") or "").strip()
+        if not caption:
+            missing += 1
+            records.append({
+                "image_key": key,
+                "status": "missing_final_caption",
+                "metadata_path": str(final_meta_path),
+            })
+            continue
+
+        relative_caption = _safe_relative_caption_path(final.get("image"), key)
+        caption_path = export_dir / relative_caption
+        caption_path.parent.mkdir(parents=True, exist_ok=True)
+        caption_path.write_text(caption + "\n", encoding="utf-8")
+
+        lint = final.get("caption_lint") or {}
+        warnings = int(lint.get("warning_count") or 0)
+        violations = int(lint.get("violation_count") or 0)
+        passed = bool(lint.get("passed")) and warnings == 0 and violations == 0
+        needs_review = not passed
+        review_required += int(needs_review)
+        written += 1
+        records.append({
+            "image_key": key,
+            "image": final.get("image"),
+            "caption_path": str(relative_caption),
+            "status": "review_required" if needs_review else "accepted",
+            "review_required": needs_review,
+            "repair_attempted": bool(final.get("repair_attempted")),
+            "warning_count": warnings,
+            "violation_count": violations,
+        })
+
+    index = {
+        "schema_version": "caption-dataset-export-1.0",
+        "source_dir": str(target_dir),
+        "output_dir": str(export_dir),
+        "matched": len(source_meta_paths),
+        "written": written,
+        "review_required": review_required,
+        "missing": missing,
+        "records": records,
+    }
+    _write_json(export_dir / "caption_export.index.json", index)
+    return index
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="qwen-compose-lint-repair-135",
@@ -85,6 +170,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-label", help="Output run label; default: <source>-repair1")
     parser.add_argument("--only", nargs="+", help="Only repair/copy result keys containing one of these strings.")
     parser.add_argument("--include-warnings", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--export-caption-dir",
+        type=Path,
+        help=(
+            "Optional training-caption export directory. Writes final post-repair .txt sidecars "
+            "using each original image's relative path/stem, plus caption_export.index.json."
+        ),
+    )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--max-caption-tokens", type=int, default=450)
     parser.add_argument("--backend", choices=["auto", "transformers", "vllm"], default="auto")
@@ -242,6 +335,19 @@ def main() -> int:
     _write_json(target_dir / "lint_repair.index.json", index)
     print(f"Repair output: {target_dir}")
     print(f"Matched: {len(work)}; copied clean: {copied_clean}; repaired: {repaired}; repaired clean: {repaired_clean}; still failed: {still_failed}")
+
+    if args.export_caption_dir:
+        export_dir = args.export_caption_dir.expanduser().resolve()
+        export_index = _export_final_captions(
+            target_dir,
+            [source_meta for source_meta, _, _ in work],
+            export_dir,
+        )
+        print(
+            f"Caption export: {export_dir} "
+            f"({export_index['written']} written; {export_index['review_required']} review; {export_index['missing']} missing)"
+        )
+
     return 0 if work else 2
 
 
