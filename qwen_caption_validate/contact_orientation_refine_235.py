@@ -277,14 +277,21 @@ def _safe_confidence(value: Any) -> float:
 
 def _orientation_consistency(fusion: dict[str, Any], analysis: dict[str, Any]) -> dict[str, Any]:
     orientation = fusion.get("orientation_semantics") or {}
-    shoulder = (fusion.get("sam3d_geometry_audit") or {}).get("shoulder_depth_rotation") or {}
-    head_visibility = ((fusion.get("sam3d_geometry_audit") or {}).get("landmark_visibility") or {}).get("head") or {}
+    sam = fusion.get("sam3d_geometry_audit") or {}
+    shoulder = sam.get("shoulder_depth_rotation") or {}
+    head_visibility = (sam.get("landmark_visibility") or {}).get("head") or {}
+    provenance = sam.get("target_provenance") or {}
     gaze = ((analysis.get("target_subject") or {}).get("gaze") or {})
 
     shoulder_deg = _safe_confidence(shoulder.get("magnitude_deg"))
     torso = orientation.get("torso_yaw") or {}
     head = orientation.get("head_yaw") or {}
-    strong_upper_torso = shoulder.get("authority") == "qualified_component_geometry" and shoulder_deg >= 50.0
+    provenance_usable = provenance.get("context_risk") != "requires_review"
+    strong_upper_torso = (
+        provenance_usable
+        and shoulder.get("authority") == "qualified_component_geometry"
+        and shoulder_deg >= 50.0
+    )
     weak_frontal_torso = torso.get("direction") == "frontal" and torso.get("magnitude") in {"none", "slight"}
     head_camera_frontal = head.get("direction") == "frontal" and head.get("magnitude") in {"none", "slight", "moderate"}
     head_visible = head_visibility.get("visibility") == "visible" and _safe_confidence(head_visibility.get("confidence")) >= 0.75
@@ -292,6 +299,8 @@ def _orientation_consistency(fusion: dict[str, Any], analysis: dict[str, Any]) -
 
     audit: dict[str, Any] = {
         "schema_version": "orientation-consistency-audit-1.0",
+        "target_provenance_usable": provenance_usable,
+        "target_provenance_context_risk": provenance.get("context_risk"),
         "qualified_shoulder_depth_deg": round(shoulder_deg, 3) if shoulder_deg else None,
         "strong_upper_torso_depth": strong_upper_torso,
         "suppressed_semantic_torso_yaw": False,
@@ -340,7 +349,7 @@ def refine_contact_orientation(payload: dict[str, Any], dw: dict[str, Any], anal
         "Analyze body-to-body contact/support is caption-usable only when both actor and target body entities are independently observed by DWPose; missing segment evidence vetoes the relation, not body visibility."
     )
     fusion["selection_policy"]["orientation_consistency"] = (
-        "Very-high qualified shoulder depth overrides weak frontal torso-yaw semantics; a camera-frontal visible head with camera gaze may establish a strong head-turn-toward-camera relation relative to that depth-turned torso."
+        "Very-high qualified shoulder depth with safe target provenance overrides weak frontal torso-yaw semantics; a camera-frontal visible head with camera gaze may establish a strong head-turn-toward-camera relation relative to that depth-turned torso."
     )
     return out
 
@@ -414,6 +423,7 @@ def main() -> int:
                 "status": "written",
                 "blocked_interactions": bi,
                 "blocked_body_fields": bf,
+                "target_provenance_usable": bool(orient.get("target_provenance_usable")),
                 "suppressed_semantic_torso_yaw": bool(orient.get("suppressed_semantic_torso_yaw")),
                 "head_torso_relation_qualified": bool(hr),
             }
