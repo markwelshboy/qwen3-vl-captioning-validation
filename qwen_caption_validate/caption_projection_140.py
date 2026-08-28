@@ -33,6 +33,13 @@ _SETTING_PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
     ("vehicle interior", re.compile(r"\bcar\s+interior\b|\bvehicle\s+interior\b|\bbus\s+interior\b", re.I), "vehicle"),
 )
 
+_CONCRETE_SCENE_OBJECT_RE = re.compile(
+    r"\b(?:backpacks?|bags?|boxes?|carts?|trolleys?|suitcases?|luggage|lamps?|fixtures?|paintings?|"
+    r"pictures?|signs?|bottles?|cups?|mugs?|chairs?|benches?|tables?|phones?|smartphones?|vehicles?|"
+    r"cars?|bicycles?|bikes?|umbrellas?|books?|monitors?|laptops?|keyboards?|garments?)\b",
+    re.IGNORECASE,
+)
+
 
 def _pose(evidence: dict[str, Any]) -> dict[str, Any]:
     value = evidence.get("pose_orientation")
@@ -207,6 +214,55 @@ def _scene_gestalt_claims(evidence: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def _singular_scene_keyword(value: str) -> str:
+    word = value.lower()
+    if word.endswith("ies") and len(word) > 4:
+        return word[:-3] + "y"
+    if re.search(r"(?:x|z|ch|sh|ss)es$", word) and len(word) > 4:
+        return word[:-2]
+    if word.endswith("s") and len(word) > 3:
+        return word[:-1]
+    return word
+
+
+def _concrete_region_claims(evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    claims: list[dict[str, Any]] = []
+    env = evidence.get("environment_lighting") or {}
+    for item in env.get("important_background_or_nuisance_regions") or []:
+        if not isinstance(item, dict):
+            continue
+        description = str(item.get("description") or "").strip()
+        if not description:
+            continue
+        keywords: list[str] = []
+        for match in _CONCRETE_SCENE_OBJECT_RE.finditer(description):
+            keyword = _singular_scene_keyword(match.group(0))
+            if keyword not in keywords:
+                keywords.append(keyword)
+        if not keywords:
+            continue
+        claims.append(
+            {
+                "id": f"scene_object_region_{len(claims) + 1}",
+                "description": description,
+                "keywords": keywords,
+                "minimum_keyword_matches": min(2, len(keywords)),
+                "attribution": "scene_or_background_not_trigger_identity",
+                "semantic_compression_allowed": True,
+            }
+        )
+    return claims
+
+
+def _scene_claims(evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    # Keep the review pressure bounded: at most one broad setting concept and one
+    # concrete object-region obligation. This preserves yellow-bag/boxes-type
+    # separation without turning floor/wall/background texture into a prose quota.
+    gestalt = _scene_gestalt_claims(evidence)
+    concrete = _concrete_region_claims(evidence)
+    return [*gestalt[:1], *concrete[:1]]
+
+
 def _preferred_scene_entities(evidence: dict[str, Any]) -> list[dict[str, Any]]:
     ranked: list[tuple[float, int, dict[str, Any]]] = []
     for index, item in enumerate(evidence.get("non_target_entities") or []):
@@ -220,7 +276,19 @@ def _preferred_scene_entities(evidence: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         ranked.append((confidence, -index, copy.deepcopy(item)))
     ranked.sort(reverse=True, key=lambda value: (value[0], value[1]))
-    return [item for _, _, item in ranked[:3]]
+    preferred = [item for _, _, item in ranked[:3]]
+
+    seen = {str(item.get("description") or "").lower() for item in preferred}
+    env = evidence.get("environment_lighting") or {}
+    for item in env.get("important_background_or_nuisance_regions") or []:
+        if len(preferred) >= 3 or not isinstance(item, dict):
+            break
+        description = str(item.get("description") or "").strip()
+        if not description or description.lower() in seen or not _CONCRETE_SCENE_OBJECT_RE.search(description):
+            continue
+        preferred.append({"description": description, "source": "important_scene_region"})
+        seen.add(description.lower())
+    return preferred
 
 
 def build_caption_projection(
@@ -248,7 +316,7 @@ def build_caption_projection(
     _coalesce_3d_payload(evidence)
 
     previous_scene = copy.deepcopy(evidence.get("required_scene_claims") or [])
-    evidence["required_scene_claims"] = _scene_gestalt_claims(evidence)
+    evidence["required_scene_claims"] = _scene_claims(evidence)
     env = evidence.setdefault("environment_lighting", {})
     env["preferred_scene_entities"] = _preferred_scene_entities(evidence)
     env["scene_detail_policy"] = "prefer_distinctive_entities_and_semantic_gestalt_over_generic_surface_inventory"
@@ -269,7 +337,7 @@ def build_caption_projection(
             projection.setdefault("blocked", []).append(
                 {
                     "path": "caption-evidence-1.3.required_scene_claims",
-                    "reason": "generic_nuisance_inventory_demoted_to_optional_context",
+                    "reason": "generic_nuisance_inventory_demoted_but_concrete_object_regions_preserved",
                     "previous_claims": previous_scene,
                     "replacement_claims": copy.deepcopy(evidence["required_scene_claims"]),
                 }
@@ -278,12 +346,12 @@ def build_caption_projection(
             projection.setdefault("allowed", []).append(
                 {
                     "path": "caption-evidence-1.3.environment_lighting.preferred_scene_entities",
-                    "reason": "high_confidence_distinctive_scene_entities_prioritized_over_generic_surfaces",
+                    "reason": "high_confidence_or_concrete_scene_entities_prioritized_over_generic_surfaces",
                     "count": len(env["preferred_scene_entities"]),
                 }
             )
         projection.setdefault("notes", []).append(
-            "Projection 1.4.0 optimizes semantic coverage under compression: overlapping support/depth evidence may be expressed once, and generic nuisance surfaces are not prose quotas."
+            "Projection 1.4.0 optimizes semantic coverage under compression: overlapping support/depth evidence may be expressed once; generic surfaces are not prose quotas; concrete object regions remain protected from omission."
         )
     return evidence, audit
 
