@@ -23,6 +23,9 @@ _RELATION_GEOMETRY_RE = re.compile(
     r"press(?:es|ed|ing)?|lean(?:s|ed|ing)?|hold(?:s|ing)?|grip(?:s|ped|ping)?|against|near)\b",
     re.IGNORECASE,
 )
+_BILATERAL_PARTS = {
+    "arm", "upper arm", "forearm", "wrist", "hand", "shoulder", "hip", "thigh", "knee", "lower leg", "leg", "ankle", "foot"
+}
 
 
 def _norm_part(value: str) -> str:
@@ -44,13 +47,18 @@ def _norm_part(value: str) -> str:
     return aliases.get(text, text)
 
 
-def _entity_from_text(value: Any) -> tuple[str | None, str] | None:
+def _entities_from_text(value: Any) -> list[tuple[str | None, str]]:
     text = str(value or "")
-    match = _BODY_TOKEN_RE.search(text)
-    if not match:
-        return None
-    side = match.group("side").lower() if match.group("side") else None
-    return side, _norm_part(match.group("part"))
+    out: list[tuple[str | None, str]] = []
+    for match in _BODY_TOKEN_RE.finditer(text):
+        side = match.group("side").lower() if match.group("side") else None
+        out.append((side, _norm_part(match.group("part"))))
+    return out
+
+
+def _entity_from_text(value: Any) -> tuple[str | None, str] | None:
+    values = _entities_from_text(value)
+    return values[0] if values else None
 
 
 def _visible_landmarks(dw: dict[str, Any]) -> set[str]:
@@ -131,7 +139,7 @@ def _qualified_actor_entity(item: dict[str, Any]) -> tuple[str | None, str] | No
         return None
     side, part = entity
     state = item.get("fusion_v2") or {}
-    if part in {"arm", "upper arm", "forearm", "wrist", "hand", "shoulder", "hip", "thigh", "knee", "lower leg", "leg", "ankle", "foot"}:
+    if part in _BILATERAL_PARTS:
         if not state.get("laterality_selection_usable"):
             return None
         qualified = state.get("qualified_anatomical_side") or item.get("anatomical_side")
@@ -147,7 +155,7 @@ def _interaction_actor_entity(item: dict[str, Any]) -> tuple[str | None, str] | 
         return None
     side, part = entity
     state = item.get("fusion_v2") or {}
-    if part in {"arm", "upper arm", "forearm", "wrist", "hand", "shoulder", "hip", "thigh", "knee", "lower leg", "leg", "ankle", "foot"}:
+    if part in _BILATERAL_PARTS:
         if not state.get("laterality_selection_usable"):
             return None
         qualified = state.get("qualified_actor_anatomical_side")
@@ -155,6 +163,20 @@ def _interaction_actor_entity(item: dict[str, Any]) -> tuple[str | None, str] | 
         if side not in {"left", "right"}:
             return None
     return side, part
+
+
+def _relation_target(clause: str, actor: tuple[str | None, str] | None) -> tuple[str | None, str] | None:
+    entities = _entities_from_text(clause)
+    if not entities:
+        return None
+    if actor is None:
+        return entities[-1]
+    actor_side, actor_part = actor
+    different = [
+        entity for entity in entities
+        if entity[1] != actor_part or (actor_side in {"left", "right"} and entity[0] in {"left", "right"} and entity[0] != actor_side)
+    ]
+    return different[-1] if different else None
 
 
 def _strip_relation_clauses(value: Any, actor: tuple[str | None, str] | None, dw: dict[str, Any], *, geometry: bool) -> tuple[Any, list[str]]:
@@ -169,7 +191,7 @@ def _strip_relation_clauses(value: Any, actor: tuple[str | None, str] | None, dw
         if geometry and not _RELATION_GEOMETRY_RE.search(clause):
             kept.append(clause)
             continue
-        target = _entity_from_text(clause)
+        target = _relation_target(clause, actor)
         if target is None:
             kept.append(clause)
             continue
@@ -246,22 +268,26 @@ def _guard_self_contacts(fusion: dict[str, Any], dw: dict[str, Any]) -> dict[str
     return audit
 
 
+def _safe_confidence(value: Any) -> float:
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _orientation_consistency(fusion: dict[str, Any], analysis: dict[str, Any]) -> dict[str, Any]:
     orientation = fusion.get("orientation_semantics") or {}
     shoulder = (fusion.get("sam3d_geometry_audit") or {}).get("shoulder_depth_rotation") or {}
     head_visibility = ((fusion.get("sam3d_geometry_audit") or {}).get("landmark_visibility") or {}).get("head") or {}
     gaze = ((analysis.get("target_subject") or {}).get("gaze") or {})
 
-    try:
-        shoulder_deg = float(shoulder.get("magnitude_deg"))
-    except (TypeError, ValueError):
-        shoulder_deg = 0.0
+    shoulder_deg = _safe_confidence(shoulder.get("magnitude_deg"))
     torso = orientation.get("torso_yaw") or {}
     head = orientation.get("head_yaw") or {}
     strong_upper_torso = shoulder.get("authority") == "qualified_component_geometry" and shoulder_deg >= 50.0
     weak_frontal_torso = torso.get("direction") == "frontal" and torso.get("magnitude") in {"none", "slight"}
     head_camera_frontal = head.get("direction") == "frontal" and head.get("magnitude") in {"none", "slight", "moderate"}
-    head_visible = head_visibility.get("visibility") == "visible" and float(head_visibility.get("confidence") or 0.0) >= 0.75
+    head_visible = head_visibility.get("visibility") == "visible" and _safe_confidence(head_visibility.get("confidence")) >= 0.75
     gaze_camera = gaze.get("target") in {"camera_lens", "near_camera"}
 
     audit: dict[str, Any] = {
