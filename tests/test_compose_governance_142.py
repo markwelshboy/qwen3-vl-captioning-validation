@@ -40,7 +40,10 @@ class ComposeGovernance142Tests(unittest.TestCase):
                     }
                 ],
                 "qualified_interactions": [],
-                "sam3d_geometry_audit": {"landmark_visibility": {}},
+                "sam3d_geometry_audit": {
+                    "target_provenance": {"context_risk": "normal"},
+                    "landmark_visibility": {},
+                },
                 "qualified_upper_torso_depth_relation": {
                     "magnitude": "strong",
                     "relation": "upper torso strongly turned in depth, near side-on rather than square-on to the camera",
@@ -84,6 +87,20 @@ class ComposeGovernance142Tests(unittest.TestCase):
         ids = {item["id"] for item in evidence["required_claims"]}
         self.assertIn("head_turn_toward_camera_relative_torso", ids)
         self.assertIn("upper_torso_side_on_relation", ids)
+
+    def test_provenance_review_blocks_synthetic_projection_relations(self) -> None:
+        payload = self._payload()
+        payload["fusion"]["sam3d_geometry_audit"]["target_provenance"]["context_risk"] = "requires_review"
+        evidence, audit = build_caption_projection(payload, self._analysis())
+        pose = evidence["pose_orientation"]
+        self.assertNotIn("head_torso_relation", pose)
+        self.assertNotIn("upper_torso_depth_relation", pose)
+        ids = {item["id"] for item in evidence["required_claims"]}
+        self.assertNotIn("head_turn_toward_camera_relative_torso", ids)
+        self.assertNotIn("upper_torso_side_on_relation", ids)
+        projection = audit.get("projection") if isinstance(audit.get("projection"), dict) else audit
+        blocked = projection.get("blocked") or []
+        self.assertTrue(any(item.get("reason") == "sam3d_target_provenance_requires_review" for item in blocked if isinstance(item, dict)))
 
     def test_forward_head_wording_is_rejected_when_relative_turn_is_required(self) -> None:
         evidence, _ = build_caption_projection(self._payload(), self._analysis())
