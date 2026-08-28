@@ -8,6 +8,11 @@ from .caption_projection_142 import build_caption_projection as _build_142
 from .caption_projection_142 import lint_caption as _lint_142
 
 _STANDING_RE = re.compile(r"\b(?:stands?|standing|stood)\b", re.IGNORECASE)
+_KNEE_KINEMATIC_RE = re.compile(
+    r"(?:,?\s*)\b(?:knee\s+(?:is\s+)?(?:slightly\s+)?(?:bent|straight)|"
+    r"(?:slightly\s+)?bent\s+knee|straight\s+knee|leg\s+(?:is\s+)?straight|straight\s+leg)\b",
+    re.IGNORECASE,
+)
 _FRAMING_TERMS = {
     "close_up": re.compile(r"\bclose[- ]?up\b", re.I),
     "medium_close_up": re.compile(r"\bmedium\s+close[- ]?up\b|\bupper\s+chest\b|\bhead\s+(?:and|&)\s+shoulders\b", re.I),
@@ -44,10 +49,6 @@ def _framing_label_and_description(framing: dict[str, Any], fusion: dict[str, An
     deterministic = fusion.get("deterministic_geometry") or {}
     pose_extent = str(deterministic.get("pose_extent_hint") or "").lower()
 
-    # A visible ankle is direct evidence that the crop reaches essentially the
-    # whole body, even if Analyze's natural-language extent was conservative.
-    # DWPose is otherwise used only to broaden a coarse extent class; it never
-    # reduces visible VLM extent simply because a joint detector misses a crop.
     if pose_extent == "full_length":
         return "full_length", "full-length framing showing essentially the whole body", extent
     if any(token in text for token in ("mid-calf", "mid calf", "feet partially cropped", "feet cropped", "ankles cropped")):
@@ -108,6 +109,51 @@ def _qualified_side(item: dict[str, Any]) -> str | None:
     return None
 
 
+def _sanitize_cropped_leg_kinematics(evidence: dict[str, Any], fused_payload: dict[str, Any], projection: dict[str, Any]) -> None:
+    """Do not verbalize knee angle or distal ground support without a full leg chain."""
+    fusion = _fusion_root(fused_payload)
+    connectivity = (fusion.get("deterministic_geometry") or {}).get("connectivity") or {}
+    pose = _pose(evidence)
+    for index, item in enumerate(pose.get("visible_subject_parts") or []):
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("part") or "").lower().replace("_", " ")
+        if not re.search(r"\b(?:leg|thigh|knee)\b", label):
+            continue
+        side = str(item.get("anatomical_side") or "").lower()
+        if side not in {"left", "right"}:
+            continue
+        chain = connectivity.get(f"{side}_leg") or {}
+        if bool(chain.get("complete")):
+            continue
+
+        geometry = item.get("geometry")
+        if isinstance(geometry, str) and geometry:
+            reduced = _KNEE_KINEMATIC_RE.sub("", geometry)
+            reduced = re.sub(r"\s*,\s*,+", ", ", reduced)
+            reduced = re.sub(r"^\s*[,;]\s*|\s*[,;]\s*$", "", reduced)
+            reduced = re.sub(r"\s{2,}", " ", reduced).strip()
+            if reduced != geometry:
+                item["geometry"] = reduced or None
+                projection.setdefault("blocked", []).append({
+                    "path": f"caption-evidence-1.3.pose_orientation.visible_subject_parts[{index}].geometry",
+                    "reason": "knee_angle_withheld_without_complete_hip_knee_ankle_chain",
+                    "source_geometry": geometry,
+                    "retained_geometry": item.get("geometry"),
+                    "visible_leg_landmarks": list(chain.get("visible") or []),
+                })
+
+        support = item.get("support")
+        if isinstance(support, str) and re.search(r"\b(?:sand|ground|floor|feet?|foot)\b", support, re.I):
+            item["support"] = None
+            projection.setdefault("blocked", []).append({
+                "path": f"caption-evidence-1.3.pose_orientation.visible_subject_parts[{index}].support",
+                "reason": "distal_ground_support_withheld_without_visible_ankle_foot_chain",
+                "source_support": support,
+                "visible_leg_landmarks": list(chain.get("visible") or []),
+            })
+
+
 def _qualify_cropped_standing(evidence: dict[str, Any], fused_payload: dict[str, Any], analysis: dict[str, Any], projection: dict[str, Any]) -> dict[str, Any] | None:
     pose = _pose(evidence)
     posture = pose.setdefault("whole_body_posture", {"allowed": [], "authority": "direct_visible_support_only", "evidence": []})
@@ -146,7 +192,7 @@ def _qualify_cropped_standing(evidence: dict[str, Any], fused_payload: dict[str,
     posture["authority"] = "semantic_standing_plus_bilateral_observed_hip_knee_chains"
     posture["evidence"] = list(posture.get("evidence") or []) + [
         "Analyze summary explicitly reports standing",
-        "both governed leg records report standing/ground support",
+        "both governed leg records independently report standing",
         "DWPose observes bilateral hip-to-knee chains; feet may be cropped",
     ]
     projection.setdefault("allowed", []).append({
@@ -157,7 +203,7 @@ def _qualify_cropped_standing(evidence: dict[str, Any], fused_payload: dict[str,
         "id": "whole_body_posture_standing",
         "priority": "required",
         "description": "subject is standing",
-        "instruction": "State that the subject is standing. Cropped feet do not invalidate this qualified posture.",
+        "instruction": "State that the subject is standing. Cropped feet do not invalidate this qualified posture, but do not infer knee bend or exact foot/ground contact from cropped lower legs.",
     }
 
 
@@ -178,8 +224,6 @@ def _salient_interaction_claims(evidence: dict[str, Any]) -> list[dict[str, Any]
         target = str(item.get("target") or "").replace("_", " ").strip()
         target_lower = target.lower()
         actor_lower = actor.lower()
-        # Generic surface/ground support is useful evidence but should not become
-        # a prose quota. Preserve body gestures and held/carried object relations.
         body_gesture = _HAND_RE.search(actor_lower) and target_lower in {"hip", "head", "chin", "face"}
         held_object = interaction_type in {"hold", "holding", "grip", "grasp", "carry", "carrying"}
         if not body_gesture and not held_object:
@@ -291,9 +335,12 @@ def build_caption_projection(
     claims = [copy.deepcopy(item) for item in (evidence.get("required_claims") or []) if isinstance(item, dict)]
     existing = {str(item.get("id") or "") for item in claims}
 
+    standing_claim = _qualify_cropped_standing(evidence, fused_payload, analysis, projection)
+    _sanitize_cropped_leg_kinematics(evidence, fused_payload, projection)
+
     for claim in (
         _normalize_framing(evidence, fused_payload, projection),
-        _qualify_cropped_standing(evidence, fused_payload, analysis, projection),
+        standing_claim,
         _chin_gesture_claim(evidence, projection),
     ):
         if claim and claim["id"] not in existing:
@@ -316,7 +363,7 @@ def build_caption_projection(
 
     evidence["required_claims"] = claims
     projection.setdefault("notes", []).append(
-        "Projection 1.4.3 prioritizes semantic salience: normalize framing from actual subject extent, qualify cropped standing only from three-way semantic/leg-chain agreement, require high-confidence pose interactions, and compress hand/chin support into a recognizable gesture."
+        "Projection 1.4.3 prioritizes semantic salience: normalize framing from actual subject extent, qualify cropped standing only from three-way semantic/leg-chain agreement, withhold cropped knee/ground kinematics, require high-confidence pose interactions, and compress hand/chin support into a recognizable gesture."
     )
     return evidence, audit
 
