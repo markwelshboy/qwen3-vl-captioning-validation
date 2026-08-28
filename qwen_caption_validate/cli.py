@@ -10,6 +10,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
+from . import runner as runner_module
 from .analysis_v2_normalize import normalize_analysis_v2
 from .report import build_report
 from .runner import (
@@ -35,7 +36,7 @@ DEFAULT_SCHEMA = PACKAGE_ROOT / "schemas" / "analysis_v1.schema.json"
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="qwen-vl-validate",
-        description="Run Qwen3-VL models sequentially over an image dataset and compare structured visual analyses/captions.",
+        description="Run Qwen3-VL models over an image dataset and compare structured visual analyses/captions.",
     )
     parser.add_argument("dataset", type=Path, help="Folder containing training images (and optional .txt sidecars).")
     parser.add_argument("--models", nargs="+", default=["8b", "32b"], help="Model aliases (8b, 32b, 8b-fp8, 32b-fp8) or Hugging Face model IDs.")
@@ -61,6 +62,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--detail", choices=["concise", "balanced", "detailed"], default="balanced")
     parser.add_argument("--max-analysis-tokens", type=int, default=1800)
     parser.add_argument("--max-caption-tokens", type=int, default=450)
+    parser.add_argument(
+        "--analysis-batch-size",
+        type=int,
+        default=1,
+        help="Number of independent image-analysis requests to submit together to vLLM (default: 1).",
+    )
     parser.add_argument(
         "--backend",
         choices=["auto", "transformers", "vllm"],
@@ -119,6 +126,35 @@ def _matches_include(image: Path, dataset: Path, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatch(relative, pattern) or fnmatch.fnmatch(image.name, pattern) for pattern in patterns)
 
 
+def _analysis_result(
+    *,
+    raw: str,
+    seconds: float,
+    record: dict,
+    model_id: str,
+    backend: str,
+    schema: dict,
+) -> dict:
+    parsed, parse_error = parse_json_response(raw)
+    normalization_actions = []
+    if isinstance(parsed, dict) and parsed.get("schema_version") == "2.0":
+        parsed, normalization_actions = normalize_analysis_v2(parsed)
+    schema_errors = validate_analysis(parsed, schema) if parsed is not None else []
+    return {
+        "image": record["relative_path"],
+        "model": model_id,
+        "backend": backend,
+        "inference_seconds": seconds,
+        "analysis_seconds": seconds,
+        "analysis": parsed,
+        "raw_response": raw,
+        "parse_error": parse_error,
+        "normalization_actions": normalization_actions,
+        "schema_valid": parsed is not None and not schema_errors,
+        "schema_errors": schema_errors,
+    }
+
+
 def main() -> int:
     args = parse_args()
     dataset = args.dataset.expanduser().resolve()
@@ -128,6 +164,9 @@ def main() -> int:
 
     if not 0.0 < args.vllm_gpu_memory_utilization <= 1.0:
         print("--vllm-gpu-memory-utilization must be > 0 and <= 1", file=sys.stderr)
+        return 2
+    if args.analysis_batch_size < 1:
+        print("--analysis-batch-size must be >= 1", file=sys.stderr)
         return 2
 
     images = discover_images(dataset, recursive=args.recursive)
@@ -195,6 +234,7 @@ def main() -> int:
         "dtype": args.dtype,
         "quantization": args.quantization,
         "attention": args.attn,
+        "analysis_batch_size": args.analysis_batch_size,
         "vllm_gpu_memory_utilization": args.vllm_gpu_memory_utilization,
         "vllm_max_model_len": args.vllm_max_model_len,
         "include_patterns": args.include,
@@ -235,12 +275,16 @@ def main() -> int:
             vllm_max_model_len=args.vllm_max_model_len,
         )
         print(f"Loaded in {loaded.load_seconds:.1f}s. Processing {len(pending)} image(s).")
+        effective_batch_size = args.analysis_batch_size if loaded.backend == "vllm" else 1
+        if effective_batch_size > 1:
+            print(f"Analyze request batch size: {effective_batch_size}")
         model_runtime[slug] = {
             "load_seconds": loaded.load_seconds,
             "backend": loaded.backend,
             "quantization": loaded.quantization,
             "dtype": args.dtype,
             "attention": args.attn if loaded.backend == "transformers" else None,
+            "analysis_batch_size": effective_batch_size,
             "vllm_gpu_memory_utilization": args.vllm_gpu_memory_utilization if loaded.backend == "vllm" else None,
             "vllm_max_model_len": args.vllm_max_model_len if loaded.backend == "vllm" else None,
         }
@@ -250,72 +294,137 @@ def main() -> int:
         try:
             jsonl_path = model_dir / "results.jsonl"
             with jsonl_path.open("a", encoding="utf-8") as jsonl:
-                for image, record, needs_analysis, needs_caption in tqdm(pending, desc=slug):
-                    result_path = model_dir / f"{record['result_key']}.analysis.json"
-                    caption_path = model_dir / f"{record['result_key']}.caption.txt"
-                    caption_meta_path = model_dir / f"{record['result_key']}.caption.json"
-                    result = None
+                if effective_batch_size > 1:
+                    batch_generate = getattr(runner_module, "generate_batch", None)
+                    if not callable(batch_generate):
+                        raise RuntimeError(
+                            "Analyze batching requested but the active runner does not provide generate_batch"
+                        )
 
-                    if needs_analysis:
-                        raw, seconds = generate(
+                    results_by_key: dict[str, dict] = {}
+                    analysis_pending = [item for item in pending if item[2]]
+                    for offset in range(0, len(analysis_pending), effective_batch_size):
+                        batch = analysis_pending[offset : offset + effective_batch_size]
+                        batch_images = [item[0] for item in batch]
+                        generated = batch_generate(
                             loaded,
-                            image,
+                            batch_images,
                             analysis_prompt,
                             max_new_tokens=args.max_analysis_tokens,
                         )
-                        parsed, parse_error = parse_json_response(raw)
-                        normalization_actions = []
-                        if isinstance(parsed, dict) and parsed.get("schema_version") == "2.0":
-                            parsed, normalization_actions = normalize_analysis_v2(parsed)
-                        schema_errors = validate_analysis(parsed, schema) if parsed is not None else []
-                        result = {
-                            "image": record["relative_path"],
-                            "model": model_id,
-                            "backend": loaded.backend,
-                            "inference_seconds": seconds,
-                            "analysis_seconds": seconds,
-                            "analysis": parsed,
-                            "raw_response": raw,
-                            "parse_error": parse_error,
-                            "normalization_actions": normalization_actions,
-                            "schema_valid": parsed is not None and not schema_errors,
-                            "schema_errors": schema_errors,
-                        }
-                        result_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-                        jsonl.write(json.dumps(result, ensure_ascii=False) + "\n")
-                        jsonl.flush()
-                    else:
-                        result = json.loads(result_path.read_text(encoding="utf-8"))
+                        if len(generated) != len(batch):
+                            raise RuntimeError(
+                                f"Analyze batch returned {len(generated)} result(s) for {len(batch)} request(s)"
+                            )
+                        for (_, record, _, _), (raw, seconds) in zip(batch, generated):
+                            result = _analysis_result(
+                                raw=raw,
+                                seconds=seconds,
+                                record=record,
+                                model_id=model_id,
+                                backend=loaded.backend,
+                                schema=schema,
+                            )
+                            result_path = model_dir / f"{record['result_key']}.analysis.json"
+                            result_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+                            jsonl.write(json.dumps(result, ensure_ascii=False) + "\n")
+                            jsonl.flush()
+                            results_by_key[record["result_key"]] = result
 
-                    if needs_caption:
-                        analysis = result.get("analysis") if result else None
-                        if analysis is None:
-                            caption_path.with_suffix(".caption.error.txt").write_text(
-                                "Caption skipped because analysis JSON could not be parsed.\n",
-                                encoding="utf-8",
-                            )
-                        else:
-                            prompt = render_compose_prompt(compose_prompt, analysis, args.subject_token, args.detail)
-                            caption, compose_seconds = generate_text(
+                    for image, record, needs_analysis, needs_caption in tqdm(pending, desc=slug):
+                        result = results_by_key.get(record["result_key"])
+                        result_path = model_dir / f"{record['result_key']}.analysis.json"
+                        caption_path = model_dir / f"{record['result_key']}.caption.txt"
+                        caption_meta_path = model_dir / f"{record['result_key']}.caption.json"
+                        if result is None:
+                            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+                        if needs_caption:
+                            analysis = result.get("analysis") if result else None
+                            if analysis is None:
+                                caption_path.with_suffix(".caption.error.txt").write_text(
+                                    "Caption skipped because analysis JSON could not be parsed.\n",
+                                    encoding="utf-8",
+                                )
+                            else:
+                                prompt = render_compose_prompt(compose_prompt, analysis, args.subject_token, args.detail)
+                                caption, compose_seconds = generate_text(
+                                    loaded,
+                                    prompt,
+                                    max_new_tokens=args.max_caption_tokens,
+                                )
+                                caption = caption.strip()
+                                caption_path.write_text(caption + "\n", encoding="utf-8")
+                                caption_meta = {
+                                    "image": record["relative_path"],
+                                    "model": model_id,
+                                    "backend": loaded.backend,
+                                    "compose_seconds": compose_seconds,
+                                    "detail": args.detail,
+                                    "subject_token": args.subject_token,
+                                    "caption": caption,
+                                }
+                                caption_meta_path.write_text(
+                                    json.dumps(caption_meta, indent=2, ensure_ascii=False),
+                                    encoding="utf-8",
+                                )
+                else:
+                    for image, record, needs_analysis, needs_caption in tqdm(pending, desc=slug):
+                        result_path = model_dir / f"{record['result_key']}.analysis.json"
+                        caption_path = model_dir / f"{record['result_key']}.caption.txt"
+                        caption_meta_path = model_dir / f"{record['result_key']}.caption.json"
+                        result = None
+
+                        if needs_analysis:
+                            raw, seconds = generate(
                                 loaded,
-                                prompt,
-                                max_new_tokens=args.max_caption_tokens,
+                                image,
+                                analysis_prompt,
+                                max_new_tokens=args.max_analysis_tokens,
                             )
-                            caption = caption.strip()
-                            caption_path.write_text(caption + "\n", encoding="utf-8")
-                            caption_meta = {
-                                "image": record["relative_path"],
-                                "model": model_id,
-                                "backend": loaded.backend,
-                                "compose_seconds": compose_seconds,
-                                "detail": args.detail,
-                                "subject_token": args.subject_token,
-                                "caption": caption,
-                            }
-                            caption_meta_path.write_text(
-                                json.dumps(caption_meta, indent=2, ensure_ascii=False),
-                                encoding="utf-8",
+                            result = _analysis_result(
+                                raw=raw,
+                                seconds=seconds,
+                                record=record,
+                                model_id=model_id,
+                                backend=loaded.backend,
+                                schema=schema,
                             )
+                            result_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+                            jsonl.write(json.dumps(result, ensure_ascii=False) + "\n")
+                            jsonl.flush()
+                        else:
+                            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+                        if needs_caption:
+                            analysis = result.get("analysis") if result else None
+                            if analysis is None:
+                                caption_path.with_suffix(".caption.error.txt").write_text(
+                                    "Caption skipped because analysis JSON could not be parsed.\n",
+                                    encoding="utf-8",
+                                )
+                            else:
+                                prompt = render_compose_prompt(compose_prompt, analysis, args.subject_token, args.detail)
+                                caption, compose_seconds = generate_text(
+                                    loaded,
+                                    prompt,
+                                    max_new_tokens=args.max_caption_tokens,
+                                )
+                                caption = caption.strip()
+                                caption_path.write_text(caption + "\n", encoding="utf-8")
+                                caption_meta = {
+                                    "image": record["relative_path"],
+                                    "model": model_id,
+                                    "backend": loaded.backend,
+                                    "compose_seconds": compose_seconds,
+                                    "detail": args.detail,
+                                    "subject_token": args.subject_token,
+                                    "caption": caption,
+                                }
+                                caption_meta_path.write_text(
+                                    json.dumps(caption_meta, indent=2, ensure_ascii=False),
+                                    encoding="utf-8",
+                                )
         finally:
             print(f"Unloading {model_id} ...")
             unload_model(loaded)
