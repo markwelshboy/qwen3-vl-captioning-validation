@@ -10,7 +10,11 @@ from qwen_caption_validate.laterality_bilateral_refine_234 import (
 )
 
 
-def _arm_payload(*, right_geometry: str = "elbow bent, hand holding phone") -> dict:
+def _arm_payload(
+    *,
+    right_geometry: str = "elbow bent, hand holding phone",
+    right_location: str = "right center",
+) -> dict:
     return {
         "fusion": {
             "schema_version": "analysis-fusion-2.3.3",
@@ -42,7 +46,7 @@ def _arm_payload(*, right_geometry: str = "elbow bent, hand holding phone") -> d
                     "visible_subparts": ["shoulder", "elbow", "forearm", "hand"],
                     "geometry": right_geometry,
                     "contact": "holding smartphone",
-                    "image_location": "right center",
+                    "image_location": right_location,
                     "fusion_v2": {
                         "qualified_ownership": "target",
                         "selection_usable": True,
@@ -61,8 +65,16 @@ class BilateralRefine234Tests(unittest.TestCase):
         parts = _arm_payload()["fusion"]["qualified_body_parts"]
         self.assertEqual(_candidate_pairs(parts), [("arm", 0, 1, "complementary")])
 
+    def test_center_overlap_frame_locations_form_candidate_pair(self) -> None:
+        parts = _arm_payload(right_location="center")["fusion"]["qualified_body_parts"]
+        self.assertEqual(_candidate_pairs(parts), [("arm", 0, 1, "center_overlap")])
+
     def test_asymmetric_geometry_does_not_form_pair(self) -> None:
         parts = _arm_payload(right_geometry="arm straight at side")["fusion"]["qualified_body_parts"]
+        self.assertEqual(_candidate_pairs(parts), [])
+
+    def test_unrelated_frame_locations_do_not_form_pair(self) -> None:
+        parts = _arm_payload(right_location="upper center")["fusion"]["qualified_body_parts"]
         self.assertEqual(_candidate_pairs(parts), [])
 
     def test_complementary_distal_arm_pair_restores_both_sides_and_clears_frame(self) -> None:
@@ -85,6 +97,22 @@ class BilateralRefine234Tests(unittest.TestCase):
         self.assertIsNone(parts[1]["image_location"])
         self.assertEqual(out["fusion"]["schema_version"], "analysis-fusion-2.3.4")
         self.assertEqual(len(out["fusion"]["bilateral_complementary_frame_audit"]["pairs_applied"]), 1)
+
+    def test_center_overlap_distal_pair_also_clears_frame(self) -> None:
+        payload = _arm_payload(right_location="center")
+        with patch(
+            "qwen_caption_validate.laterality_bilateral_refine_234._complete_bilateral_chains",
+            return_value=True,
+        ), patch(
+            "qwen_caption_validate.laterality_bilateral_refine_234._bilateral_hand_support",
+            return_value=(True, [{"qualified_side": "left"}, {"qualified_side": "right"}]),
+        ):
+            out = refine_complementary_bilateral_sets(payload, {}, {}, Path("missing.sam3d.json"))
+        parts = out["fusion"]["qualified_body_parts"]
+        self.assertEqual(parts[0]["fusion_v2"]["qualified_anatomical_side"], "left")
+        self.assertEqual(parts[1]["fusion_v2"]["qualified_anatomical_side"], "right")
+        self.assertIsNone(parts[0]["image_location"])
+        self.assertIsNone(parts[1]["image_location"])
 
     def test_two_observed_hands_are_required_for_distal_pair(self) -> None:
         payload = _arm_payload()
