@@ -5,7 +5,9 @@ import unittest
 import numpy as np
 
 from qwen_caption_validate import pose_semantics as base
-from qwen_caption_validate.pose_semantics_02 import IDX, build_pose_semantics
+from qwen_caption_validate.pose_semantics_02 import build_pose_semantics
+
+IDX = base.IDX
 
 
 class PoseSemantics02Tests(unittest.TestCase):
