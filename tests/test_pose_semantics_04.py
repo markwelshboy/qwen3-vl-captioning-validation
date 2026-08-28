@@ -41,8 +41,9 @@ class PoseSemantics04Tests(unittest.TestCase):
         }
 
     def _asymmetric_standing_points(self) -> dict[str, tuple[float, float]]:
-        # Right leg is essentially straight. Left knee has mild flexion while the
-        # thigh still descends vertically; this remains an ordinary standing pose.
+        # Right leg is essentially straight. Left knee is ~151 degrees: mildly
+        # flexed enough that the old both-knees-straight rule does NOT fire,
+        # while the thigh still descends vertically like an ordinary stance.
         return {
             "nose": (0.50, 0.08),
             "neck": (0.50, 0.18),
@@ -57,7 +58,7 @@ class PoseSemantics04Tests(unittest.TestCase):
             "right_knee": (0.47, 0.70),
             "right_ankle": (0.48, 0.91),
             "left_knee": (0.55, 0.70),
-            "left_ankle": (0.61, 0.90),
+            "left_ankle": (0.65, 0.86),
         }
 
     def test_asymmetric_mild_knee_flexion_promotes_standing(self) -> None:
@@ -66,6 +67,9 @@ class PoseSemantics04Tests(unittest.TestCase):
             {"fusion": {}},
             {"analysis": {"image_summary": "The subject is standing indoors while holding an item."}},
         )
+        self.assertLess(result["geometry_features"]["angles_deg"]["left_knee"], 155.0)
+        self.assertGreater(result["geometry_features"]["angles_deg"]["left_knee"], 140.0)
+        self.assertGreater(result["geometry_features"]["angles_deg"]["right_knee"], 160.0)
         self.assertEqual(result["posture"]["status"], "qualified")
         self.assertEqual(result["posture"]["label"], "standing")
         self.assertEqual(result["posture"]["confidence_band"], "strong")
@@ -83,7 +87,6 @@ class PoseSemantics04Tests(unittest.TestCase):
 
     def test_deeply_flexed_knee_does_not_use_asymmetric_standing_rule(self) -> None:
         points = self._asymmetric_standing_points()
-        # Pull the left ankle far back/up to create a much smaller knee angle.
         points["left_ankle"] = (0.40, 0.74)
         result = build_pose_semantics(
             self._dwpose(points),
