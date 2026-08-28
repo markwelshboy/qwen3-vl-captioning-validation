@@ -4,6 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAX_TOKENS="${ANALYZE_V2_1_MAX_TOKENS:-3200}"
 
+QWEN_CLI_MODULE=qwen_caption_validate.image_only_cli \
 exec bash "$REPO_ROOT/run_workspace.sh" \
   "$@" \
   --analysis-prompt "$REPO_ROOT/prompts/analysis_v2_1.txt" \
