@@ -20,7 +20,17 @@ _WRISTBAND_RE = re.compile(rf"\b(?P<item>(?:{_COLOR}\s+)?wristband)\b", re.IGNOR
 
 
 def _clean_phrase(value: str) -> str:
-    return re.sub(r"\s+", " ", value).strip(" ,.;:-")
+    """Normalize summary-derived appearance text into a caption-fragment descriptor.
+
+    Analyze summaries often begin a sentence with the accessory name (for example
+    ``Sunglasses perched on head``). Caption evidence descriptors are fragments,
+    so sentence-initial capitalization should not leak into their canonical form.
+    Only the first character is normalized; the remainder is preserved.
+    """
+    text = re.sub(r"\s+", " ", value).strip(" ,.;:-")
+    if text and text[0].isalpha():
+        text = text[0].lower() + text[1:]
+    return text
 
 
 def _specific_accessory_states(analysis: dict[str, Any]) -> list[tuple[str, str]]:
