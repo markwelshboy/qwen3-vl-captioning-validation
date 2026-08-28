@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from qwen_caption_validate.caption_projection_143 import (
+    _chin_gesture_claim,
     _framing_label_and_description,
     _qualify_cropped_standing,
     _salient_interaction_claims,
@@ -20,6 +21,16 @@ class ComposeGovernance143Tests(unittest.TestCase):
         label, description, _ = _framing_label_and_description(framing, {})
         self.assertEqual(label, "three_quarter")
         self.assertIn("three-quarter", description)
+
+    def test_explicit_feet_crop_outranks_dwpose_ankle_extent(self) -> None:
+        framing = {
+            "shot_scale": "full_length",
+            "subject_extent": "head to mid-calf, with feet partially cropped",
+        }
+        fusion = {"deterministic_geometry": {"pose_extent_hint": "full_length"}}
+        label, description, _ = _framing_label_and_description(framing, fusion)
+        self.assertEqual(label, "near_full_length")
+        self.assertIn("cropped", description)
 
     def test_cropped_leg_kinematics_are_withheld_without_ankle(self) -> None:
         evidence = {
@@ -113,6 +124,27 @@ class ComposeGovernance143Tests(unittest.TestCase):
         claims = _salient_interaction_claims(evidence)
         self.assertEqual(len(claims), 1)
         self.assertEqual(claims[0]["description"], "right hand rests on the hip")
+
+    def test_curled_chin_support_compresses_without_inventing_fist(self) -> None:
+        evidence = {
+            "pose_orientation": {
+                "visible_subject_parts": [
+                    {
+                        "part": "left hand",
+                        "anatomical_side": "left",
+                        "laterality_qualified": True,
+                        "geometry": "fingers curled under chin",
+                        "contact": "under chin",
+                        "support": "supporting head",
+                    }
+                ]
+            }
+        }
+        audit = {"allowed": []}
+        claim = _chin_gesture_claim(evidence, audit)
+        self.assertIsNotNone(claim)
+        self.assertEqual(claim["description"], "chin resting on the left hand")
+        self.assertNotIn("fist", claim["description"])
 
     def test_prompt_forbids_reconstructing_cropped_leg_kinematics(self) -> None:
         self.assertIn("do not reconstruct \"bent legs\"", _GOVERNANCE_ADDENDUM)
