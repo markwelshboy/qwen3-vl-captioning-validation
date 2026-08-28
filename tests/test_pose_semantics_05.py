@@ -113,6 +113,21 @@ class PoseSemantics05Tests(unittest.TestCase):
         self.assertIn("leaning on the left arm at a table, with the chin resting on the hand", labels)
         self.assertNotIn("chin/head resting on the left hand", labels)
 
+    def test_generic_forearm_contact_with_table_does_not_create_load_chain(self) -> None:
+        fusion = self._support_fusion()
+        surface = fusion["fusion"]["qualified_interactions"][1]
+        surface["type"] = "contact"
+        surface["notes"] = "forearm touches table edge"
+        result = build_pose_semantics(
+            self._dwpose(self._portrait_points()),
+            fusion,
+            self._analysis("A close portrait of the subject."),
+        )
+        self.assertEqual(result["support_graph"]["support_chains"], [])
+        labels = [item["label"] for item in result["gestures"] if item["caption_preferred"]]
+        self.assertIn("chin/head resting on the left hand", labels)
+        self.assertNotIn("leaning on the left arm at a table, with the chin resting on the hand", labels)
+
     def test_explicit_seated_plus_support_chain_promotes_contextual_seated(self) -> None:
         result = build_pose_semantics(
             self._dwpose(self._portrait_points()),
