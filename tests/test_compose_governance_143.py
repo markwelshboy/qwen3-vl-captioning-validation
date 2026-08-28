@@ -72,7 +72,7 @@ class ComposeGovernance143Tests(unittest.TestCase):
         self.assertIn("knee_angle_withheld_without_complete_hip_knee_ankle_chain", reasons)
         self.assertIn("distal_ground_support_withheld_without_visible_ankle_foot_chain", reasons)
 
-    def test_cropped_standing_can_be_qualified_without_ankles(self) -> None:
+    def _standing_fixture(self):
         evidence = {"pose_orientation": {"whole_body_posture": {"allowed": [], "authority": "direct_visible_support_only", "evidence": []}}}
         fused = {
             "fusion": {
@@ -100,12 +100,24 @@ class ComposeGovernance143Tests(unittest.TestCase):
                 },
             }
         }
+        return evidence, fused
+
+    def test_cropped_standing_can_be_qualified_without_ankles(self) -> None:
+        evidence, fused = self._standing_fixture()
         analysis = {"image_summary": "A woman stands on a beach with one hand on her hip."}
         audit = {"allowed": []}
         claim = _qualify_cropped_standing(evidence, fused, analysis, audit)
         self.assertIsNotNone(claim)
         self.assertIn("standing", evidence["pose_orientation"]["whole_body_posture"]["allowed"])
         self.assertEqual(claim["id"], "whole_body_posture_standing")
+
+    def test_cropped_standing_uses_wrapped_workspace_analysis(self) -> None:
+        evidence, fused = self._standing_fixture()
+        analysis = {"analysis": {"image_summary": "A woman stands on a beach with one hand on her hip."}}
+        audit = {"allowed": []}
+        claim = _qualify_cropped_standing(evidence, fused, analysis, audit)
+        self.assertIsNotNone(claim)
+        self.assertIn("standing", evidence["pose_orientation"]["whole_body_posture"]["allowed"])
 
     def test_high_confidence_hand_on_hip_is_salient(self) -> None:
         evidence = {
