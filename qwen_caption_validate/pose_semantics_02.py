@@ -101,7 +101,13 @@ def _framing_summary(analysis: dict[str, Any], features: dict[str, Any]) -> dict
     if close_pair:
         old_label = result.get("label")
         result["label"] = "close-up" if source_scale == "close_up" else "medium close-up"
-        extent_claims_long_crop = bool(re.search(r"\b(?:thigh|knee|calf|ankle|feet|foot|full body|full-body)\b", extent, re.I))
+        extent_claims_long_crop = bool(
+            re.search(
+                r"\b(?:thighs?|knees?|calf|calves|ankles?|feet|foot|full[ -]?body)\b",
+                extent,
+                re.I,
+            )
+        )
         result["arbitration"] = {
             "status": "resolved_conflict" if extent_claims_long_crop else "sources_agree",
             "preferred_sources": ["source_shot_scale", "dwpose_extent_hint"],
