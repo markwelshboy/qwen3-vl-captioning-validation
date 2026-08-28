@@ -7,6 +7,7 @@ from qwen_caption_validate.caption_projection_140 import (
     _coalesce_pose_support,
     _orientation_violation_is_anatomy_bridge,
     _preferred_scene_entities,
+    _scene_claims,
     _scene_gestalt_claims,
     _support_claims,
 )
@@ -66,7 +67,7 @@ class ComposeGovernance140Tests(unittest.TestCase):
         self.assertEqual(claims[0]["actor_part"], "left hand")
         self.assertEqual(claims[0]["semantic_target"], "head")
 
-    def test_generic_surface_regions_do_not_become_scene_gestalt(self) -> None:
+    def test_generic_surface_regions_do_not_become_scene_claims(self) -> None:
         evidence = {
             "environment_lighting": {
                 "important_background_or_nuisance_regions": [
@@ -77,7 +78,7 @@ class ComposeGovernance140Tests(unittest.TestCase):
             },
             "non_target_entities": [],
         }
-        self.assertEqual(_scene_gestalt_claims(evidence), [])
+        self.assertEqual(_scene_claims(evidence), [])
 
     def test_semantic_setting_can_replace_detailed_background_inventory(self) -> None:
         evidence = {
@@ -94,13 +95,31 @@ class ComposeGovernance140Tests(unittest.TestCase):
         self.assertEqual(claims[0]["keywords"], ["park"])
         self.assertTrue(claims[0]["semantic_compression_allowed"])
 
+    def test_concrete_nuisance_objects_remain_protected_from_omission(self) -> None:
+        evidence = {
+            "environment_lighting": {
+                "important_background_or_nuisance_regions": [
+                    {"description": "background clutter including yellow bag and boxes"}
+                ]
+            },
+            "non_target_entities": [],
+        }
+        claims = _scene_claims(evidence)
+        self.assertEqual(len(claims), 1)
+        self.assertEqual(claims[0]["description"], "background clutter including yellow bag and boxes")
+        self.assertEqual(claims[0]["keywords"], ["bag", "box"])
+        self.assertEqual(claims[0]["minimum_keyword_matches"], 2)
+        preferred = _preferred_scene_entities(evidence)
+        self.assertEqual(preferred[0]["description"], "background clutter including yellow bag and boxes")
+
     def test_distinctive_entities_are_preferred_over_generic_surfaces(self) -> None:
         evidence = {
+            "environment_lighting": {"important_background_or_nuisance_regions": []},
             "non_target_entities": [
                 {"description": "black backpack with white logo", "confidence": 0.9},
                 {"description": "blue luggage cart with black bag", "confidence": 0.8},
                 {"description": "uncertain small object", "confidence": 0.4},
-            ]
+            ],
         }
         preferred = _preferred_scene_entities(evidence)
         self.assertEqual(
