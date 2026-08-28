@@ -11,6 +11,22 @@ _SUPPORT_RE = re.compile(r"\bsupport(?:s|ed|ing)?\b", re.IGNORECASE)
 _GROUND_SUPPORT_RE = re.compile(r"\b(?:weight|floor|ground|standing)\b", re.IGNORECASE)
 _PROXIMAL_ARM_RE = re.compile(r"\b(?:forearm|upper\s+arm|arm|elbow)\b", re.IGNORECASE)
 _HAND_RE = re.compile(r"\b(?:hand|fingers?)\b", re.IGNORECASE)
+_NEGATIVE_APPEARANCE_RE = re.compile(
+    r"\b(?:wear(?:s|ing)?\s+)?(?:no\s+visible|without\s+visible)\s+"
+    r"(?:clothing|clothes|garments?|accessories)(?:\s+(?:or|and)\s+(?:clothing|clothes|garments?|accessories))?\b",
+    re.IGNORECASE,
+)
+_TORSO_ANGLED_DEPTH_RE = re.compile(
+    r"\b(?:torso|upper\s+body|body)\b[^.!?]{0,80}?\b(?:angled|turned|rotated)\s+in\s+depth\b|"
+    r"\b(?:angled|turned|rotated)\s+in\s+depth\b[^.!?]{0,80}?\b(?:torso|upper\s+body|body)\b",
+    re.IGNORECASE,
+)
+_SUMMARY_APPAREL_RE = re.compile(
+    r"\b(?:(?:black|white|gray|grey|blue|green|red|yellow|pink|orange|purple|brown|beige|tan|cream|"
+    r"teal|navy|dark|light|floral|patterned|striped|high[- ]waisted|halter)\s+){0,4}"
+    r"(?:halter\s+top|swimsuit|swimwear|bathing\s+suit|one[- ]piece(?:\s+swimsuit)?|bikini|bodysuit|bottoms?)\b",
+    re.IGNORECASE,
+)
 
 _UNSIGNED_DEPTH_IDS = {
     "shoulder_girdle_depth_rotation",
@@ -291,6 +307,81 @@ def _preferred_scene_entities(evidence: dict[str, Any]) -> list[dict[str, Any]]:
     return preferred
 
 
+def _extract_summary_apparel(analysis: dict[str, Any]) -> list[str]:
+    summary = str(analysis.get("image_summary") or "")
+    out: list[str] = []
+    seen: set[str] = set()
+    for match in _SUMMARY_APPAREL_RE.finditer(summary):
+        phrase = re.sub(r"\s+", " ", match.group(0)).strip(" ,.;:-")
+        key = phrase.lower()
+        if phrase and key not in seen:
+            seen.add(key)
+            out.append(phrase)
+    return out
+
+
+def _enrich_transient_appearance(evidence: dict[str, Any], analysis: dict[str, Any], projection: dict[str, Any]) -> None:
+    transient = evidence.setdefault("transient_appearance", {})
+    descriptors = transient.setdefault("descriptors", [])
+    existing = {str(value).lower() for value in descriptors}
+    added: list[str] = []
+    for phrase in _extract_summary_apparel(analysis):
+        if phrase.lower() in existing:
+            continue
+        descriptors.append(phrase)
+        existing.add(phrase.lower())
+        added.append(phrase)
+    if added:
+        projection.setdefault("allowed", []).append(
+            {
+                "path": "analysis.image_summary[appearance-only quarantine]",
+                "reason": "extended_transient_apparel_whitelist",
+                "descriptors": added,
+            }
+        )
+
+
+def _qualify_side_neutral_standing(evidence: dict[str, Any], projection: dict[str, Any]) -> None:
+    pose = _pose(evidence)
+    posture = pose.get("whole_body_posture")
+    if not isinstance(posture, dict):
+        return
+    allowed = [str(value) for value in (posture.get("allowed") or [])]
+    if "standing" in allowed:
+        return
+    parts = [item for item in (pose.get("visible_subject_parts") or []) if isinstance(item, dict)]
+    weight_bearing_legs = [
+        item
+        for item in parts
+        if re.search(r"\bleg\b", str(item.get("part") or ""), re.I)
+        and str(item.get("visibility") or "").lower() in {"full", "visible"}
+        and re.search(r"\bweight[- ]bearing\b", str(item.get("support") or ""), re.I)
+    ]
+    grounded_feet = any(
+        re.search(r"\bfeet?\b", str(item.get("part") or ""), re.I)
+        and str(item.get("visibility") or "").lower() in {"partial", "full", "visible"}
+        and re.search(r"\b(?:floor|ground)\b", " ".join(str(item.get(field) or "") for field in ("contact", "support")), re.I)
+        for item in parts
+    )
+    torso_on_feet = any(
+        re.search(r"\btorso\b", str(item.get("part") or ""), re.I)
+        and re.search(r"\bon\s+feet\b", str(item.get("support") or ""), re.I)
+        for item in parts
+    )
+    if len(weight_bearing_legs) < 2 or not grounded_feet or not torso_on_feet:
+        return
+    posture["allowed"] = sorted(set(allowed) | {"standing"})
+    posture.setdefault("evidence", []).append(
+        "two full visible weight-bearing leg observations plus visible feet on floor and torso supported on feet"
+    )
+    projection.setdefault("allowed", []).append(
+        {
+            "path": "caption-evidence-1.3.pose_orientation.whole_body_posture",
+            "reason": "side_neutral_full_leg_and_grounded_feet_support_qualifies_standing",
+        }
+    )
+
+
 def build_caption_projection(
     fused_payload: dict[str, Any],
     analysis: dict[str, Any],
@@ -303,7 +394,10 @@ def build_caption_projection(
     if isinstance(projection, dict):
         projection["schema_version"] = "caption-projection-audit-1.4.0"
 
-    _coalesce_pose_support(evidence, projection if isinstance(projection, dict) else audit)
+    projection_target = projection if isinstance(projection, dict) else audit
+    _enrich_transient_appearance(evidence, analysis, projection_target)
+    _qualify_side_neutral_standing(evidence, projection_target)
+    _coalesce_pose_support(evidence, projection_target)
 
     existing = [
         copy.deepcopy(item)
@@ -365,16 +459,71 @@ def _orientation_violation_is_anatomy_bridge(caption: str, violation: dict[str, 
     return bool(re.search(re.escape(text) + r"\s+(?:hand|wrist|forearm|arm|elbow|shoulder|hip|pelvis|thigh|knee|ankle|leg|foot|feet)\b", caption, re.I))
 
 
+def _support_claim_is_covered(caption: str, claim: dict[str, Any], evidence: dict[str, Any]) -> bool:
+    targets: set[str] = set()
+    semantic_target = str(claim.get("semantic_target") or "").lower()
+    if semantic_target:
+        targets.update(word for word in re.findall(r"[a-z]+", semantic_target) if len(word) >= 3)
+    actor = str(claim.get("actor_part") or "").lower().replace("_", " ")
+    for item in _pose(evidence).get("visible_subject_parts") or []:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("part") or "").lower().replace("_", " ")
+        if actor and label != actor:
+            continue
+        related = " ".join(str(item.get(field) or "") for field in ("geometry", "contact", "support")).lower()
+        for match in re.finditer(r"\b(?:contact\s+with|resting\s+on|supports?|supporting)\s+(?:the\s+)?([a-z]+)", related):
+            if len(match.group(1)) >= 3:
+                targets.add(match.group(1))
+    if not targets:
+        return False
+    for match in _SUPPORT_RE.finditer(caption):
+        window = caption[max(0, match.start() - 45):match.end() + 55].lower()
+        if any(re.search(rf"\b{re.escape(target)}\b", window) for target in targets):
+            return True
+    return False
+
+
 def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
     result = copy.deepcopy(_lint_135(caption, evidence))
-    violations = [
-        item
-        for item in (result.get("violations") or [])
-        if not _orientation_violation_is_anatomy_bridge(caption, item)
-    ]
+    violations: list[dict[str, Any]] = []
+    for item in result.get("violations") or []:
+        if _orientation_violation_is_anatomy_bridge(caption, item):
+            continue
+        if item.get("type") == "contradicts_signed_torso_depth" and _TORSO_ANGLED_DEPTH_RE.search(caption):
+            continue
+        violations.append(item)
+
+    if _NEGATIVE_APPEARANCE_RE.search(caption):
+        violations.append(
+            {
+                "type": "unsupported_negative_appearance_claim",
+                "text": _NEGATIVE_APPEARANCE_RE.search(caption).group(0),
+            }
+        )
+
+    claims = {
+        str(item.get("id") or ""): item
+        for item in (evidence.get("required_claims") or [])
+        if isinstance(item, dict)
+    }
+    warnings: list[dict[str, Any]] = []
+    for item in result.get("warnings") or []:
+        claim_id = str(item.get("claim_id") or "")
+        claim = claims.get(claim_id)
+        if (
+            item.get("type") == "required_claim_not_detected"
+            and claim_id.startswith("support_relation_")
+            and isinstance(claim, dict)
+            and _support_claim_is_covered(caption, claim, evidence)
+        ):
+            continue
+        warnings.append(item)
+
     result["schema_version"] = "caption-authority-lint-1.4.0"
     result["violations"] = violations
+    result["warnings"] = warnings
     result["violation_count"] = len(violations)
-    result["warning_count"] = len(result.get("warnings") or [])
+    result["warning_count"] = len(warnings)
     result["passed"] = not violations
     return result
