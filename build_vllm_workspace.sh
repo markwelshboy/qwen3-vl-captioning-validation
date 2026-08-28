@@ -8,10 +8,17 @@ set -euo pipefail
 # for native Qwen3-VL FP8 inference through vLLM.
 #
 # IMPORTANT COMPATIBILITY PIN:
-#   vLLM >= 0.24 removed Transformers-v4 support. This project currently uses
-#   Transformers 4.57.x APIs and declares transformers<5, so the reproducible
-#   compatibility pair is pinned here to:
-#       vllm==0.23.0
+#   The rented L40S fleet can expose NVIDIA 570-series host drivers. Those are
+#   compatible with CUDA 12.8, but not CUDA 12.9. vLLM 0.12+ moved its standard
+#   CUDA build to 12.9, so using --torch-backend=auto can silently install a
+#   cu129 stack that imports correctly and then dies during FlashAttention engine
+#   initialization with "CUDA driver version is insufficient".
+#
+#   vLLM 0.11.0 is the last release whose standard NVIDIA build is CUDA 12.8.1.
+#   It already contains Qwen3-VL support and accepts Transformers >=4.55.2, so
+#   the reproducible compatibility stack is pinned here to:
+#       vllm==0.11.0
+#       torch==2.8.0+cu128 (via vLLM dependency + uv torch backend)
 #       transformers==4.57.6
 #
 # Usage:
@@ -20,16 +27,20 @@ set -euo pipefail
 # Runtime:
 #   QWEN_WORKSPACE_ROOT=/workspace/qwen3-vllm bash ./run_analysis_v2_1_workspace.sh ...
 #
-# Optional overrides (use together if intentionally testing a different pair):
+# Optional overrides (use together only when intentionally testing a different stack):
 #   QWEN_VLLM_WORKSPACE_ROOT=/workspace/qwen3-vllm
 #   QWEN_VLLM_PYTHON_VERSION=3.12
-#   QWEN_VLLM_VERSION=0.23.0
+#   QWEN_VLLM_VERSION=0.11.0
 #   QWEN_VLLM_TRANSFORMERS_VERSION=4.57.6
+#   QWEN_VLLM_TORCH_BACKEND=cu128
+#   QWEN_VLLM_EXPECTED_CUDA=12.8
 
 WORK_ROOT="${QWEN_VLLM_WORKSPACE_ROOT:-/workspace/qwen3-vllm}"
 PYTHON_VERSION="${QWEN_VLLM_PYTHON_VERSION:-3.12}"
-VLLM_VERSION="${QWEN_VLLM_VERSION:-0.23.0}"
+VLLM_VERSION="${QWEN_VLLM_VERSION:-0.11.0}"
 TRANSFORMERS_VERSION="${QWEN_VLLM_TRANSFORMERS_VERSION:-4.57.6}"
+TORCH_BACKEND="${QWEN_VLLM_TORCH_BACKEND:-cu128}"
+EXPECTED_CUDA="${QWEN_VLLM_EXPECTED_CUDA:-12.8}"
 CLEAN=0
 
 usage() {
@@ -43,8 +54,10 @@ Options:
 Environment overrides:
   QWEN_VLLM_WORKSPACE_ROOT         Workspace root (default: /workspace/qwen3-vllm)
   QWEN_VLLM_PYTHON_VERSION        Python version (default: 3.12)
-  QWEN_VLLM_VERSION               vLLM version (default: 0.23.0)
+  QWEN_VLLM_VERSION               vLLM version (default: 0.11.0)
   QWEN_VLLM_TRANSFORMERS_VERSION  Transformers version (default: 4.57.6)
+  QWEN_VLLM_TORCH_BACKEND         uv torch backend (default: cu128)
+  QWEN_VLLM_EXPECTED_CUDA         required torch CUDA runtime prefix (default: 12.8)
 EOF
 }
 
@@ -131,6 +144,8 @@ echo "Venv:              $VENV"
 echo "Python:            $PYTHON_VERSION"
 echo "vLLM:              $VLLM_VERSION"
 echo "Transformers:      $TRANSFORMERS_VERSION"
+echo "Torch backend:     $TORCH_BACKEND"
+echo "Expected CUDA:     $EXPECTED_CUDA"
 echo "HF cache:          $HF_HUB_CACHE"
 echo
 
@@ -154,10 +169,10 @@ fi
 PY="$VENV/bin/python"
 
 echo
-echo "Installing pinned vLLM / Transformers compatibility pair ..."
+echo "Installing pinned CUDA-compatible vLLM / Transformers stack ..."
 "$UV_BIN" pip install \
     --python "$PY" \
-    --torch-backend=auto \
+    --torch-backend="$TORCH_BACKEND" \
     "vllm==$VLLM_VERSION" \
     "transformers==$TRANSFORMERS_VERSION"
 
@@ -176,8 +191,11 @@ echo "Installing validation harness into the vLLM environment ..."
 
 echo
 echo "=== vLLM runtime preflight ==="
+QWEN_VLLM_EXPECTED_VERSION="$VLLM_VERSION" \
+QWEN_VLLM_EXPECTED_CUDA="$EXPECTED_CUDA" \
 "$PY" - <<'PY'
 import importlib.metadata as md
+import os
 import sys
 
 import torch
@@ -185,20 +203,37 @@ import transformers
 from vllm import LLM, SamplingParams
 from qwen_vl_utils import process_vision_info
 
+expected_vllm = os.environ["QWEN_VLLM_EXPECTED_VERSION"]
+expected_cuda = os.environ["QWEN_VLLM_EXPECTED_CUDA"]
+actual_vllm = md.version("vllm")
+actual_cuda = str(torch.version.cuda or "")
+
 print("python:", sys.executable)
 print("torch:", torch.__version__)
-print("torch CUDA:", torch.version.cuda)
+print("torch CUDA:", actual_cuda)
 print("transformers:", transformers.__version__)
-print("vllm:", md.version("vllm"))
+print("vllm:", actual_vllm)
 print("qwen-vl-utils:", md.version("qwen-vl-utils"))
 print("CUDA available:", torch.cuda.is_available())
 print("vLLM LLM import: OK")
 print("vLLM SamplingParams import: OK")
 print("qwen_vl_utils.process_vision_info import: OK")
 
+if actual_vllm != expected_vllm:
+    raise SystemExit(f"ERROR: expected vLLM {expected_vllm}, got {actual_vllm}")
+if not actual_cuda.startswith(expected_cuda):
+    raise SystemExit(
+        f"ERROR: expected torch CUDA runtime {expected_cuda}.x, got {actual_cuda or 'none'}. "
+        "Refusing a workspace that may exceed the host-driver CUDA capability."
+    )
 if not torch.cuda.is_available():
     raise SystemExit("ERROR: CUDA is not available to PyTorch; refusing to accept this vLLM build.")
 
+# Force a real CUDA runtime call; import-only checks are insufficient because a
+# newer native extension can import successfully and fail only when initialized.
+x = torch.ones(1, device="cuda")
+torch.cuda.synchronize()
+print("CUDA smoke tensor:", float(x.item()))
 print("GPU:", torch.cuda.get_device_name(0))
 print("VRAM GiB:", round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 1))
 PY
@@ -210,6 +245,12 @@ echo "Checking dependency consistency ..."
 echo
 echo "Writing environment freeze ..."
 "$UV_BIN" pip freeze --python "$PY" > "$WORK_ROOT/environment.freeze.txt"
+printf '%s\n' \
+    "vllm=$VLLM_VERSION" \
+    "transformers=$TRANSFORMERS_VERSION" \
+    "torch_backend=$TORCH_BACKEND" \
+    "expected_cuda=$EXPECTED_CUDA" \
+    > "$WORK_ROOT/environment.spec.txt"
 
 echo
 if command -v nvidia-smi >/dev/null 2>&1; then
@@ -220,4 +261,5 @@ echo
 echo "=== vLLM workspace build complete ==="
 echo "Python:       $PY"
 echo "Freeze:       $WORK_ROOT/environment.freeze.txt"
+echo "Spec:         $WORK_ROOT/environment.spec.txt"
 echo "Runner usage: QWEN_WORKSPACE_ROOT=$WORK_ROOT bash $REPO_ROOT/run_analysis_v2_1_workspace.sh ..."
