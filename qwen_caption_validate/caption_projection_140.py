@@ -1,0 +1,327 @@
+from __future__ import annotations
+
+import copy
+import re
+from typing import Any
+
+from .caption_projection_135 import build_caption_projection as _build_135
+from .caption_projection_135 import lint_caption as _lint_135
+
+_SUPPORT_RE = re.compile(r"\bsupport(?:s|ed|ing)?\b", re.IGNORECASE)
+_GROUND_SUPPORT_RE = re.compile(r"\b(?:weight|floor|ground|standing)\b", re.IGNORECASE)
+_PROXIMAL_ARM_RE = re.compile(r"\b(?:forearm|upper\s+arm|arm|elbow)\b", re.IGNORECASE)
+_HAND_RE = re.compile(r"\b(?:hand|fingers?)\b", re.IGNORECASE)
+
+_UNSIGNED_DEPTH_IDS = {
+    "shoulder_girdle_depth_rotation",
+    "pelvis_depth_rotation",
+    "combined_torso_depth_rotation",
+}
+
+_SETTING_PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
+    ("kitchen setting", re.compile(r"\bkitchen\b", re.I), "kitchen"),
+    ("park setting", re.compile(r"\bpark\b", re.I), "park"),
+    ("beach setting", re.compile(r"\bbeach\b|\bshore(?:line)?\b|\bcoast(?:line)?\b", re.I), "beach"),
+    ("forest or wooded setting", re.compile(r"\bforest\b|\bwood(?:ed|land)?\b", re.I), "forest"),
+    ("garden setting", re.compile(r"\bgarden\b", re.I), "garden"),
+    ("street setting", re.compile(r"\bstreet\b|\bsidewalk\b|\bpavement\b", re.I), "street"),
+    ("office setting", re.compile(r"\boffice\b", re.I), "office"),
+    ("studio setting", re.compile(r"\bstudio\b", re.I), "studio"),
+    ("restaurant or cafe setting", re.compile(r"\brestaurant\b|\bcaf[eé]\b|\bcoffee\s+shop\b", re.I), "cafe"),
+    ("airport or transit setting", re.compile(r"\bairport\b|\bterminal\b|\btransit\b|\bstation\b", re.I), "airport"),
+    ("airplane cabin", re.compile(r"\bairplane\b|\baircraft\b|\bplane\s+cabin\b", re.I), "airplane"),
+    ("vehicle interior", re.compile(r"\bcar\s+interior\b|\bvehicle\s+interior\b|\bbus\s+interior\b", re.I), "vehicle"),
+)
+
+_ANATOMY_AFTER_SIDE_RE = re.compile(
+    r"\b(?:left|right)\s+(?:hand|wrist|forearm|upper\s+arm|arm|elbow|shoulder|hip|pelvis|thigh|knee|ankle|leg|foot|feet)\b",
+    re.IGNORECASE,
+)
+
+
+def _pose(evidence: dict[str, Any]) -> dict[str, Any]:
+    value = evidence.get("pose_orientation")
+    return value if isinstance(value, dict) else evidence
+
+
+def _support_target(value: Any) -> str:
+    text = str(value or "").lower().replace("_", " ")
+    match = _SUPPORT_RE.search(text)
+    if not match:
+        return ""
+    tail = text[match.end():]
+    tail = re.split(r"\b(?:via|through|with|using|by)\b", tail, maxsplit=1)[0]
+    tail = re.sub(r"\b(?:the|a|an|her|his|their)\b", " ", tail)
+    words = [word for word in re.findall(r"[a-z]+", tail) if len(word) >= 3]
+    return " ".join(words[:3])
+
+
+def _part_rank(value: Any) -> int:
+    text = str(value or "").lower().replace("_", " ")
+    if _HAND_RE.search(text):
+        return 4
+    if "wrist" in text:
+        return 3
+    if "forearm" in text:
+        return 2
+    if _PROXIMAL_ARM_RE.search(text):
+        return 1
+    return 0
+
+
+def _coalesce_pose_support(evidence: dict[str, Any], projection: dict[str, Any]) -> None:
+    """Keep a support relation at its most direct visible actor instead of restating the chain.
+
+    Example: hand supports head + forearm supports head via hand is one semantic pose fact.
+    The hand support survives; the proximal duplicate keeps its geometry but loses the
+    redundant support/contact-via-hand wording.
+    """
+    parts = [item for item in (_pose(evidence).get("visible_subject_parts") or []) if isinstance(item, dict)]
+    direct: dict[tuple[str, str], int] = {}
+    for index, item in enumerate(parts):
+        support = str(item.get("support") or "")
+        if not support or not _SUPPORT_RE.search(support) or _GROUND_SUPPORT_RE.search(support):
+            continue
+        target = _support_target(support)
+        if not target:
+            continue
+        side = str(item.get("anatomical_side") or "unknown").lower()
+        key = (side, target)
+        rank = _part_rank(item.get("part"))
+        current = direct.get(key)
+        if current is None or rank > _part_rank(parts[current].get("part")):
+            direct[key] = index
+
+    for index, item in enumerate(parts):
+        support = str(item.get("support") or "")
+        if not support or not _SUPPORT_RE.search(support) or _GROUND_SUPPORT_RE.search(support):
+            continue
+        target = _support_target(support)
+        side = str(item.get("anatomical_side") or "unknown").lower()
+        best = direct.get((side, target))
+        if best is None or best == index:
+            continue
+        if _part_rank(item.get("part")) >= _part_rank(parts[best].get("part")):
+            continue
+        before_support = item.get("support")
+        before_contact = item.get("contact")
+        item["support"] = None
+        if isinstance(before_contact, str) and re.search(r"\bvia\s+(?:the\s+)?hand\b", before_contact, re.I):
+            item["contact"] = None
+        projection.setdefault("blocked", []).append(
+            {
+                "path": f"caption-evidence-1.3.pose_orientation.visible_subject_parts[{index}]",
+                "reason": "proximal_support_chain_subsumed_by_more_direct_visible_actor",
+                "source_support": before_support,
+                "source_contact": before_contact,
+                "retained_actor_part": parts[best].get("part"),
+            }
+        )
+
+
+def _support_claims(evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    best: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in _pose(evidence).get("visible_subject_parts") or []:
+        if not isinstance(item, dict):
+            continue
+        support = str(item.get("support") or "").strip()
+        if not support or not _SUPPORT_RE.search(support) or _GROUND_SUPPORT_RE.search(support):
+            continue
+        target = _support_target(support)
+        if not target:
+            continue
+        side = str(item.get("anatomical_side") or "unknown").lower()
+        label = str(item.get("part") or "body part").replace("_", " ")
+        claim = {
+            "priority": "required",
+            "description": f"{label}: {support}",
+            "support_text": support,
+            "anatomical_side": side if side in {"left", "right"} else "unknown",
+            "actor_part": label,
+            "semantic_target": target,
+        }
+        key = (claim["anatomical_side"], target)
+        if key not in best or _part_rank(label) > _part_rank(best[key].get("actor_part")):
+            best[key] = claim
+
+    claims: list[dict[str, Any]] = []
+    for value in best.values():
+        value = dict(value)
+        value["id"] = f"support_relation_{len(claims) + 1}"
+        claims.append(value)
+    return claims
+
+
+def _coalesce_depth_claims(claims: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    ids = {str(item.get("id") or "") for item in claims if isinstance(item, dict)}
+    drop: set[str] = set()
+    if "signed_torso_depth_direction" in ids:
+        drop.update(_UNSIGNED_DEPTH_IDS)
+    elif "signed_shoulder_nearer_relation" in ids:
+        drop.add("shoulder_girdle_depth_rotation")
+        if "combined_torso_depth_rotation" in ids:
+            drop.add("pelvis_depth_rotation")
+    elif "combined_torso_depth_rotation" in ids:
+        drop.update({"shoulder_girdle_depth_rotation", "pelvis_depth_rotation"})
+    return [item for item in claims if str(item.get("id") or "") not in drop], sorted(drop)
+
+
+def _coalesce_3d_payload(evidence: dict[str, Any]) -> None:
+    pose = _pose(evidence)
+    geometry = pose.get("qualified_3d_geometry")
+    if not isinstance(geometry, dict):
+        return
+    ids = {str(item.get("id") or "") for item in (evidence.get("required_claims") or []) if isinstance(item, dict)}
+    if "signed_torso_depth_direction" in ids:
+        pose["qualified_3d_geometry"] = {}
+        return
+    if "combined_torso_depth_rotation" in geometry:
+        if "signed_shoulder_nearer_relation" in ids:
+            pose["qualified_3d_geometry"] = {
+                "combined_torso_depth_rotation": geometry["combined_torso_depth_rotation"]
+            }
+        else:
+            pose["qualified_3d_geometry"] = {
+                "combined_torso_depth_rotation": geometry["combined_torso_depth_rotation"]
+            }
+        return
+    if "signed_shoulder_nearer_relation" in ids:
+        geometry.pop("shoulder_girdle_depth_rotation", None)
+
+
+def _scene_source_texts(evidence: dict[str, Any]) -> list[str]:
+    texts: list[str] = []
+    env = evidence.get("environment_lighting") or {}
+    for item in env.get("important_background_or_nuisance_regions") or []:
+        if isinstance(item, dict):
+            texts.append(str(item.get("description") or ""))
+    scene = env.get("scene") or {}
+    background = scene.get("background_structure") if isinstance(scene, dict) else None
+    if isinstance(background, dict):
+        texts.append(str(background.get("notes") or ""))
+    for item in evidence.get("non_target_entities") or []:
+        if isinstance(item, dict):
+            texts.append(str(item.get("description") or ""))
+    return [text for text in texts if text.strip()]
+
+
+def _scene_gestalt_claims(evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    texts = _scene_source_texts(evidence)
+    for description, pattern, keyword in _SETTING_PATTERNS:
+        if any(pattern.search(text) for text in texts):
+            return [
+                {
+                    "id": "scene_gestalt_1",
+                    "description": description,
+                    "keywords": [keyword],
+                    "minimum_keyword_matches": 1,
+                    "attribution": "scene_or_background_not_trigger_identity",
+                    "semantic_compression_allowed": True,
+                }
+            ]
+    return []
+
+
+def _preferred_scene_entities(evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    ranked: list[tuple[float, int, dict[str, Any]]] = []
+    for index, item in enumerate(evidence.get("non_target_entities") or []):
+        if not isinstance(item, dict):
+            continue
+        try:
+            confidence = float(item.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        if confidence < 0.75 or not str(item.get("description") or "").strip():
+            continue
+        ranked.append((confidence, -index, copy.deepcopy(item)))
+    ranked.sort(reverse=True, key=lambda value: (value[0], value[1]))
+    return [item for _, _, item in ranked[:3]]
+
+
+def build_caption_projection(
+    fused_payload: dict[str, Any],
+    analysis: dict[str, Any],
+    *,
+    caption_policy: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    evidence, audit = _build_135(fused_payload, analysis, caption_policy=caption_policy)
+    evidence["projection_revision"] = "1.4.0"
+    projection = audit.get("projection") if isinstance(audit.get("projection"), dict) else audit
+    if isinstance(projection, dict):
+        projection["schema_version"] = "caption-projection-audit-1.4.0"
+
+    _coalesce_pose_support(evidence, projection if isinstance(projection, dict) else audit)
+
+    existing = [
+        copy.deepcopy(item)
+        for item in (evidence.get("required_claims") or [])
+        if isinstance(item, dict) and not str(item.get("id") or "").startswith("support_relation_")
+    ]
+    existing.extend(_support_claims(evidence))
+    coalesced, dropped = _coalesce_depth_claims(existing)
+    evidence["required_claims"] = coalesced
+    _coalesce_3d_payload(evidence)
+
+    previous_scene = copy.deepcopy(evidence.get("required_scene_claims") or [])
+    evidence["required_scene_claims"] = _scene_gestalt_claims(evidence)
+    env = evidence.setdefault("environment_lighting", {})
+    env["preferred_scene_entities"] = _preferred_scene_entities(evidence)
+    env["scene_detail_policy"] = "prefer_distinctive_entities_and_semantic_gestalt_over_generic_surface_inventory"
+    hard = evidence.setdefault("hard_constraints", {})
+    hard["important_scene_regions_must_be_captioned"] = False
+    hard["required_scene_claims_must_be_captioned"] = True
+
+    if isinstance(projection, dict):
+        if dropped:
+            projection.setdefault("blocked", []).append(
+                {
+                    "path": "caption-evidence-1.3.required_claims",
+                    "reason": "redundant_depth_claims_subsumed_by_stronger_semantic_depth_relation",
+                    "claim_ids": dropped,
+                }
+            )
+        if previous_scene != evidence["required_scene_claims"]:
+            projection.setdefault("blocked", []).append(
+                {
+                    "path": "caption-evidence-1.3.required_scene_claims",
+                    "reason": "generic_nuisance_inventory_demoted_to_optional_context",
+                    "previous_claims": previous_scene,
+                    "replacement_claims": copy.deepcopy(evidence["required_scene_claims"]),
+                }
+            )
+        if env["preferred_scene_entities"]:
+            projection.setdefault("allowed", []).append(
+                {
+                    "path": "caption-evidence-1.3.environment_lighting.preferred_scene_entities",
+                    "reason": "high_confidence_distinctive_scene_entities_prioritized_over_generic_surfaces",
+                    "count": len(env["preferred_scene_entities"]),
+                }
+            )
+        projection.setdefault("notes", []).append(
+            "Projection 1.4.0 optimizes semantic coverage under compression: overlapping support/depth evidence may be expressed once, and generic nuisance surfaces are not prose quotas."
+        )
+    return evidence, audit
+
+
+def _orientation_violation_is_anatomy_bridge(caption: str, violation: dict[str, Any]) -> bool:
+    if violation.get("type") != "orientation_side_invented_from_side_neutral_relation":
+        return False
+    text = str(violation.get("text") or "").strip()
+    if not re.search(r"\b(?:left|right)\s*$", text, re.I):
+        return False
+    return bool(re.search(re.escape(text) + r"\s+(?:hand|wrist|forearm|arm|elbow|shoulder|hip|pelvis|thigh|knee|ankle|leg|foot|feet)\b", caption, re.I))
+
+
+def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
+    result = copy.deepcopy(_lint_135(caption, evidence))
+    violations = [
+        item
+        for item in (result.get("violations") or [])
+        if not _orientation_violation_is_anatomy_bridge(caption, item)
+    ]
+    result["schema_version"] = "caption-authority-lint-1.4.0"
+    result["violations"] = violations
+    result["violation_count"] = len(violations)
+    result["warning_count"] = len(result.get("warnings") or [])
+    result["passed"] = not violations
+    return result
