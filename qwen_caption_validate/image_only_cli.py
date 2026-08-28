@@ -2,15 +2,15 @@ from __future__ import annotations
 
 """Analyze-v2.1 launcher with the actual multimodal workload declared to vLLM.
 
-The caption validator processes exactly one still image per request and never
-submits video. Some vLLM releases otherwise profile the largest supported video
-shape during engine startup, which can consume the KV-cache headroom on 48 GB
-GPUs even though that workload can never occur here.
+The caption validator processes still-image requests and never submits video.
+Some vLLM releases otherwise profile the largest supported video shape during
+engine startup, which can consume the KV-cache headroom on 48 GB GPUs even
+though that workload can never occur here.
 
-This launcher also emits compact per-image performance diagnostics for the
-vLLM Analyze path. The diagnostics do not change prompts, sampling, token
-limits, or output files; they only split request preparation from generation
-and report token/timing metadata returned by vLLM.
+This launcher also emits compact per-image and per-batch performance diagnostics
+for the vLLM Analyze path. The diagnostics do not change prompts, sampling,
+token limits, or output files; they only split request preparation from
+generation and report token/timing metadata returned by vLLM.
 """
 
 import math
@@ -50,6 +50,76 @@ def _image_size(path: Path) -> tuple[int | None, int | None]:
             return image.size
     except Exception:
         return None, None
+
+
+def _request_perf_fields(request_output: Any, generation_seconds: float, max_new_tokens: int) -> dict[str, Any]:
+    completion = request_output.outputs[0]
+    prompt_token_ids = getattr(request_output, "prompt_token_ids", None) or []
+    output_token_ids = getattr(completion, "token_ids", None) or []
+    output_tokens = len(output_token_ids)
+
+    metrics = getattr(request_output, "metrics", None)
+    arrival = _metric_number(metrics, "arrival_time")
+    scheduled = _metric_number(metrics, "first_scheduled_time")
+    first_token = _metric_number(metrics, "first_token_time")
+    finished = _metric_number(metrics, "finished_time")
+    ttft = _duration(first_token, arrival)
+    queue = _duration(scheduled, arrival)
+    engine_e2e = _duration(finished, arrival)
+    decode = _duration(finished, first_token)
+
+    decode_tok_s = None
+    if decode is not None and decode > 0 and output_tokens > 1:
+        decode_tok_s = (output_tokens - 1) / decode
+
+    return {
+        "text": completion.text.strip(),
+        "prompt_tokens": len(prompt_token_ids),
+        "output_tokens": output_tokens,
+        "finish_reason": getattr(completion, "finish_reason", None),
+        "wall_tok_s": output_tokens / generation_seconds if generation_seconds > 0 else 0.0,
+        "ttft": ttft,
+        "queue": queue,
+        "decode": decode,
+        "decode_tok_s": decode_tok_s,
+        "engine_e2e": engine_e2e,
+        "metrics": metrics,
+        "max_new_tokens": max_new_tokens,
+    }
+
+
+def _print_request_perf(image_path: Path, prepare_seconds: float, generation_seconds: float, fields: dict[str, Any]) -> None:
+    width, height = _image_size(image_path)
+    size_text = f"{width}x{height}" if width and height else "unknown"
+    decode_rate_text = "n/a" if fields["decode_tok_s"] is None else f"{fields['decode_tok_s']:.2f}"
+    total_seconds = prepare_seconds + generation_seconds
+    print(
+        "ANALYZE_PERF "
+        f"image={image_path.name} size={size_text} "
+        f"prepare={prepare_seconds:.3f}s generate={generation_seconds:.3f}s total={total_seconds:.3f}s "
+        f"prompt_tokens={fields['prompt_tokens']} "
+        f"output_tokens={fields['output_tokens']}/{fields['max_new_tokens']} "
+        f"finish={fields['finish_reason']} wall_tok_s={fields['wall_tok_s']:.2f} "
+        f"ttft={_fmt_seconds(fields['ttft'])} queue={_fmt_seconds(fields['queue'])} "
+        f"decode={_fmt_seconds(fields['decode'])} decode_tok_s={decode_rate_text} "
+        f"engine_e2e={_fmt_seconds(fields['engine_e2e'])}"
+    )
+
+    metrics = fields["metrics"]
+    metric_dict = getattr(metrics, "__dict__", None) if metrics is not None else None
+    if isinstance(metric_dict, dict):
+        extras = []
+        for name, value in sorted(metric_dict.items()):
+            number = _finite_number(value)
+            if number is not None and name not in {
+                "arrival_time",
+                "first_scheduled_time",
+                "first_token_time",
+                "finished_time",
+            }:
+                extras.append(f"{name}={number:.6g}")
+        if extras:
+            print(f"ANALYZE_VLLM_METRICS image={image_path.name} " + " ".join(extras))
 
 
 def main() -> int:
@@ -96,9 +166,6 @@ def main() -> int:
 
         from vllm import SamplingParams
 
-        width, height = _image_size(image_path)
-        total_started = time.perf_counter()
-
         prepare_started = time.perf_counter()
         request = runner._prepare_vllm_multimodal(loaded, image_path, prompt)
         prepare_seconds = time.perf_counter() - prepare_started
@@ -111,68 +178,83 @@ def main() -> int:
             use_tqdm=False,
         )
         generation_seconds = time.perf_counter() - generation_started
-        total_seconds = time.perf_counter() - total_started
 
-        request_output = outputs[0]
-        completion = request_output.outputs[0]
-        text = completion.text.strip()
-        prompt_token_ids = getattr(request_output, "prompt_token_ids", None) or []
-        output_token_ids = getattr(completion, "token_ids", None) or []
-        prompt_tokens = len(prompt_token_ids)
-        output_tokens = len(output_token_ids)
-        finish_reason = getattr(completion, "finish_reason", None)
+        fields = _request_perf_fields(outputs[0], generation_seconds, max_new_tokens)
+        _print_request_perf(image_path, prepare_seconds, generation_seconds, fields)
+        return fields["text"], prepare_seconds + generation_seconds
 
-        metrics = getattr(request_output, "metrics", None)
-        arrival = _metric_number(metrics, "arrival_time")
-        scheduled = _metric_number(metrics, "first_scheduled_time")
-        first_token = _metric_number(metrics, "first_token_time")
-        finished = _metric_number(metrics, "finished_time")
-        ttft = _duration(first_token, arrival)
-        queue = _duration(scheduled, arrival)
-        engine_e2e = _duration(finished, arrival)
-        decode = _duration(finished, first_token)
+    def profiled_generate_batch(
+        loaded,
+        image_paths: list[Path],
+        prompt: str,
+        *,
+        max_new_tokens: int,
+    ) -> list[tuple[str, float]]:
+        if not image_paths:
+            return []
+        if loaded.backend != "vllm" or len(image_paths) == 1:
+            return [
+                profiled_generate(
+                    loaded,
+                    image_path,
+                    prompt,
+                    max_new_tokens=max_new_tokens,
+                )
+                for image_path in image_paths
+            ]
 
-        wall_tok_s = output_tokens / generation_seconds if generation_seconds > 0 else 0.0
-        decode_tok_s = None
-        if decode is not None and decode > 0 and output_tokens > 1:
-            decode_tok_s = (output_tokens - 1) / decode
+        from vllm import SamplingParams
 
-        size_text = f"{width}x{height}" if width and height else "unknown"
-        decode_rate_text = "n/a" if decode_tok_s is None else f"{decode_tok_s:.2f}"
+        requests = []
+        prepare_seconds_by_image = []
+        prepare_started = time.perf_counter()
+        for image_path in image_paths:
+            item_started = time.perf_counter()
+            requests.append(runner._prepare_vllm_multimodal(loaded, image_path, prompt))
+            prepare_seconds_by_image.append(time.perf_counter() - item_started)
+        prepare_total = time.perf_counter() - prepare_started
+
+        generation_started = time.perf_counter()
+        sampling = SamplingParams(temperature=0.0, max_tokens=max_new_tokens)
+        outputs = loaded.model.generate(
+            requests,
+            sampling_params=sampling,
+            use_tqdm=False,
+        )
+        generation_seconds = time.perf_counter() - generation_started
+
+        if len(outputs) != len(image_paths):
+            raise RuntimeError(
+                f"vLLM returned {len(outputs)} outputs for {len(image_paths)} Analyze requests"
+            )
+
+        fields_by_image = [
+            _request_perf_fields(output, generation_seconds, max_new_tokens)
+            for output in outputs
+        ]
+        total_output_tokens = sum(fields["output_tokens"] for fields in fields_by_image)
+        aggregate_tok_s = total_output_tokens / generation_seconds if generation_seconds > 0 else 0.0
         print(
-            "ANALYZE_PERF "
-            f"image={image_path.name} size={size_text} "
-            f"prepare={prepare_seconds:.3f}s generate={generation_seconds:.3f}s total={total_seconds:.3f}s "
-            f"prompt_tokens={prompt_tokens} output_tokens={output_tokens}/{max_new_tokens} "
-            f"finish={finish_reason} wall_tok_s={wall_tok_s:.2f} "
-            f"ttft={_fmt_seconds(ttft)} queue={_fmt_seconds(queue)} "
-            f"decode={_fmt_seconds(decode)} decode_tok_s={decode_rate_text} "
-            f"engine_e2e={_fmt_seconds(engine_e2e)}"
+            "ANALYZE_BATCH_PERF "
+            f"batch={len(image_paths)} prepare={prepare_total:.3f}s "
+            f"generate={generation_seconds:.3f}s output_tokens={total_output_tokens} "
+            f"aggregate_tok_s={aggregate_tok_s:.2f} images_per_s={len(image_paths) / generation_seconds:.5f}"
         )
 
-        # RequestMetrics differs slightly across vLLM releases. Preserve any
-        # additional scalar timing/counter fields when introspection is
-        # available, but never let diagnostics fail a successful generation.
-        metric_dict = getattr(metrics, "__dict__", None) if metrics is not None else None
-        if isinstance(metric_dict, dict):
-            extras = []
-            for name, value in sorted(metric_dict.items()):
-                number = _finite_number(value)
-                if number is not None and name not in {
-                    "arrival_time",
-                    "first_scheduled_time",
-                    "first_token_time",
-                    "finished_time",
-                }:
-                    extras.append(f"{name}={number:.6g}")
-            if extras:
-                print(f"ANALYZE_VLLM_METRICS image={image_path.name} " + " ".join(extras))
-
-        return text, total_seconds
+        results = []
+        for image_path, item_prepare, fields in zip(
+            image_paths,
+            prepare_seconds_by_image,
+            fields_by_image,
+        ):
+            _print_request_perf(image_path, item_prepare, generation_seconds, fields)
+            results.append((fields["text"], item_prepare + generation_seconds))
+        return results
 
     # cli imports `generate` from runner during module import. Install the
-    # profiling wrapper first so only Analyze-v2.1 gets these diagnostics.
+    # profiling wrappers first so only Analyze-v2.1 gets these diagnostics.
     runner.generate = profiled_generate
+    runner.generate_batch = profiled_generate_batch
 
     from .cli import main as cli_main
 
