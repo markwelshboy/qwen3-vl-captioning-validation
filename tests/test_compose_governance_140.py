@@ -5,11 +5,14 @@ import unittest
 from qwen_caption_validate.caption_projection_140 import (
     _coalesce_depth_claims,
     _coalesce_pose_support,
+    _extract_summary_apparel,
     _orientation_violation_is_anatomy_bridge,
     _preferred_scene_entities,
+    _qualify_side_neutral_standing,
     _scene_claims,
     _scene_gestalt_claims,
     _support_claims,
+    lint_caption,
 )
 
 
@@ -142,6 +145,111 @@ class ComposeGovernance140Tests(unittest.TestCase):
             "text": "Head is turned left",
         }
         self.assertFalse(_orientation_violation_is_anatomy_bridge(caption, violation))
+
+    def test_extended_apparel_quarantine_recovers_halter_and_bottoms(self) -> None:
+        analysis = {
+            "image_summary": (
+                "A woman stands barefoot in a kitchen, wearing a floral halter top and "
+                "black high-waisted bottoms, holding a dark patterned garment."
+            )
+        }
+        self.assertEqual(
+            _extract_summary_apparel(analysis),
+            ["floral halter top", "black high-waisted bottoms"],
+        )
+
+    def test_side_neutral_full_body_support_can_qualify_standing(self) -> None:
+        evidence = {
+            "pose_orientation": {
+                "whole_body_posture": {"allowed": [], "authority": "direct_visible_support_only", "evidence": []},
+                "visible_subject_parts": [
+                    {"part": "torso", "visibility": "full", "support": "on feet"},
+                    {"part": "leg", "visibility": "full", "support": "weight-bearing"},
+                    {"part": "leg", "visibility": "full", "support": "weight-bearing"},
+                    {"part": "feet", "visibility": "partial", "contact": "touching floor", "support": "standing on floor"},
+                ],
+            }
+        }
+        audit: dict = {"allowed": []}
+        _qualify_side_neutral_standing(evidence, audit)
+        self.assertIn("standing", evidence["pose_orientation"]["whole_body_posture"]["allowed"])
+
+    def test_partial_legs_without_feet_do_not_qualify_standing(self) -> None:
+        evidence = {
+            "pose_orientation": {
+                "whole_body_posture": {"allowed": [], "authority": "direct_visible_support_only", "evidence": []},
+                "visible_subject_parts": [
+                    {"part": "torso", "visibility": "full", "support": "on feet"},
+                    {"part": "left leg", "visibility": "partial", "support": "on sand"},
+                    {"part": "right leg", "visibility": "partial", "support": "on sand"},
+                ],
+            }
+        }
+        audit: dict = {"allowed": []}
+        _qualify_side_neutral_standing(evidence, audit)
+        self.assertNotIn("standing", evidence["pose_orientation"]["whole_body_posture"]["allowed"])
+
+    def test_supporting_chin_satisfies_hand_supporting_head_claim(self) -> None:
+        evidence = {
+            "caption_policy": {},
+            "pose_orientation": {
+                "whole_body_posture": {"allowed": []},
+                "qualified_laterality": [{"side": "left", "body_family": "hand"}],
+                "qualified_hand_sides": ["left"],
+                "visible_subject_parts": [
+                    {
+                        "part": "left hand",
+                        "anatomical_side": "left",
+                        "laterality_qualified": True,
+                        "geometry": "hand curled, fingers supporting chin",
+                        "contact": "contact with chin",
+                        "support": "supporting head",
+                    }
+                ],
+            },
+            "required_claims": [
+                {
+                    "id": "support_relation_1",
+                    "description": "left hand: supporting head",
+                    "support_text": "supporting head",
+                    "actor_part": "left hand",
+                    "semantic_target": "head",
+                }
+            ],
+            "required_scene_claims": [],
+            "hard_constraints": {"visibility": {}},
+        }
+        result = lint_caption("TOKEN supports the chin with the left hand.", evidence)
+        self.assertEqual(result["warning_count"], 0)
+
+    def test_negative_appearance_absence_is_not_authorized(self) -> None:
+        evidence = {
+            "caption_policy": {},
+            "pose_orientation": {"whole_body_posture": {"allowed": []}},
+            "required_claims": [],
+            "required_scene_claims": [],
+            "hard_constraints": {"visibility": {}},
+        }
+        result = lint_caption("TOKEN is wearing no visible clothing or accessories.", evidence)
+        self.assertTrue(any(v["type"] == "unsupported_negative_appearance_claim" for v in result["violations"]))
+
+    def test_torso_angled_depth_is_not_contradicted_by_head_frontal_wording(self) -> None:
+        evidence = {
+            "caption_policy": {},
+            "pose_orientation": {"whole_body_posture": {"allowed": []}},
+            "required_claims": [
+                {
+                    "id": "signed_torso_depth_direction",
+                    "nearer_anatomical_side": "left",
+                    "description": "the torso is angled in depth rather than square-on to the camera",
+                }
+            ],
+            "required_scene_claims": [],
+            "hard_constraints": {"visibility": {}},
+        }
+        caption = "TOKEN torso is angled in depth rather than square-on, head turned slightly from frontal."
+        result = lint_caption(caption, evidence)
+        self.assertFalse(any(v["type"] == "contradicts_signed_torso_depth" for v in result["violations"]))
 
 
 if __name__ == "__main__":
