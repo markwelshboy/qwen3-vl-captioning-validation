@@ -10,6 +10,7 @@ _GOVERNANCE_ADDENDUM = r"""
 PROJECTION 1.4.3 SEMANTIC-SALIENCE GOVERNANCE
 - `framing_camera.framing.normalized_shot_scale` and `normalized_extent_description` are the governing framing description. State that crop/framing once and do not repeat a conflicting source shot label.
 - When `pose_orientation.whole_body_posture.allowed` contains `standing`, say that the subject is standing even when the feet are cropped. Do not replace it with vague wording such as "positioned".
+- Cropped lower-leg evidence is deliberately conservative: if knee-angle or foot/ground-support detail is absent from `visible_subject_parts`, do not reconstruct "bent legs", "straight legs", or exact foot contact from the high-level fact that the subject is standing.
 - High-confidence interactions represented by `required_claims` are more semantically useful than generic limb geometry. Preserve them in natural language, for example a hand resting on a hip or hands holding an object.
 - If `pose_orientation.gesture_semantics` contains a chin-rest gesture, describe the recognizable gesture as the chin resting on the curled/closed hand (or fist only when explicitly supported). Do not serialize it as finger geometry under the chin.
 - A generic high-confidence indoor/outdoor scene claim is modest but still useful when no richer setting is qualified. Do not upgrade `indoor` to restaurant, bar, theater, etc. without governed evidence.
