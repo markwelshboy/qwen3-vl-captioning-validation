@@ -151,11 +151,12 @@ def main() -> int:
         )
 
         # RequestMetrics differs slightly across vLLM releases. Preserve any
-        # additional scalar timing/counter fields in a second compact line so a
-        # future runtime can be diagnosed without changing this profiler again.
-        if metrics is not None:
+        # additional scalar timing/counter fields when introspection is
+        # available, but never let diagnostics fail a successful generation.
+        metric_dict = getattr(metrics, "__dict__", None) if metrics is not None else None
+        if isinstance(metric_dict, dict):
             extras = []
-            for name, value in sorted(vars(metrics).items()):
+            for name, value in sorted(metric_dict.items()):
                 number = _finite_number(value)
                 if number is not None and name not in {
                     "arrival_time",
