@@ -46,12 +46,15 @@ def build_caption_projection(
         projection["schema_version"] = "caption-projection-audit-1.4.2"
 
     fusion = _fusion_root(fused_payload)
+    sam = fusion.get("sam3d_geometry_audit") or {}
+    provenance = sam.get("target_provenance") or {}
+    provenance_usable = provenance.get("context_risk") != "requires_review"
     pose = evidence.setdefault("pose_orientation", {})
     semantic = pose.setdefault("semantic_orientation", {})
     claims = [copy.deepcopy(item) for item in (evidence.get("required_claims") or []) if isinstance(item, dict)]
 
     upper = fusion.get("qualified_upper_torso_depth_relation")
-    if isinstance(upper, dict) and upper.get("authority") == "qualified_visible_shoulder_depth_rotation":
+    if provenance_usable and isinstance(upper, dict) and upper.get("authority") == "qualified_visible_shoulder_depth_rotation":
         semantic.pop("torso_yaw", None)
         pose["upper_torso_depth_relation"] = {
             "magnitude": upper.get("magnitude"),
@@ -74,9 +77,16 @@ def build_caption_projection(
                     "reason": "qualified_visible_shoulder_depth_overrides_weak_frontal_torso_semantics",
                 }
             )
+    elif isinstance(upper, dict) and not provenance_usable and isinstance(projection, dict):
+        projection.setdefault("blocked", []).append(
+            {
+                "path": "fusion.qualified_upper_torso_depth_relation",
+                "reason": "sam3d_target_provenance_requires_review",
+            }
+        )
 
     head_relation = fusion.get("qualified_head_torso_relation")
-    if isinstance(head_relation, dict) and head_relation.get("camera_relation") == "toward_camera":
+    if provenance_usable and isinstance(head_relation, dict) and head_relation.get("camera_relation") == "toward_camera":
         semantic.pop("head_yaw", None)
         relation_text = str(head_relation.get("relation") or "head turned substantially toward the camera relative to the torso")
         pose["head_torso_relation"] = {
@@ -108,11 +118,18 @@ def build_caption_projection(
                     "reason": "camera_frontal_visible_head_plus_camera_gaze_relative_to_strong_depth_turned_torso",
                 }
             )
+    elif isinstance(head_relation, dict) and not provenance_usable and isinstance(projection, dict):
+        projection.setdefault("blocked", []).append(
+            {
+                "path": "fusion.qualified_head_torso_relation",
+                "reason": "sam3d_target_provenance_requires_review",
+            }
+        )
 
     evidence["required_claims"] = claims
     if isinstance(projection, dict):
         projection.setdefault("notes", []).append(
-            "Projection 1.4.2 resolves pose consistency before prose: strong visible shoulder depth can suppress weak frontal torso semantics, and a camera-facing head is expressed relative to that torso rather than as ambiguous 'facing forward'."
+            "Projection 1.4.2 resolves pose consistency before prose: strong visible shoulder depth can suppress weak frontal torso semantics, and a camera-facing head is expressed relative to that torso rather than as ambiguous 'facing forward'. Synthetic 3-D relations are independently blocked when SAM target provenance requires review."
         )
     return evidence, audit
 
@@ -155,7 +172,6 @@ def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
-    # Deduplicate findings when the inherited linter happened to emit the same semantic warning.
     def dedupe(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         seen: set[tuple[str, str, str]] = set()
