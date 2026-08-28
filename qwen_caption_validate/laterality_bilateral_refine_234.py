@@ -47,10 +47,24 @@ def _frame_relation(left: dict[str, Any], right: dict[str, Any]) -> str | None:
     right_raw = str(right.get("image_location") or "").lower().replace("_", " ").strip()
     if left_raw == right_raw:
         return "same"
+
     left_side, left_neutral = _frame_signature(left_raw)
     right_side, right_neutral = _frame_signature(right_raw)
-    if {left_side, right_side} == {"left", "right"} and left_neutral == right_neutral:
+    if left_neutral != right_neutral:
+        return None
+
+    if {left_side, right_side} == {"left", "right"}:
         return "complementary"
+
+    # Analyze sometimes describes two otherwise identical bilateral records as
+    # ``left-center`` and simply ``center``. For captioning those frame labels
+    # carry no anatomical authority. If deterministic evidence independently
+    # establishes both chains/hands, treating this as an overlapping-center
+    # unordered pair is safe because the semantic records are otherwise equal.
+    side_count = sum(side in {"left", "right"} for side in (left_side, right_side))
+    if side_count == 1 and left_neutral in {"center", "centre"}:
+        return "center_overlap"
+
     return None
 
 
@@ -100,14 +114,13 @@ def refine_complementary_bilateral_sets(
     sam: dict[str, Any],
     sam_path: Path,
 ) -> dict[str, Any]:
-    """Recover bilateral sets whose only semantic difference is complementary frame location.
+    """Recover deterministic bilateral sets missed only by weak frame-location differences.
 
     Fusion 2.3.2 intentionally required identical image locations. That is too strict when
-    Analyze emits two otherwise identical left/right limb records as ``left center`` and
-    ``right center`` while DWPose/SAM independently establish both physical chains/hands.
-    In that case the records are semantically interchangeable for captioning because target
-    frame location is not caption authority. The frame locations are cleared before the
-    records are re-anchored one-left/one-right.
+    Analyze emits two otherwise identical opposite-side limb records as ``left center`` /
+    ``right center`` or ``left center`` / ``center`` while DWPose/SAM independently establish
+    both physical chains/hands. Target frame location is not caption authority, so those weak
+    frame differences are discarded before the records are re-anchored one-left/one-right.
     """
     out = copy.deepcopy(payload)
     fusion = out.get("fusion") if isinstance(out.get("fusion"), dict) else out
@@ -117,14 +130,14 @@ def refine_complementary_bilateral_sets(
     parts = [item for item in (fusion.get("qualified_body_parts") or []) if isinstance(item, dict)]
     pairs = _candidate_pairs(parts)
     audit: dict[str, Any] = {
-        "schema_version": "bilateral-complementary-frame-audit-1.0",
+        "schema_version": "bilateral-complementary-frame-audit-1.1",
         "source_fusion_schema": fusion.get("schema_version"),
         "pairs_considered": [],
         "pairs_applied": [],
         "policy": {
             "semantic_equivalence_excluding_frame_location_required": True,
-            "frame_locations_must_be_identical_or_complementary": True,
-            "complementary_frame_location_is_cleared_before_reanchoring": True,
+            "frame_locations_may_be_identical_complementary_or_center_overlap": True,
+            "nonidentical_accepted_frame_location_is_cleared_before_reanchoring": True,
             "bilateral_complete_dwpose_chains_required": True,
             "distal_arm_sets_require_two_qualified_observed_hands": True,
             "sam3d_reconstruction_alone_never_establishes_visibility": True,
@@ -174,17 +187,17 @@ def refine_complementary_bilateral_sets(
                     record["action"] = "unchanged"
                     record["reason"] = "two_qualified_observed_hand_entities_not_available"
                     continue
-                authority = "dwpose_bilateral_complete_chains_and_hands_complementary_frame"
+                authority = "dwpose_bilateral_complete_chains_and_hands_weak_frame"
             else:
-                authority = "dwpose_bilateral_complete_chains_complementary_frame"
+                authority = "dwpose_bilateral_complete_chains_weak_frame"
         else:
-            authority = "dwpose_bilateral_complete_chains_complementary_frame"
+            authority = "dwpose_bilateral_complete_chains_weak_frame"
 
         reason = (
-            "opposite-source semantic records are identical apart from same/complementary frame location; "
+            "opposite-source semantic records are identical apart from a weak frame-location distinction; "
             "deterministic evidence establishes both physical chains, so the records form an unordered bilateral set"
         )
-        clear_frame = frame_relation == "complementary"
+        clear_frame = frame_relation != "same"
         _apply_side(left, "left", authority, reason, clear_frame=clear_frame)
         _apply_side(right, "right", authority, reason, clear_frame=clear_frame)
         record.update(
@@ -198,9 +211,9 @@ def refine_complementary_bilateral_sets(
     fusion["schema_version"] = "analysis-fusion-2.3.4"
     fusion["bilateral_complementary_frame_audit"] = audit
     fusion.setdefault("selection_policy", {})["bilateral_complementary_frame_sets"] = (
-        "Otherwise-equivalent opposite-side limb records may differ only by complementary frame location; "
-        "when both physical chains are deterministically observed, frame location is discarded and the pair is "
-        "re-anchored one-left/one-right."
+        "Otherwise-equivalent opposite-side limb records may differ only by identical, complementary, or "
+        "center-overlap frame location; when both physical chains are deterministically observed, weak frame "
+        "location is discarded and the pair is re-anchored one-left/one-right."
     )
     return out
 
@@ -208,7 +221,7 @@ def refine_complementary_bilateral_sets(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="qwen-laterality-bilateral-refine-234",
-        description="Fusion 2.3.4: recover deterministic bilateral sets missed only because Analyze used complementary frame locations.",
+        description="Fusion 2.3.4: recover deterministic bilateral sets missed only because Analyze used weakly different frame locations.",
     )
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("--model", default="32b-fp8")
