@@ -225,6 +225,17 @@ def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
     violations = list(result.get("violations") or [])
     warnings = list(result.get("warnings") or [])
 
+    # Projection 1.3.4's inherited linter only recognizes its older signed-torso
+    # authority path. Projection 1.4.2 adds an independently qualified visible
+    # upper-torso depth relation, so the same natural torso-depth wording must no
+    # longer be rejected as "unqualified" when this new claim is present.
+    if _claim_present(evidence, "upper_torso_side_on_relation"):
+        violations = [
+            item
+            for item in violations
+            if item.get("type") != "unqualified_torso_depth_relation"
+        ]
+
     if _claim_present(evidence, "head_turn_toward_camera_relative_torso"):
         if _HEAD_FORWARD_RE.search(caption):
             violations.append(
