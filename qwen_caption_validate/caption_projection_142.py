@@ -18,11 +18,22 @@ _UPPER_TORSO_DEPTH_RE = re.compile(
     r"\b(?:side[- ]?on|sideways|turned|angled|rotated|not\s+square[- ]?on)\b[^.!?]{0,100}?\b(?:torso|upper\s+body|body)\b",
     re.IGNORECASE,
 )
+_BODY_TARGET_SIDE_RE = re.compile(
+    r"^\s*(?:anatomical[ _-]+)?(?:left|right)[ _-]+"
+    r"(?P<part>shoulder|upper[ _-]+arm|forearm|wrist|hand|fingers?|torso|body|chest|abdomen|"
+    r"hip|pelvis|thigh|knee|lower[ _-]+leg|calf|shin|leg|ankle|feet|foot)\s*$",
+    re.IGNORECASE,
+)
 
 
 def _fusion_root(payload: dict[str, Any]) -> dict[str, Any]:
     value = payload.get("fusion") if isinstance(payload.get("fusion"), dict) else payload
     return value if isinstance(value, dict) else {}
+
+
+def _pose(evidence: dict[str, Any]) -> dict[str, Any]:
+    value = evidence.get("pose_orientation")
+    return value if isinstance(value, dict) else evidence
 
 
 def _replace_head_geometry(pose: dict[str, Any], relation: str) -> None:
@@ -31,6 +42,69 @@ def _replace_head_geometry(pose: dict[str, Any], relation: str) -> None:
             continue
         if re.search(r"\bhead\b", str(item.get("part") or ""), re.I):
             item["geometry"] = relation
+
+
+def _neutralize_unqualified_body_target_laterality(
+    evidence: dict[str, Any],
+    projection: dict[str, Any],
+) -> None:
+    """Do not carry Analyze anatomical side on the *target* of self-contact.
+
+    Fusion qualifies actor laterality, but currently has no correspondence authority
+    proving that a hand which contacts a visible hip/thigh contacts that anatomical
+    side specifically. Observing the named target landmark is enough to keep the
+    body-to-body relation, but not enough to keep the target's left/right label.
+    Preserve the source target in the audit and expose a side-neutral target to
+    Compose. Head/chin and already side-neutral targets are unchanged.
+    """
+    pose = _pose(evidence)
+    for index, item in enumerate(pose.get("qualified_interactions") or []):
+        if not isinstance(item, dict):
+            continue
+        target = str(item.get("target") or "").strip()
+        match = _BODY_TARGET_SIDE_RE.fullmatch(target)
+        if not match:
+            continue
+        part = re.sub(r"[_-]+", " ", match.group("part").lower()).strip()
+        aliases = {
+            "body": "torso",
+            "chest": "torso",
+            "abdomen": "torso",
+            "pelvis": "hip",
+            "finger": "hand",
+            "fingers": "hand",
+            "feet": "foot",
+            "calf": "lower leg",
+            "shin": "lower leg",
+        }
+        neutral = aliases.get(part, part)
+        if neutral == target.lower():
+            continue
+        item["target"] = neutral
+        projection.setdefault("blocked", []).append(
+            {
+                "path": f"caption-evidence-1.3.pose_orientation.qualified_interactions[{index}].target",
+                "reason": "self_contact_target_anatomical_side_lacks_independent_contact_correspondence",
+                "source_target": target,
+                "retained_target": neutral,
+            }
+        )
+
+
+def _upper_torso_relation_text(upper: dict[str, Any]) -> tuple[str, str]:
+    try:
+        magnitude_deg = float(upper.get("source_magnitude_deg"))
+    except (TypeError, ValueError):
+        magnitude_deg = 0.0
+    if magnitude_deg >= 65.0:
+        return (
+            "upper torso strongly turned in depth, near side-on rather than square-on to the camera",
+            "Describe the upper torso/body as strongly turned in depth and near side-on, not frontal/square-on.",
+        )
+    return (
+        "upper torso strongly turned in depth rather than square-on to the camera",
+        "Describe the upper torso/body as strongly turned in depth, not frontal/square-on. Do not call it near side-on unless the evidence explicitly supports that stronger description.",
+    )
 
 
 def build_caption_projection(
@@ -53,21 +127,26 @@ def build_caption_projection(
     semantic = pose.setdefault("semantic_orientation", {})
     claims = [copy.deepcopy(item) for item in (evidence.get("required_claims") or []) if isinstance(item, dict)]
 
+    if isinstance(projection, dict):
+        _neutralize_unqualified_body_target_laterality(evidence, projection)
+
     upper = fusion.get("qualified_upper_torso_depth_relation")
     if provenance_usable and isinstance(upper, dict) and upper.get("authority") == "qualified_visible_shoulder_depth_rotation":
         semantic.pop("torso_yaw", None)
+        relation_text, instruction = _upper_torso_relation_text(upper)
         pose["upper_torso_depth_relation"] = {
             "magnitude": upper.get("magnitude"),
-            "relation": upper.get("relation"),
+            "relation": relation_text,
             "authority": upper.get("authority"),
+            "source_magnitude_deg": upper.get("source_magnitude_deg"),
         }
         if not any(item.get("id") == "upper_torso_side_on_relation" for item in claims):
             claims.append(
                 {
                     "id": "upper_torso_side_on_relation",
                     "priority": "required",
-                    "description": "upper torso strongly turned in depth, near side-on rather than square-on to camera",
-                    "instruction": "Describe the upper torso/body as strongly turned in depth or near side-on, not frontal/square-on.",
+                    "description": relation_text,
+                    "instruction": instruction,
                 }
             )
         if isinstance(projection, dict):
@@ -129,7 +208,7 @@ def build_caption_projection(
     evidence["required_claims"] = claims
     if isinstance(projection, dict):
         projection.setdefault("notes", []).append(
-            "Projection 1.4.2 resolves pose consistency before prose: strong visible shoulder depth can suppress weak frontal torso semantics, and a camera-facing head is expressed relative to that torso rather than as ambiguous 'facing forward'. Synthetic 3-D relations are independently blocked when SAM target provenance requires review."
+            "Projection 1.4.2 resolves pose consistency before prose: strong visible shoulder depth can suppress weak frontal torso semantics, a camera-facing head is expressed relative to that torso rather than as ambiguous 'facing forward', and self-contact target laterality is side-neutral unless independently correspondence-qualified. Synthetic 3-D relations are independently blocked when SAM target provenance requires review."
         )
     return evidence, audit
 
@@ -168,7 +247,7 @@ def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
             {
                 "type": "required_claim_not_detected",
                 "claim_id": "upper_torso_side_on_relation",
-                "description": "upper torso strongly turned in depth / near side-on",
+                "description": "upper torso strongly turned in depth / near side-on when strongly supported",
             }
         )
 
