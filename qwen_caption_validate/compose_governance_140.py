@@ -15,6 +15,8 @@ PROJECTION 1.4.0 SEMANTIC-COMPRESSION GOVERNANCE
 - `environment_lighting.important_background_or_nuisance_regions` is OPTIONAL supporting context unless a corresponding item appears in `required_scene_claims`. Do not turn those regions into an exhaustive inventory.
 - A broad `required_scene_claims` gestalt such as "park setting" or "kitchen setting" may semantically subsume supporting trees, foliage, cabinetry, appliances, etc. Do not enumerate every supporting observation merely to prove coverage.
 - Preserve meaningful non-target objects when they distinguish the image or prevent identity bleed: bags, luggage, carts, boxes, furniture, vehicles, held objects, and similar concrete entities are generally more useful than generic surfaces.
+- An empty `transient_appearance.descriptors` list means OMIT appearance description; it never means the subject has no clothing or accessories. Never write phrases such as "no visible clothing", "no visible accessories", or equivalent absence claims unless explicit governed evidence positively states that fact.
+- State whole-body posture once. Do not restate support mechanics with redundant phrases such as "standing on feet" after already saying the subject stands.
 - Use natural sentences. Do not compress unrelated facts into one long comma-separated evidence dump.
 - The nominal length ranges are guidance, not targets. Semantic compression outranks word count; a balanced caption around 60-110 words is entirely acceptable when the evidence is already covered.
 
