@@ -17,6 +17,7 @@ _SURFACE_RE = re.compile(r"\b(tabletop|table|desktop|desk|countertop|counter|wor
 _SEAT_RE = re.compile(r"\b(chair|seat|bench|stool|sofa|couch)\b", re.I)
 _BODY_RE = re.compile(r"\b(?:(left|right)[ _-]+)?(elbow|forearm|wrist|hand|arm|hip|pelvis|thigh|torso|body)\b", re.I)
 _SUPPORT_WORD_RE = re.compile(r"\b(?:rest(?:s|ed|ing)?|support(?:s|ed|ing)?|lean(?:s|ed|ing)?|contact(?:s|ed|ing)?|touch(?:es|ed|ing)?|against|on)\b", re.I)
+_LOAD_RE = re.compile(r"\b(?:rest(?:s|ed|ing)?|support(?:s|ed|ing)?|lean(?:s|ed|ing)?|weight[- ]?bearing)\b", re.I)
 
 
 def _analysis_root(value: dict[str, Any]) -> dict[str, Any]:
@@ -107,12 +108,14 @@ def _edges_from_interactions(items: Any, *, source: str, governed: bool) -> list
             continue
         if item.get("actor_ownership") not in {None, "target"} and not governed:
             continue
+        notes = str(item.get("notes") or "")
+        load_bearing = relation == "support" or bool(_LOAD_RE.search(notes))
         _append_edge(edges, {
             "actor_side": side,
             "actor_part": part,
             "target_class": target_class,
             "target": target,
-            "relation": "support" if relation == "support" else "contact",
+            "relation": "support" if load_bearing else "contact",
             "confidence": round(max(confidence, 0.75 if governed else confidence), 3),
             "authority": "governed_fusion_body_surface_relation" if governed else "analyze_observed_body_surface_relation",
             "source": source,
@@ -156,7 +159,7 @@ def _edges_from_body_parts(items: Any, *, source: str, governed: bool) -> list[d
                 "actor_part": part,
                 "target_class": target_class,
                 "target": target,
-                "relation": "support" if field == "support" or re.search(r"\b(?:rest|support|lean)\w*\b", text, re.I) else "contact",
+                "relation": "support" if field == "support" or _LOAD_RE.search(text) else "contact",
                 "confidence": round(max(confidence, 0.75 if governed or confidence == 0.0 else confidence), 3),
                 "authority": "governed_fusion_body_part_support" if governed else "analyze_observed_body_part_support",
                 "source": source,
@@ -229,6 +232,8 @@ def _support_graph(result: dict[str, Any], fused_payload: dict[str, Any], analys
                 continue
             if edge.get("target_class") != "surface":
                 continue
+            if edge.get("relation") != "support":
+                continue
             score = min(_safe_float(head.get("confidence")), _safe_float(edge.get("confidence")))
             if score < 0.60:
                 continue
@@ -255,6 +260,7 @@ def _support_graph(result: dict[str, Any], fused_payload: dict[str, Any], analys
         "support_chains": chains,
         "policy": {
             "surface_presence_alone_does_not_establish_support": True,
+            "generic_contact_does_not_establish_load_bearing_support": True,
             "support_chain_does_not_by_itself_establish_seated": True,
         },
     }
@@ -428,6 +434,7 @@ def build_pose_semantics(dwpose: dict[str, Any], fused_payload: dict[str, Any], 
     result["status"] = "experimental_report_only"
     result["refinements"] = list(result.get("refinements") or []) + [
         "Body-to-surface support is represented as an explicit support graph instead of isolated contact prose.",
+        "Only explicit support/rest/lean evidence can carry load through a support chain; generic contact is diagnostic but cannot create a supported-lean primitive.",
         "A same-side head-on-hand plus forearm/elbow/wrist-to-surface chain collapses to a supported-lean gesture and consumes the lower-level contact ingredients.",
         "Contextual seated posture may be promoted without visible hips/knees only when direct seated semantics are corroborated by support/context, or when direct body-to-seat support exists.",
         "Missing lower-body geometry means unavailable corroboration, not a veto on contextual seated posture.",
