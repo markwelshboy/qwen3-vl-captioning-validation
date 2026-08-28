@@ -8,6 +8,7 @@ set -euo pipefail
 WORK_ROOT="${QWEN_WORKSPACE_ROOT:-/workspace/qwen3}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY="$WORK_ROOT/.venv/bin/python"
+CLI_MODULE="${QWEN_CLI_MODULE:-qwen_caption_validate.cli}"
 
 if [[ ! -x "$PY" ]]; then
     echo "ERROR: workspace venv not found at $WORK_ROOT/.venv" >&2
@@ -37,4 +38,4 @@ export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
 unset HF_HUB_ENABLE_HF_TRANSFER || true
 
 cd "$REPO_ROOT"
-exec "$PY" -m qwen_caption_validate.cli "$@"
+exec "$PY" -m "$CLI_MODULE" "$@"
