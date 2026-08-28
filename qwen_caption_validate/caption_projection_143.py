@@ -49,10 +49,12 @@ def _framing_label_and_description(framing: dict[str, Any], fusion: dict[str, An
     deterministic = fusion.get("deterministic_geometry") or {}
     pose_extent = str(deterministic.get("pose_extent_hint") or "").lower()
 
-    if pose_extent == "full_length":
-        return "full_length", "full-length framing showing essentially the whole body", extent
+    # Explicit crop language outranks DWPose's coarse extent hint. DWPose calls
+    # any visible ankle "full_length" even when the actual feet are cropped.
     if any(token in text for token in ("mid-calf", "mid calf", "feet partially cropped", "feet cropped", "ankles cropped")):
         return "near_full_length", "near-full-length framing showing most of the body with the feet or lower legs cropped", extent
+    if pose_extent == "full_length":
+        return "full_length", "full-length framing showing essentially the whole body", extent
     if pose_extent == "three_quarter_or_long" or any(token in text for token in ("mid-thigh", "mid thighs", "mid-thighs", "upper thigh", "upper thighs", "to knee", "knees")):
         return "three_quarter", "three-quarter or medium-full framing from around the thighs/knees to the head", extent
     if any(token in text for token in ("waist", "hips to", "hip to")):
@@ -274,7 +276,7 @@ def _chin_gesture_claim(evidence: dict[str, Any], projection: dict[str, Any]) ->
         if re.search(r"\b(?:clench\w*|fist)\b", geometry, re.I):
             relation = f"chin resting on the {side + ' ' if qualified else ''}fist"
         else:
-            relation = f"chin resting on the curled {hand_phrase}"
+            relation = f"chin resting on the {hand_phrase}"
         source = {"geometry": item.get("geometry"), "contact": item.get("contact"), "support": item.get("support")}
         item["geometry"] = relation
         item["contact"] = "chin resting on hand"
@@ -295,7 +297,7 @@ def _chin_gesture_claim(evidence: dict[str, Any], projection: dict[str, Any]) ->
             "id": "chin_rest_on_hand_gesture",
             "priority": "required",
             "description": relation,
-            "instruction": "Describe the recognizable gesture naturally as the chin resting on the curled/closed hand (or fist only if explicitly supported), rather than enumerating fingers under the chin.",
+            "instruction": "Describe the recognizable gesture naturally as the chin resting on the hand; say fist only if fist/clenched is explicitly supported. Do not enumerate fingers under the chin.",
         }
     return None
 
@@ -421,7 +423,7 @@ def lint_caption(caption: str, evidence: dict[str, Any]) -> dict[str, Any]:
         chin_windows = [m for m in re.finditer(r"\bchin\b", caption, re.I)]
         gesture_ok = any(_HAND_OR_FIST_RE.search(caption[max(0, m.start()-55):m.end()+55]) for m in chin_windows)
         if not gesture_ok:
-            warnings.append({"type": "required_claim_not_detected", "claim_id": "chin_rest_on_hand_gesture", "description": "chin resting on curled/closed hand"})
+            warnings.append({"type": "required_claim_not_detected", "claim_id": "chin_rest_on_hand_gesture", "description": "chin resting on hand"})
 
     def dedupe(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
