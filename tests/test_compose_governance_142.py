@@ -179,6 +179,16 @@ class ComposeGovernance142Tests(unittest.TestCase):
         )
         self.assertTrue(any(item.get("type") == "contradicts_head_torso_camera_turn" for item in lint["violations"]))
 
+    def test_qualified_upper_torso_relation_clears_inherited_unqualified_violation(self) -> None:
+        evidence, _ = build_caption_projection(self._payload(), self._analysis())
+        lint = lint_caption(
+            "sH1Vx has an upper torso strongly turned in depth, near side-on to the camera, while the head is turned substantially toward the camera relative to the torso.",
+            evidence,
+        )
+        self.assertFalse(
+            any(item.get("type") == "unqualified_torso_depth_relation" for item in lint["violations"])
+        )
+
     def test_natural_relative_pose_covers_both_new_claims(self) -> None:
         evidence, _ = build_caption_projection(self._payload(), self._analysis())
         lint = lint_caption(
@@ -192,6 +202,7 @@ class ComposeGovernance142Tests(unittest.TestCase):
         }
         self.assertEqual(new_warnings, set())
         self.assertFalse(any(item.get("type") == "contradicts_head_torso_camera_turn" for item in lint["violations"]))
+        self.assertFalse(any(item.get("type") == "unqualified_torso_depth_relation" for item in lint["violations"]))
 
 
 if __name__ == "__main__":
