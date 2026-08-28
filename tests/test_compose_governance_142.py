@@ -48,6 +48,7 @@ class ComposeGovernance142Tests(unittest.TestCase):
                     "magnitude": "strong",
                     "relation": "upper torso strongly turned in depth, near side-on rather than square-on to the camera",
                     "authority": "qualified_visible_shoulder_depth_rotation",
+                    "source_magnitude_deg": 80.0,
                 },
                 "qualified_head_torso_relation": {
                     "magnitude": "strong",
@@ -87,6 +88,74 @@ class ComposeGovernance142Tests(unittest.TestCase):
         ids = {item["id"] for item in evidence["required_claims"]}
         self.assertIn("head_turn_toward_camera_relative_torso", ids)
         self.assertIn("upper_torso_side_on_relation", ids)
+
+    def test_moderately_strong_depth_does_not_overclaim_near_side_on(self) -> None:
+        payload = self._payload()
+        payload["fusion"]["qualified_upper_torso_depth_relation"]["source_magnitude_deg"] = 55.0
+        evidence, _ = build_caption_projection(payload, self._analysis())
+        relation = evidence["pose_orientation"]["upper_torso_depth_relation"]["relation"]
+        self.assertIn("strongly turned in depth", relation)
+        self.assertNotIn("near side-on", relation)
+
+    def test_self_contact_target_side_is_neutralized_without_correspondence_authority(self) -> None:
+        payload = self._payload()
+        payload["fusion"]["qualified_interactions"] = [
+            {
+                "type": "contact",
+                "actor_part": "right hand",
+                "actor_ownership": "target",
+                "target": "left_hip",
+                "evidence_status": "observed",
+                "confidence": 0.95,
+                "notes": "hand on hip",
+                "fusion_v2": {
+                    "qualified_actor_ownership": "target",
+                    "qualified_actor_anatomical_side": "right",
+                    "selection_usable": True,
+                    "laterality_selection_usable": True,
+                    "reasons": [],
+                    "laterality_reasons": [],
+                },
+            }
+        ]
+        # Add a qualified explicit right-hand part so cardinality/laterality survives
+        # the older evidence firewall and this test isolates target-side governance.
+        payload["fusion"]["qualified_body_parts"].append(
+            {
+                "part": "right hand",
+                "anatomical_side": "right",
+                "ownership": "target",
+                "visibility": "full",
+                "visible_subparts": ["hand"],
+                "connectivity_to_target_chain": "connected_visible",
+                "geometry": "hand on hip",
+                "contact": "hand on hip",
+                "support": None,
+                "foreshortening": "none",
+                "confidence": 0.95,
+                "fusion_v2": {
+                    "qualified_ownership": "target",
+                    "qualified_anatomical_side": "right",
+                    "selection_usable": True,
+                    "laterality_selection_usable": True,
+                    "reasons": [],
+                    "laterality_reasons": [],
+                },
+            }
+        )
+        evidence, audit = build_caption_projection(payload, self._analysis())
+        interactions = evidence["pose_orientation"]["qualified_interactions"]
+        self.assertEqual(interactions[0]["actor_anatomical_side"], "right")
+        self.assertEqual(interactions[0]["target"], "hip")
+        projection = audit.get("projection") if isinstance(audit.get("projection"), dict) else audit
+        blocked = projection.get("blocked") or []
+        self.assertTrue(
+            any(
+                isinstance(item, dict)
+                and item.get("reason") == "self_contact_target_anatomical_side_lacks_independent_contact_correspondence"
+                for item in blocked
+            )
+        )
 
     def test_provenance_review_blocks_synthetic_projection_relations(self) -> None:
         payload = self._payload()
