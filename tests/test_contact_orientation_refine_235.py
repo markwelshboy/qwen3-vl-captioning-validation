@@ -161,6 +161,7 @@ class ContactOrientation235Tests(unittest.TestCase):
                 "qualified_body_parts": [],
                 "qualified_interactions": [],
                 "sam3d_geometry_audit": {
+                    "target_provenance": {"context_risk": "normal"},
                     "shoulder_depth_rotation": {"authority": "qualified_component_geometry", "magnitude_deg": 80.0},
                     "landmark_visibility": {"head": {"visibility": "visible", "confidence": 0.99}},
                 },
@@ -171,7 +172,32 @@ class ContactOrientation235Tests(unittest.TestCase):
         self.assertEqual(fusion["orientation_semantics"]["torso_yaw"]["direction"], "unknown")
         self.assertEqual(fusion["qualified_upper_torso_depth_relation"]["magnitude"], "strong")
         self.assertEqual(fusion["qualified_head_torso_relation"]["camera_relation"], "toward_camera")
+        self.assertTrue(fusion["orientation_consistency_audit"]["target_provenance_usable"])
         self.assertTrue(fusion["orientation_consistency_audit"]["suppressed_semantic_torso_yaw"])
+
+    def test_provenance_review_blocks_synthetic_torso_and_head_relations(self) -> None:
+        payload = {
+            "fusion": {
+                "orientation_semantics": {
+                    "torso_yaw": {"direction": "frontal", "magnitude": "slight", "confidence": 0.9},
+                    "head_yaw": {"direction": "frontal", "magnitude": "slight", "confidence": 0.9},
+                },
+                "qualified_body_parts": [],
+                "qualified_interactions": [],
+                "sam3d_geometry_audit": {
+                    "target_provenance": {"context_risk": "requires_review"},
+                    "shoulder_depth_rotation": {"authority": "qualified_component_geometry", "magnitude_deg": 80.0},
+                    "landmark_visibility": {"head": {"visibility": "visible", "confidence": 0.99}},
+                },
+            }
+        }
+        out = refine_contact_orientation(payload, _dw([]), {"target_subject": {"gaze": {"target": "camera_lens"}}})
+        fusion = out["fusion"]
+        self.assertFalse(fusion["orientation_consistency_audit"]["target_provenance_usable"])
+        self.assertFalse(fusion["orientation_consistency_audit"]["suppressed_semantic_torso_yaw"])
+        self.assertEqual(fusion["orientation_semantics"]["torso_yaw"]["direction"], "frontal")
+        self.assertNotIn("qualified_upper_torso_depth_relation", fusion)
+        self.assertNotIn("qualified_head_torso_relation", fusion)
 
     def test_moderate_shoulder_depth_does_not_create_relative_head_relation(self) -> None:
         payload = {
@@ -183,6 +209,7 @@ class ContactOrientation235Tests(unittest.TestCase):
                 "qualified_body_parts": [],
                 "qualified_interactions": [],
                 "sam3d_geometry_audit": {
+                    "target_provenance": {"context_risk": "normal"},
                     "shoulder_depth_rotation": {"authority": "qualified_component_geometry", "magnitude_deg": 30.0},
                     "landmark_visibility": {"head": {"visibility": "visible", "confidence": 0.99}},
                 },
