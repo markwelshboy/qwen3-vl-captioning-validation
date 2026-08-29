@@ -304,18 +304,18 @@ def _apply_v09_posture_refinement(
 
     if valid and not already_qualified:
         result["posture_candidate"] = None
-    elif vetoed_probe_posture:
-        result["posture_candidate"] = {
-            "label": vetoed_probe_posture,
-            "status": "vetoed_candidate",
-            "model_confidence": round(probe_conf, 3),
-            "support_score": 0.0,
-            "confidence_band": "withheld",
-            "caption_preferred": False,
-            "review_recommended": False,
-            "authority": "independent_weight_bearing_evidence_veto",
-            "support": reasons,
-        }
+        if vetoed_probe_posture:
+            result["vetoed_posture_candidate"] = {
+                "label": vetoed_probe_posture,
+                "status": "vetoed_candidate",
+                "model_confidence": round(probe_conf, 3),
+                "support_score": 0.0,
+                "confidence_band": "withheld",
+                "caption_preferred": False,
+                "review_recommended": False,
+                "authority": "independent_weight_bearing_evidence_veto",
+                "support": reasons,
+            }
     elif candidate is not None:
         result["posture_candidate"] = candidate
 
