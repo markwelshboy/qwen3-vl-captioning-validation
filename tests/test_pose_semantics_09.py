@@ -172,7 +172,9 @@ class PoseSemantics09Tests(unittest.TestCase):
             result["pose_gestalt_corroboration"]["route"],
             "standing_weight_bearing_vetoes_squat_gestalt",
         )
-        self.assertEqual(result["posture_candidate"]["status"], "vetoed_candidate")
+        self.assertIsNone(result["posture_candidate"])
+        self.assertEqual(result["vetoed_posture_candidate"]["status"], "vetoed_candidate")
+        self.assertEqual(result["pose_gestalt_corroboration"]["vetoed_probe_posture"], "squatting")
 
     def test_seated_promotes_with_analyze_gestalt_and_weak_bottom_up_geometry(self) -> None:
         points = self._portrait_points()
