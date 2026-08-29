@@ -154,11 +154,23 @@ class PairedInteractionGuard237Tests(unittest.TestCase):
     def test_only_one_side_restatement_is_insufficient(self) -> None:
         payload = _paired_payload(left_restate=True, right_restate=False)
         out = guard_cross_field_paired_distinct_interactions(payload, _dwpose())
-        self.assertEqual(out["fusion"]["paired_distinct_interaction_laterality_audit"]["pairs_applied"], [])
+        fusion = out["fusion"]
+        interactions = fusion["qualified_interactions"]
+        parts = fusion["qualified_body_parts"]
+        audit = fusion["paired_distinct_interaction_laterality_audit"]
+
+        self.assertEqual(audit["pairs_applied"], [])
+        self.assertEqual(len(audit["pairs_considered"]), 1)
         self.assertEqual(
-            out["fusion"]["paired_distinct_interaction_laterality_audit"]["pairs_considered"][0]["reason"],
-            "source_side_not_cross_field_repeated_for_both_interactions",
+            audit["pairs_considered"][0]["source_side_restatement_in_notes"],
+            {"left": True, "right": False},
         )
+        # One repeated source-side claim is deliberately insufficient to veto the
+        # deterministic correction. The corrected right-source branch stays left.
+        self.assertEqual(interactions[1]["actor_part"], "left hand")
+        self.assertEqual(interactions[1]["fusion_v2"]["qualified_actor_anatomical_side"], "left")
+        self.assertEqual(parts[1]["part"], "left arm")
+        self.assertEqual(parts[1]["fusion_v2"]["qualified_anatomical_side"], "left")
 
     def test_same_target_pair_is_untouched_even_with_restatements(self) -> None:
         payload = _paired_payload(same_target=True)
