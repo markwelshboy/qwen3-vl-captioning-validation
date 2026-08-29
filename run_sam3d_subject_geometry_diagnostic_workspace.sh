@@ -11,4 +11,4 @@ if [[ ! -x "$PY" ]]; then
 fi
 
 cd "$REPO_ROOT"
-exec "$PY" -m qwen_caption_validate.sam3d_subject_geometry_diagnostic "$@"
+exec "$PY" -m qwen_caption_validate.sam3d_subject_geometry_diagnostic_02 "$@"
