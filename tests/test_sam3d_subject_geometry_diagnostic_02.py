@@ -80,7 +80,10 @@ class Sam3dSubjectGeometryDiagnostic02Tests(unittest.TestCase):
         camera = out["camera_relative_subject"]
         self.assertIn("camera_pose_pattern", camera)
         self.assertNotIn("selfie_like_geometry", camera)
-        self.assertEqual(camera["camera_pose_pattern"], "camera_above_subject_aimed_down")
+        # The synthetic fixture has no camera pitch, so no above/down or
+        # below/up pattern should be invented.  This test is about the neutral
+        # field name and capture-mode separation.
+        self.assertIsNone(camera["camera_pose_pattern"])
 
 
 if __name__ == "__main__":
