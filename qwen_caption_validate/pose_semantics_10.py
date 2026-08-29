@@ -28,7 +28,12 @@ _BODY_SUPPORT_ACTOR_RE = re.compile(
     r"\b(?:head|neck|shoulders?|upper torso|torso|back|upper back|body|hips?|pelvis)\b",
     re.I,
 )
-_EXPLICIT_SUBJECT_RE = re.compile(r"\b(?:subject|target|torso|head|back|body|hips?|pelvis)\b", re.I)
+_EXPLICIT_SUBJECT_RE = re.compile(
+    r"(?:\b(?:torso|head|back|body|hips?|pelvis)\b|"
+    r"\b(?:subject|target)\s+(?:is\s+)?(?:lying|reclin\w*|rest\w*|support\w*)\b|"
+    r"\bsupport\w*\s+(?:the\s+)?(?:subject|target)\b)",
+    re.I,
+)
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -123,8 +128,9 @@ def _strict_reclining_support_evidence(analysis: dict[str, Any]) -> list[dict[st
             continue
         if not _REST_SUPPORT_RE.search(relation):
             continue
-        # The relation must explicitly refer to the target/body.  A fabric item
-        # merely "resting on floor" is support for the fabric, not the person.
+        # The relation must explicitly say that the target/body is supported.
+        # "held by target's hand; fabric resting on table" is about the fabric,
+        # not about support of the target person's body.
         if not _EXPLICIT_SUBJECT_RE.search(relation):
             continue
         evidence.append({
