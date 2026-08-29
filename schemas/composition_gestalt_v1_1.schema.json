@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Top-down camera/composition gestalt v1.1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "camera",
+    "capture",
+    "framing",
+    "support_context",
+    "foreground_relations",
+    "salient_body_configuration",
+    "composition_summary",
+    "uncertainties"
+  ],
+  "properties": {
+    "schema_version": {"const": "composition-gestalt-1.1"},
+    "camera": {
+      "type": "object",
+      "required": ["elevation", "pitch", "confidence", "evidence", "counterevidence"],
+      "properties": {
+        "elevation": {"enum": ["very_low", "low", "eye_level", "high", "very_high", "unknown"]},
+        "pitch": {"enum": ["upward", "level", "downward", "unknown"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "counterevidence": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "capture": {
+      "type": "object",
+      "required": ["mode", "confidence", "selfie_holding_hand", "holding_hand_confidence", "device_visibility", "evidence"],
+      "properties": {
+        "mode": {"enum": ["handheld_selfie", "mirror_selfie", "external_camera", "unknown"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "selfie_holding_hand": {"enum": ["left", "right", "unknown"]},
+        "holding_hand_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "device_visibility": {"enum": ["visible", "implied", "not_visible", "unknown"]},
+        "evidence": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "framing": {
+      "type": "object",
+      "required": ["shot_scale", "visible_extent", "confidence"],
+      "properties": {
+        "shot_scale": {"enum": ["extreme_close_up", "close_up", "medium_close_up", "medium", "three_quarter", "near_full_body", "full_body", "unknown"]},
+        "visible_extent": {"type": ["string", "null"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+      },
+      "additionalProperties": false
+    },
+    "support_context": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["subject_relation", "target", "target_description", "evidence_status", "confidence"],
+        "properties": {
+          "subject_relation": {"enum": ["lying_on", "reclining_on", "seated_on", "standing_on", "leaning_against", "resting_on", "braced_on", "unknown"]},
+          "target": {"enum": ["bed", "bedding", "pillow", "headboard", "couch", "chair", "stool", "ground", "floor", "tree", "table", "surface", "other"]},
+          "target_description": {"type": ["string", "null"]},
+          "evidence_status": {"enum": ["observed", "contextual", "inferred", "unknown"]},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "foreground_relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "description", "evidence_status", "confidence"],
+        "properties": {
+          "type": {"enum": ["legs_frame_foreground", "camera_between_legs", "limb_near_lens", "object_near_lens", "foreground_occlusion", "other"]},
+          "description": {"type": "string"},
+          "evidence_status": {"enum": ["observed", "contextual", "inferred", "unknown"]},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "salient_body_configuration": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["description", "evidence_status", "confidence"],
+        "properties": {
+          "description": {"type": "string"},
+          "evidence_status": {"enum": ["observed", "contextual", "inferred", "unknown"]},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "composition_summary": {"type": ["string", "null"]},
+    "uncertainties": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}
