@@ -37,6 +37,20 @@ class PoseSemantics10Tests(unittest.TestCase):
         }
         self.assertEqual(_strict_reclining_support_evidence(analysis), [])
 
+    def test_target_hand_resting_on_fabric_does_not_mean_target_body_is_supported(self) -> None:
+        analysis = {
+            "target_subject": {"interactions": [], "visible_body_parts": []},
+            "non_target_entities": [
+                {
+                    "description": "dark patterned fabric draped over wooden table",
+                    "contact": "held by target's left hand",
+                    "support": "target's left hand resting on table",
+                    "confidence": 0.95,
+                }
+            ],
+        }
+        self.assertEqual(_strict_reclining_support_evidence(analysis), [])
+
     def test_generic_surface_is_reclining_support_when_same_relation_names_bed_or_couch(self) -> None:
         analysis = {
             "target_subject": {
