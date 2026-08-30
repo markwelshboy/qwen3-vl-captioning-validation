@@ -1,0 +1,111 @@
+You are performing a TOP-DOWN CAMERA / COMPOSITION / SCENE gestalt analysis of one image for an identity-LoRA captioning system.
+
+Your job is NOT to enumerate joints or repeat a laboratory pose report. Your job is to answer the human visual questions that strongly determine how the image is composed:
+- Where is the camera physically located relative to the person, and is it aimed upward/downward?
+- Is this a selfie, mirror selfie, or externally photographed shot?
+- If it is a selfie, is a particular camera-holding hand/arm actually visually defensible?
+- What surface or object is the person visibly lying/reclining/sitting/standing/leaning/bracing on?
+- Are limbs or objects dominating the foreground or framing the camera view?
+- Is there a distinctive body configuration that remains important even after the broad posture word is known?
+- What crop/framing would a human naturally use to reproduce the composition, and how tightly does the person fill the frame?
+- Is the depicted space clearly indoor, clearly outdoor, or genuinely ambiguous?
+- Which large background regions materially establish the scene, and are they BEHIND the person, in front of the person, beside the person, or surrounding the person?
+
+Return exactly one JSON object and nothing else. Do not use markdown fences.
+
+PRINCIPLES
+1. CAMERA ELEVATION means the PHYSICAL LENS HEIGHT / VIEWPOINT RELATIVE TO THE SUBJECT, not whether the subject's eyes happen to look level at the lens and not merely the room horizon. Judge the whole perspective: foreground enlargement, vertical viewpoint through the body, visible undersides/top surfaces, background convergence, relative size of near feet/legs versus torso/head, and where the lens appears to sit relative to the subject's torso/head.
+2. Use very_low/low when the lens is clearly below the subject's torso/head looking upward; use high/very_high when clearly above looking down. Do NOT call a shot eye_level merely because the face is centered or the eyes look toward the lens. If global composition and face cues disagree, prefer global lens/viewpoint evidence and record the conflict in counterevidence. Use unknown when physical camera height is not defensible.
+3. CAMERA PITCH is separate from elevation. A camera may be held high and pitched downward, or low and pitched upward. State both independently.
+4. Do not infer a selfie solely because the subject looks at the lens. Use selfie only when arm perspective, crop, photographic geometry, or visible capture context supports it.
+5. For selfie_holding_hand, LEFT/RIGHT means the PERSON'S anatomical left/right, never frame-left/frame-right. If anatomical laterality is not defensible, return unknown. Do not convert image-left into anatomical left.
+6. If the camera/phone itself is outside the crop, say device_visibility="implied" rather than pretending it is visible.
+7. SUPPORT CONTEXT is compositional. If the person is visibly lying/reclining on a bed, sitting on a chair/couch, standing on the floor/ground, leaning or bracing on a table/surface, etc., record that relation explicitly. Do not reduce a supporting bed/table/couch to incidental background. A support may be contextual if the exact contact is partly outside the crop; label the evidence_status honestly rather than discarding the whole recognizable setup.
+8. FOREGROUND RELATIONS should capture compositionally dominant geometry such as "raised legs frame the foreground", "camera looks between the legs", "hand close to lens", or an object blocking part of the body. Only include relations that materially affect the image.
+9. SALIENT BODY CONFIGURATION should preserve human-recognizable facts not consumed by a broad posture word: bending forward, one leg lifted, legs apart, knees drawn up, hands clasped, chin resting on a hand/fist, forearm braced on a surface. Avoid exact joint angles or anatomy bookkeeping.
+10. FRAMING must describe the ACTUAL PIXELS. visible_extent must name the highest and lowest visible parts coherently and must not contradict shot_scale. If the head is cropped, say so. If the head is visible, do not describe an extent that stops below it. Never call a shot full_body/full_length when only thighs/torso are visible. Prefer plain language such as "from upper torso to the top of the head" or "from the feet to the top of the head".
+11. subject_frame_fill describes how much the PERSON dominates the image, independently of the shot-scale name. Use tight when the visible head/upper torso fills most of the frame with little breathing room; moderate for an ordinary portrait crop; loose when substantial environment surrounds the person. This is useful for phrases such as "a tightly framed close portrait with the upper torso filling most of the shot."
+12. ENVIRONMENT is a top-down scene judgment. Use indoor only when architectural/interior cues actually establish an enclosed indoor space. Use outdoor when foliage, sky, open exterior depth, landscape, shoreline, exterior paving, or similar scene cues clearly establish an exterior setting. A blurred green background is not automatically outdoor: record evidence and counterevidence and use ambiguous when the scene could plausibly be a window view, patio, conservatory, restaurant terrace, or similar mixed setting.
+13. lighting_context is broad scene lighting, not a physics estimate. natural_daylight, artificial, mixed, low_light, or unknown are sufficient. Do not infer a time of day unless the pixels clearly establish it.
+14. BACKGROUND REGIONS are large compositionally useful scene regions, not an object inventory. Describe things such as "large gridded window with a blurred red vehicle outside" or "blurred green trees and foliage". relation_to_subject is DEPTH/COMPOSITION: behind_subject means visibly behind the person in the image; foreground means in front of/occluding the person. beside_subject means adjacent in roughly the same depth context when behind/foreground is not defensible. surrounding means the environment wraps around the person. Use unknown when depth relation is unclear.
+15. background frame_location is IMAGE-FRAME ONLY. left/right here NEVER means anatomical left/right. Prefer spanning when the region occupies much of the background. This field must never be converted into body laterality.
+16. Keep anatomical ownership explicit in natural summaries: "his right hand", "her left shoulder", or "the person's right hand". Never use bare "left hand" when it could be confused with frame-left.
+17. composition_summary should sound like a human description, not a geometry report. Avoid terms such as yaw, image-plane axis, signed depth, keypoints, reconstruction, or evidence confidence.
+18. Do not describe identity traits, age, ethnicity, attractiveness, or persistent facial characteristics.
+19. Be willing to return unknown/null. This probe proposes visual semantics; unsupported precision is worse than omission.
+
+OUTPUT SCHEMA
+{
+  "schema_version": "composition-gestalt-1.2",
+  "camera": {
+    "elevation": "very_low | low | eye_level | high | very_high | unknown",
+    "pitch": "upward | level | downward | unknown",
+    "confidence": 0.0,
+    "evidence": ["short visible cue"],
+    "counterevidence": ["short limiting cue"]
+  },
+  "capture": {
+    "mode": "handheld_selfie | mirror_selfie | external_camera | unknown",
+    "confidence": 0.0,
+    "selfie_holding_hand": "left | right | unknown",
+    "holding_hand_confidence": 0.0,
+    "device_visibility": "visible | implied | not_visible | unknown",
+    "evidence": ["short visible cue"]
+  },
+  "framing": {
+    "shot_scale": "extreme_close_up | close_up | medium_close_up | medium | three_quarter | near_full_body | full_body | unknown",
+    "visible_extent": "short natural visible-extent description or null",
+    "subject_frame_fill": "tight | moderate | loose | unknown",
+    "confidence": 0.0
+  },
+  "environment": {
+    "space": "indoor | outdoor | ambiguous | unknown",
+    "lighting_context": "natural_daylight | artificial | mixed | low_light | unknown",
+    "confidence": 0.0,
+    "evidence": ["short visible cue"],
+    "counterevidence": ["short limiting cue"]
+  },
+  "background_regions": [
+    {
+      "description": "short scene-region phrase",
+      "relation_to_subject": "behind_subject | foreground | beside_subject | surrounding | unknown",
+      "frame_location": "left | center | right | spanning | unknown",
+      "evidence_status": "observed | contextual | inferred | unknown",
+      "confidence": 0.0
+    }
+  ],
+  "support_context": [
+    {
+      "subject_relation": "lying_on | reclining_on | seated_on | standing_on | leaning_against | resting_on | braced_on | unknown",
+      "target": "bed | bedding | pillow | headboard | couch | chair | stool | ground | floor | tree | table | surface | other",
+      "target_description": "short visible target description or null",
+      "evidence_status": "observed | contextual | inferred | unknown",
+      "confidence": 0.0
+    }
+  ],
+  "foreground_relations": [
+    {
+      "type": "legs_frame_foreground | camera_between_legs | limb_near_lens | object_near_lens | foreground_occlusion | other",
+      "description": "short natural composition phrase",
+      "evidence_status": "observed | contextual | inferred | unknown",
+      "confidence": 0.0
+    }
+  ],
+  "salient_body_configuration": [
+    {
+      "description": "short human-level body/action phrase",
+      "evidence_status": "observed | contextual | inferred | unknown",
+      "confidence": 0.0
+    }
+  ],
+  "composition_summary": "one short natural composition phrase or null",
+  "uncertainties": ["short uncertainty"]
+}
+
+EXAMPLES OF THE LEVEL OF ABSTRACTION — NOT FACTS ABOUT THE CURRENT IMAGE
+- "a tightly framed close portrait with the upper torso filling most of the shot and a large window behind the person"
+- "a medium-close outdoor portrait with blurred trees and foliage behind the person"
+- "seated at a table with the chin resting on one hand and the forearm braced on the surface"
+- "a high-angle selfie taken while lying on a bed"
+- "very low-angle forest portrait with the lens below the seated person's torso and looking upward"
+- "reclining on a bed, viewed low between raised legs that frame the foreground"
