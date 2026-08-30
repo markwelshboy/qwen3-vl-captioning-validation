@@ -23,7 +23,13 @@ class ComposeGovernance154Tests(unittest.TestCase):
             },
             "required_claims": [],
         }
-        prompt = _render_prompt("Evidence: {EVIDENCE_JSON}", evidence, "sH1Vx", "balanced")
+        prompt = _render_prompt(
+            "Evidence: {{CAPTION_EVIDENCE_JSON}}",
+            evidence,
+            "sH1Vx",
+            "balanced",
+        )
+        self.assertIn('"projection_revision": "1.5.4"', prompt)
         self.assertIn("face/head orientation relative to the camera, not eye gaze", prompt)
         self.assertIn("Do not turn `toward_camera` into \"looking at the camera\"", prompt)
         self.assertIn("ONE compact relation", prompt)
