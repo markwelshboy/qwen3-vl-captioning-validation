@@ -57,7 +57,7 @@ def _append_claim(evidence: dict[str, Any], claim: dict[str, Any]) -> None:
     evidence["required_claims"] = claims
 
 
-def _neutral_orientation_field(value: Any) -> bool:
+def _neutral_orientation_field(field: str, value: Any) -> bool:
     if not isinstance(value, dict):
         return False
     direction = str(value.get("direction") or "").lower()
@@ -66,6 +66,12 @@ def _neutral_orientation_field(value: Any) -> bool:
     if direction == "neutral" and magnitude in {"", "none"}:
         return True
     if relation == "upright_in_image_plane" and magnitude in {"", "none"}:
+        return True
+    # Projection 1.4.x normalizes image_plane_body_axis down to its semantic
+    # payload and may drop the source `relation` string. A zero-magnitude body
+    # axis is still the same low-information "upright/no visible tilt" fact, so
+    # quarantine it by field identity rather than requiring the lost relation.
+    if field == "image_plane_body_axis" and magnitude in {"", "none"}:
         return True
     return False
 
@@ -167,7 +173,7 @@ def _apply_yaw_only_semantic_economy(evidence: dict[str, Any], audit: dict[str, 
     if isinstance(semantic_orientation, dict):
         for field in list(semantic_orientation):
             value = semantic_orientation.get(field)
-            if _neutral_orientation_field(value):
+            if _neutral_orientation_field(field, value):
                 removed_neutral[field] = copy.deepcopy(value)
                 semantic_orientation.pop(field, None)
     if removed_neutral:
