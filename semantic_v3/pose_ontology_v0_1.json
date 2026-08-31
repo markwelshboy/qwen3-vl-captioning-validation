@@ -1,0 +1,89 @@
+{
+  "schema_version": "semantic-v3-pose-ontology-0.1",
+  "status": "calibration_seed_not_final",
+  "design_principles": [
+    "Prefer a small compositional vocabulary over many brittle mutually-exclusive pose classes.",
+    "A broad pose may be caption-valid when it is the simplest ordinary explanation of the visible crop and nothing visible contradicts it.",
+    "Missing anatomy outside the crop is not counterevidence.",
+    "SAM3D reconstruction may support a broad pose family but reconstructed invisible anatomy must not be serialized as observation.",
+    "Before adding a new base pose, ask whether an existing pose is a crop-adequate proxy."
+  ],
+  "base_pose_families": [
+    {
+      "id": "standing",
+      "description": "Upright weight-bearing pose; may remain a crop-adequate proxy when lower legs/feet are hidden."
+    },
+    {
+      "id": "seated",
+      "description": "Body configuration that reads naturally as sitting, including cropped seated portraits where the chair or feet are not visible."
+    },
+    {
+      "id": "reclining",
+      "description": "Body supported in a leaned-back or partially horizontal rest pose without requiring fully supine/prone geometry."
+    },
+    {
+      "id": "lying",
+      "description": "Clearly horizontal or bed/floor-supported body configuration."
+    },
+    {
+      "id": "crouching_squatting",
+      "description": "Lowered compact weight-bearing pose with strong leg flexion when visible or strongly implied by the crop."
+    },
+    {
+      "id": "kneeling",
+      "description": "Knee-supported pose when the distinction is visually represented and useful."
+    },
+    {
+      "id": "walking_stepping",
+      "description": "Standing-like locomotor pose with a visible step/stride or one leg advancing."
+    },
+    {
+      "id": "bending_leaning",
+      "description": "Primarily characterized by a strong torso lean/bend when standing/seated support is secondary or unclear."
+    },
+    {
+      "id": "unknown",
+      "description": "No useful broad pose family can be selected from the visible crop."
+    }
+  ],
+  "orientation_modifiers": [
+    "frontal",
+    "slightly_angled",
+    "three_quarter",
+    "side_on",
+    "rear_three_quarter",
+    "rear"
+  ],
+  "head_body_modifiers": [
+    "head_aligned_with_body",
+    "head_turned_toward_camera",
+    "head_turned_away_from_camera",
+    "head_tilted",
+    "head_pitched_up",
+    "head_pitched_down"
+  ],
+  "action_configuration_modifiers": [
+    "head_supported_on_hand",
+    "head_supported_on_fist",
+    "forearm_resting_on_surface",
+    "forearm_across_lap",
+    "arms_crossed",
+    "hands_clasped",
+    "hand_on_hip",
+    "holding_object",
+    "one_knee_raised",
+    "legs_crossed",
+    "legs_apart",
+    "knees_drawn_up",
+    "one_leg_lifted",
+    "leaning_against_support"
+  ],
+  "crop_relevance": {
+    "extreme_close_up": "Broad posture usually irrelevant; prioritize face/head/hands/accessories.",
+    "close_up": "Broad posture optional; head-body and visible hand/support configurations dominate.",
+    "medium_close_up": "Broad posture useful when reasonably supported; torso and arm relations matter strongly.",
+    "medium": "Broad posture usually useful.",
+    "three_quarter": "Broad posture and leg configuration increasingly important.",
+    "full_length": "Broad posture is normally essential and standing/seated/kneeling distinctions should be visibly discriminated."
+  }
+}
