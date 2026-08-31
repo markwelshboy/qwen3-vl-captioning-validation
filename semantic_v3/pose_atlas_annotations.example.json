@@ -1,0 +1,27 @@
+{
+  "schema_version": "pose-atlas-human-0.1",
+  "notes": [
+    "This file is deliberately lightweight human calibration, not joint-level ground truth.",
+    "pose_family should use semantic_v3/pose_ontology_v0_1.json unless a new recurring family is genuinely needed.",
+    "Use crop_relevance to record when an exact hidden-body distinction is not important to the visible image.",
+    "human_gestalt should state the ordinary visual thrust of the image in one short phrase."
+  ],
+  "records": {
+    "EXAMPLE_IMAGE_KEY": {
+      "pose_family": "seated",
+      "modifiers": [
+        "slightly_angled",
+        "head_turned_toward_camera",
+        "head_supported_on_fist"
+      ],
+      "crop_relevance": {
+        "broad_pose": "useful",
+        "exact_lower_body_state": "irrelevant_to_crop",
+        "support_target": "only_if_observed"
+      },
+      "human_gestalt": "tight seated portrait with the body slightly turned and the head supported on a fist",
+      "caption_proxy_notes": "Do not require visible knees, feet, or a chair if the crop makes seated a reasonable ordinary explanation.",
+      "review_status": "example_only"
+    }
+  }
+}
