@@ -10,4 +10,6 @@ if [[ ! -x "${PY}" ]]; then
   exit 2
 fi
 
-exec "${PY}" -m qwen_caption_validate.pose_atlas_v3_03 "$@"
+# Patch-level runner: v0.3 coordinate/padding semantics with corrected SAM3D
+# camera-space Y direction in the 3D display panels.
+exec "${PY}" -m qwen_caption_validate.pose_atlas_v3_03_orientation "$@"
