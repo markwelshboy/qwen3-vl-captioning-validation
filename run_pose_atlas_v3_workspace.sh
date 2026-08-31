@@ -10,4 +10,7 @@ if [[ ! -x "${PY}" ]]; then
   exit 2
 fi
 
-exec "${PY}" -m qwen_caption_validate.pose_atlas_v3 "$@"
+# Historical calibration runs contain more than one serialized shape for
+# raw_pose.bodies.  The compatibility entry point normalizes those cached
+# DWPose records, then delegates to the normal V3 atlas implementation.
+exec "${PY}" -m qwen_caption_validate.pose_atlas_v3_compat "$@"
