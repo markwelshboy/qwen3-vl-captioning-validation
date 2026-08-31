@@ -10,4 +10,4 @@ if [[ ! -x "${PY}" ]]; then
   exit 2
 fi
 
-exec "${PY}" -m qwen_caption_validate.pose_atlas_v3_04 "$@"
+exec "${PY}" -m qwen_caption_validate.pose_atlas_v3_04_hotfix "$@"
