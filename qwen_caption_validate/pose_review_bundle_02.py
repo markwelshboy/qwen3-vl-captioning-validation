@@ -7,6 +7,7 @@ from . import pose_review_bundle as base
 
 
 _original_parse_args = base.parse_args
+_original_find_profile_dir = base._find_profile_dir
 _original_compact_record = base._compact_record
 
 
@@ -26,7 +27,7 @@ def _find_profile_dir_v07(run_dir: Path, supplied: Path | None, sam3d_dir: Path)
     preferred = sam3d_dir / "relational-pose-profile-v0.7"
     if preferred.is_dir():
         return preferred
-    return base._find_profile_dir(run_dir, supplied, sam3d_dir)
+    return _original_find_profile_dir(run_dir, supplied, sam3d_dir)
 
 
 def _compact_record_v02(
