@@ -136,8 +136,10 @@ def _body_support_geometry(keypoints: np.ndarray) -> dict[str, Any]:
     hip_mid = _midpoint(lh, rh)
     knee_mid = _midpoint(lk, rk)
     ankle_mid = _midpoint(la, ra)
-    left_foot = _foot_point(keypoints, "left") or la
-    right_foot = _foot_point(keypoints, "right") or ra
+    left_foot_candidate = _foot_point(keypoints, "left")
+    right_foot_candidate = _foot_point(keypoints, "right")
+    left_foot = left_foot_candidate if left_foot_candidate is not None else la
+    right_foot = right_foot_candidate if right_foot_candidate is not None else ra
     foot_mid = _midpoint(left_foot, right_foot)
     torso_proxy = 0.42 * shoulder_mid + 0.58 * hip_mid
 
