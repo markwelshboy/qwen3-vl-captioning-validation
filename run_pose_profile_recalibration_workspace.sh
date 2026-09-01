@@ -40,12 +40,15 @@ Usage:
 Rebuilds only the SAM3D/DWPose relational profile and pose-library census from
 existing caches. It does not load or run SAM3D inference.
 
-v0.7 keeps the v0.6 posture classifier frozen and adds report-only support /
-balance, recline, and kneeling-context diagnostics for calibration.
+v0.8 keeps the v0.6 posture classifier frozen. It adds report-only diagnostics
+that first classify reconstructed leg state, then evaluate foot-support
+feasibility and an external-support requirement independently of the existing
+standing/crouching/squatting/sitting scores. v0.7 recline/kneeling diagnostics
+remain available for comparison.
 
 Options:
   --sam3d-dir PATH      Existing SAM3D array cache (default: RUN_DIR/sam3d-pose-discovery-01)
-  --profile-output PATH Profile v0.7 output directory
+  --profile-output PATH Profile v0.8 output directory
   --census-output PATH  Census v0.2 output directory
   --tar                 Tar the profile directory (including default census)
 EOF
@@ -62,13 +65,13 @@ PY="${ROOT}/.venv/bin/python"
 [[ -d "${IMAGES_DIR}" ]] || { echo "Images directory not found: ${IMAGES_DIR}" >&2; exit 2; }
 
 SAM3D_DIR="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${SAM3D_DIR}")"
-if [[ -z "${PROFILE_OUTPUT}" ]]; then PROFILE_OUTPUT="${SAM3D_DIR}/relational-pose-profile-v0.7"; fi
+if [[ -z "${PROFILE_OUTPUT}" ]]; then PROFILE_OUTPUT="${SAM3D_DIR}/relational-pose-profile-v0.8"; fi
 PROFILE_OUTPUT="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${PROFILE_OUTPUT}")"
 if [[ -z "${CENSUS_OUTPUT}" ]]; then CENSUS_OUTPUT="${PROFILE_OUTPUT}/pose-library-census"; fi
 CENSUS_OUTPUT="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${CENSUS_OUTPUT}")"
 
-echo "=== 1/2 Relational pose profile v0.7 (v0.6 scores frozen) ==="
-QWEN_WORKSPACE_ROOT="${ROOT}" bash "${REPO_ROOT}/run_sam3d_relational_pose_profile_07_workspace.sh" \
+echo "=== 1/2 Relational pose profile v0.8 (v0.6 posture scores frozen) ==="
+QWEN_WORKSPACE_ROOT="${ROOT}" bash "${REPO_ROOT}/run_sam3d_relational_pose_profile_08_workspace.sh" \
   "${SAM3D_DIR}" \
   --dwpose-dir "${DWPOSE_DIR}" \
   --images-dir "${IMAGES_DIR}" \
