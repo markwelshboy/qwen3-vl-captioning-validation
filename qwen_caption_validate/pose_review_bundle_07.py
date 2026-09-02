@@ -56,7 +56,11 @@ def _compact_record_v07(
         key, profile, original_rel, overlay_rel, raw_rel, overlay_meta
     )
     projected = profile.get("sam3d_projected_pose") or {}
+    relations = profile.get("relations") or {}
+    head = relations.get("head_supported_by_hand") or {}
     record["support_area_diagnostic"] = projected.get("support_area_diagnostic") or {}
+    record["head_support_topology_guard"] = head.get("support_topology_guard") or {}
+    record["head_support_topology_rejection_reason"] = head.get("rejection_reason")
     record["diagnostic_profile_schema"] = profile.get("schema_version")
     return record
 
@@ -145,8 +149,8 @@ def _draw_sam3d_views(arrays: dict[str, np.ndarray]) -> Image.Image:
         if idx < len(points):
             body[idx] = points[idx]
 
-    side = body[:, [2, 1]]  # depth horizontally, image-down vertically
-    top = body[:, [0, 2]]   # camera X / depth support plane
+    side = body[:, [2, 1]]
+    top = body[:, [0, 2]]
     side_tf = _fit_transform(side, (20, 42, 440, 515))
     top_tf = _fit_transform(top, (480, 42, 900, 515))
     edges = _body_edges()
@@ -157,8 +161,6 @@ def _draw_sam3d_views(arrays: dict[str, np.ndarray]) -> Image.Image:
     hull = support.get("support_hull_xz_shoulder_widths") or []
     shoulder_width = float(support.get("shoulder_width_3d") or 0.0)
     if hull and shoulder_width > 1e-9:
-        # support hull is normalized by shoulder width; convert the top-view body
-        # to the same normalized coordinate system before using its transformer.
         top_norm = top / shoulder_width
         top_tf_norm = _fit_transform(top_norm, (480, 42, 900, 515))
         _draw_skeleton(draw, top_norm, top_tf_norm, edges)
