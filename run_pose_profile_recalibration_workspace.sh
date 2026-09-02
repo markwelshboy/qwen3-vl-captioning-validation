@@ -40,14 +40,14 @@ Usage:
 Rebuilds only the SAM3D/DWPose relational profile and pose-library census from
 existing caches. It does not load or run SAM3D inference.
 
-v0.11 keeps v0.9 physical governance and corrects the v0.10 recline refinement
-by making upper-body recline directional: forward compensation toward the foot
-support is not recline, while upper-body retreat away from support can support
-reclining. Sitting impossibility gates remain active.
+v0.12 replaces the foot-centroid support line with a finite foot contact area,
+makes low-stance hard vetoes support-authority-aware, applies forward body
+compensation as positive crouch / negative recline evidence, and tightens
+head-supported-by-hand to require wrist/palm support topology.
 
 Options:
   --sam3d-dir PATH      Existing SAM3D array cache (default: RUN_DIR/sam3d-pose-discovery-01)
-  --profile-output PATH Profile v0.11 output directory
+  --profile-output PATH Profile v0.12 output directory
   --census-output PATH  Census v0.2 output directory
   --tar                 Tar the profile directory (including default census)
 EOF
@@ -64,13 +64,13 @@ PY="${ROOT}/.venv/bin/python"
 [[ -d "${IMAGES_DIR}" ]] || { echo "Images directory not found: ${IMAGES_DIR}" >&2; exit 2; }
 
 SAM3D_DIR="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${SAM3D_DIR}")"
-if [[ -z "${PROFILE_OUTPUT}" ]]; then PROFILE_OUTPUT="${SAM3D_DIR}/relational-pose-profile-v0.11"; fi
+if [[ -z "${PROFILE_OUTPUT}" ]]; then PROFILE_OUTPUT="${SAM3D_DIR}/relational-pose-profile-v0.12"; fi
 PROFILE_OUTPUT="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${PROFILE_OUTPUT}")"
 if [[ -z "${CENSUS_OUTPUT}" ]]; then CENSUS_OUTPUT="${PROFILE_OUTPUT}/pose-library-census"; fi
 CENSUS_OUTPUT="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${CENSUS_OUTPUT}")"
 
-echo "=== 1/2 Relational pose profile v0.11 (direction-aware recline governance) ==="
-QWEN_WORKSPACE_ROOT="${ROOT}" bash "${REPO_ROOT}/run_sam3d_relational_pose_profile_11_workspace.sh" \
+echo "=== 1/2 Relational pose profile v0.12 (support-area physical governance) ==="
+QWEN_WORKSPACE_ROOT="${ROOT}" bash "${REPO_ROOT}/run_sam3d_relational_pose_profile_12_workspace.sh" \
   "${SAM3D_DIR}" \
   --dwpose-dir "${DWPOSE_DIR}" \
   --images-dir "${IMAGES_DIR}" \
