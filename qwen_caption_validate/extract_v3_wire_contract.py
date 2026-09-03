@@ -2,6 +2,37 @@ from __future__ import annotations
 
 from typing import Any
 
+from .extract_v3_models import (
+    Action,
+    AppearanceItem,
+    BackgroundRegion,
+    BackgroundStructure,
+    BodyPart,
+    Camera,
+    Capture,
+    CompositionObservations,
+    Entity,
+    ExtractWireV1,
+    Framing,
+    Gaze,
+    HeadBodyRelation,
+    HeadOrientation,
+    Hypotheses,
+    Illumination,
+    Interaction,
+    Landmark,
+    LandmarkMap,
+    NuisanceRegion,
+    OrientationCues,
+    Posture,
+    Relation,
+    Scene,
+    SupportContext,
+    TargetSubject,
+    TorsoOrientation,
+    TransientAppearance,
+    VisualExtractV3,
+)
 
 CONFIDENCE_BANDS = {
     "h": 0.90,
@@ -10,344 +41,298 @@ CONFIDENCE_BANDS = {
     "u": 0.00,
 }
 
-LANDMARK_KEYS = {
-    "hd": "head",
-    "ls": "left_shoulder",
-    "rs": "right_shoulder",
-    "lh": "left_hip",
-    "rh": "right_hip",
-    "lk": "left_knee",
-    "rk": "right_knee",
-    "la": "left_ankle",
-    "ra": "right_ankle",
-}
+
+def _confidence(value: str) -> float:
+    return CONFIDENCE_BANDS[value]
 
 
-def _confidence(value: Any) -> float:
-    return CONFIDENCE_BANDS.get(str(value), 0.0)
-
-
-def _entity_ref(value: Any) -> str | None:
+def _entity_ref(value: str | None) -> str | None:
     if value is None:
         return None
-    text = str(value)
-    if text == "t":
+    if value == "t":
         return "target_subject"
-    if text.startswith("e") and text[1:].isdigit():
-        return f"entity_{int(text[1:]):02d}"
-    return text
+    if value.startswith("e") and value[1:].isdigit():
+        return f"entity_{int(value[1:]):02d}"
+    return value
 
 
-def _appearance_rows(rows: Any, start_index: int) -> tuple[list[dict[str, Any]], int]:
-    out: list[dict[str, Any]] = []
+def _known_entity_ids(wire: ExtractWireV1) -> set[str]:
+    return {entity.entity_id for entity in wire.entities}
+
+
+def _check_ref(value: str | None, known: set[str], warnings: list[str], path: str) -> None:
+    if value is None or value == "t":
+        return
+    if value not in known:
+        warnings.append(f"{path}: reference {value!r} has no matching entity")
+
+
+def _appearance(items: list[Any], start_index: int) -> tuple[list[AppearanceItem], int]:
+    out: list[AppearanceItem] = []
     index = start_index
-    for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, list) or len(row) != 5:
-            continue
-        category, descriptors, frame_location, visibility, confidence = row
+    for item in items:
         out.append(
-            {
-                "id": f"appearance_{index:02d}",
-                "category": str(category),
-                "descriptors": list(descriptors or []),
-                "frame_location": str(frame_location),
-                "visibility": str(visibility),
-                "confidence": _confidence(confidence),
-            }
+            AppearanceItem(
+                id=f"appearance_{index:02d}",
+                category=item.category,
+                descriptors=item.descriptors,
+                frame_location=item.frame_location,
+                visibility=item.visibility,
+                confidence=_confidence(item.confidence),
+            )
         )
         index += 1
     return out, index
 
 
-def _landmark(row: Any) -> dict[str, Any]:
-    visibility, confidence, evidence = row
-    return {
-        "visibility": visibility,
-        "confidence": _confidence(confidence),
-        "evidence": evidence,
-    }
+def expand_extract_wire(wire: ExtractWireV1) -> tuple[VisualExtractV3, dict[str, Any]]:
+    """Deterministically expand `x3p1` into canonical `visual-extract-3.0`.
 
-
-def _known_entity_ids(wire: dict[str, Any]) -> set[str]:
-    ids: set[str] = set()
-    for row in wire.get("e") or []:
-        if isinstance(row, list) and row:
-            ids.add(str(row[0]))
-    return ids
-
-
-def _check_ref(value: Any, known: set[str], warnings: list[str], path: str) -> None:
-    if value is None or value == "t":
-        return
-    text = str(value)
-    if text not in known:
-        warnings.append(f"{path}: reference {text!r} has no matching entity row")
-
-
-def expand_extract_wire(wire: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Expand compact x3w1 transport JSON into canonical visual-extract-3.0.
-
-    The transform is deliberately deterministic and semantic-free. It expands
-    positional rows, stable short references and categorical confidence bands;
-    it does not reinterpret image evidence or invent missing values.
+    No image semantics are added here. The transform only expands aliases,
+    stable short references, generated appearance IDs and confidence bands.
+    Both input and output are Pydantic-validated typed contracts.
     """
-    if not isinstance(wire, dict) or wire.get("v") != "x3w1":
-        raise ValueError("Expected Extract wire schema version x3w1")
 
     warnings: list[str] = []
     known_entities = _known_entity_ids(wire)
 
-    f = wire["f"]
-    s = wire["s"]
-    sc = wire["sc"]
-    co = wire["co"]
-    h = wire["h"]
+    clothing, next_appearance = _appearance(wire.subject.clothing, 1)
+    accessories, _ = _appearance(wire.subject.accessories, next_appearance)
 
-    clothing, next_appearance = _appearance_rows(s["cl"], 1)
-    accessories, _ = _appearance_rows(s["ac"], next_appearance)
+    landmarks = wire.subject.landmarks
+    landmark_map = LandmarkMap(
+        head=Landmark(visibility=landmarks.head.visibility, confidence=_confidence(landmarks.head.confidence), evidence=landmarks.head.evidence),
+        left_shoulder=Landmark(visibility=landmarks.left_shoulder.visibility, confidence=_confidence(landmarks.left_shoulder.confidence), evidence=landmarks.left_shoulder.evidence),
+        right_shoulder=Landmark(visibility=landmarks.right_shoulder.visibility, confidence=_confidence(landmarks.right_shoulder.confidence), evidence=landmarks.right_shoulder.evidence),
+        left_hip=Landmark(visibility=landmarks.left_hip.visibility, confidence=_confidence(landmarks.left_hip.confidence), evidence=landmarks.left_hip.evidence),
+        right_hip=Landmark(visibility=landmarks.right_hip.visibility, confidence=_confidence(landmarks.right_hip.confidence), evidence=landmarks.right_hip.evidence),
+        left_knee=Landmark(visibility=landmarks.left_knee.visibility, confidence=_confidence(landmarks.left_knee.confidence), evidence=landmarks.left_knee.evidence),
+        right_knee=Landmark(visibility=landmarks.right_knee.visibility, confidence=_confidence(landmarks.right_knee.confidence), evidence=landmarks.right_knee.evidence),
+        left_ankle=Landmark(visibility=landmarks.left_ankle.visibility, confidence=_confidence(landmarks.left_ankle.confidence), evidence=landmarks.left_ankle.evidence),
+        right_ankle=Landmark(visibility=landmarks.right_ankle.visibility, confidence=_confidence(landmarks.right_ankle.confidence), evidence=landmarks.right_ankle.evidence),
+    )
 
-    visible_body_parts = []
-    for row in s["bp"]:
-        (
-            part,
-            side,
-            ownership,
-            visibility,
-            visible_subparts,
-            connectivity,
-            geometry_cues,
-            contact_cues,
-            frame_location,
-            confidence,
-        ) = row
-        visible_body_parts.append(
-            {
-                "part": part,
-                "reported_anatomical_side": side,
-                "ownership_candidate": ownership,
-                "visibility": visibility,
-                "visible_subparts": visible_subparts,
-                "connectivity_to_target_chain": connectivity,
-                "geometry_cues": geometry_cues,
-                "contact_cues": contact_cues,
-                "frame_location": frame_location,
-                "confidence": _confidence(confidence),
-            }
-        )
-
-    landmarks = {
-        canonical_name: _landmark(s["lm"][wire_name])
-        for wire_name, canonical_name in LANDMARK_KEYS.items()
-    }
-
-    interactions = []
-    for index, row in enumerate(s["ix"]):
-        kind, actor_part, ownership, target_ref, target_text, evidence, confidence, cues = row
-        _check_ref(target_ref, known_entities, warnings, f"s.ix.{index}.target_ref")
+    interactions: list[Interaction] = []
+    for index, item in enumerate(wire.subject.interactions):
+        _check_ref(item.target_ref, known_entities, warnings, f"subject.interactions.{index}.target_ref")
         interactions.append(
-            {
-                "type": kind,
-                "actor_part": actor_part,
-                "actor_ownership_candidate": ownership,
-                "target_ref": _entity_ref(target_ref),
-                "target_text": target_text,
-                "evidence_status": evidence,
-                "confidence": _confidence(confidence),
-                "cues": cues,
-            }
+            Interaction(
+                type=item.kind,
+                actor_part=item.actor_part,
+                actor_ownership_candidate=item.ownership,
+                target_ref=_entity_ref(item.target_ref),
+                target_text=item.target_text,
+                evidence_status=item.evidence,
+                confidence=_confidence(item.confidence),
+                cues=item.cues,
+            )
         )
 
-    entities = []
-    entity_ref_map: dict[str, str] = {}
-    for row in wire["e"]:
-        wire_id, kind, cls, descriptors, visibility, frame_location, depth_band, confidence = row
-        canonical_id = _entity_ref(wire_id)
-        entity_ref_map[str(wire_id)] = str(canonical_id)
+    entities: list[Entity] = []
+    entity_ref_mapping: dict[str, str] = {}
+    for item in wire.entities:
+        canonical_id = _entity_ref(item.entity_id)
+        assert canonical_id is not None
+        entity_ref_mapping[item.entity_id] = canonical_id
         entities.append(
-            {
-                "id": canonical_id,
-                "type": kind,
-                "class": cls,
-                "descriptors": descriptors,
-                "visibility": visibility,
-                "frame_location": frame_location,
-                "depth_band": depth_band,
-                "confidence": _confidence(confidence),
-            }
+            Entity(
+                id=canonical_id,
+                type=item.kind,
+                class_name=item.class_name,
+                descriptors=item.descriptors,
+                visibility=item.visibility,
+                frame_location=item.frame_location,
+                depth_band=item.depth_band,
+                confidence=_confidence(item.confidence),
+            )
         )
 
-    relations = []
-    for index, row in enumerate(wire["r"]):
-        subject_ref, predicate, object_ref, object_text, evidence, confidence, cues = row
-        _check_ref(subject_ref, known_entities, warnings, f"r.{index}.subject_ref")
-        _check_ref(object_ref, known_entities, warnings, f"r.{index}.object_ref")
+    relations: list[Relation] = []
+    for index, item in enumerate(wire.relations):
+        _check_ref(item.subject_ref, known_entities, warnings, f"relations.{index}.subject_ref")
+        _check_ref(item.object_ref, known_entities, warnings, f"relations.{index}.object_ref")
         relations.append(
-            {
-                "subject_ref": _entity_ref(subject_ref),
-                "predicate": predicate,
-                "object_ref": _entity_ref(object_ref),
-                "object_text": object_text,
-                "evidence_status": evidence,
-                "confidence": _confidence(confidence),
-                "cues": cues,
-            }
+            Relation(
+                subject_ref=_entity_ref(item.subject_ref) or item.subject_ref,
+                predicate=item.predicate,
+                object_ref=_entity_ref(item.object_ref),
+                object_text=item.object_text,
+                evidence_status=item.evidence,
+                confidence=_confidence(item.confidence),
+                cues=item.cues,
+            )
         )
 
-    env = sc["env"]
-    ill = sc["ill"]
-    bg = sc["bg"]
-
-    background_regions = [
-        {
-            "description": row[0],
-            "relation_to_subject": row[1],
-            "frame_location": row[2],
-            "evidence_status": row[3],
-            "confidence": _confidence(row[4]),
-        }
-        for row in sc["br"]
-    ]
-
-    nuisance_regions = [
-        {
-            "description": row[0],
-            "frame_location": row[1],
-            "frame_coverage": row[2],
-            "texture_complexity": row[3],
-            "structural_complexity": row[4],
-            "specular_reflective": row[5],
-            "entropy_focus_candidate": row[6],
-        }
-        for row in sc["nr"]
-    ]
-
-    p = h["p"]
-    torso = h["to"]
-    head = h["ho"]
-    head_body = h["hb"]
-    camera = h["cam"]
-    capture = h["cap"]
-
-    support_context = []
-    for index, row in enumerate(h["sup"]):
-        relation, target_ref, target_description, evidence, confidence, cues = row
-        _check_ref(target_ref, known_entities, warnings, f"h.sup.{index}.target_ref")
-        support_context.append(
-            {
-                "subject_relation": relation,
-                "target_ref": _entity_ref(target_ref),
-                "target_description": target_description,
-                "evidence_status": evidence,
-                "confidence": _confidence(confidence),
-                "cues": cues,
-            }
+    supports: list[SupportContext] = []
+    for index, item in enumerate(wire.hypotheses.support):
+        _check_ref(item.target_ref, known_entities, warnings, f"hypotheses.support.{index}.target_ref")
+        supports.append(
+            SupportContext(
+                subject_relation=item.relation,
+                target_ref=_entity_ref(item.target_ref),
+                target_description=item.target_description,
+                evidence_status=item.evidence,
+                confidence=_confidence(item.confidence),
+                cues=item.cues,
+            )
         )
 
-    actions = [
-        {
-            "value": row[0],
-            "confidence": _confidence(row[1]),
-            "cues": row[2],
-            "limitations": row[3],
-        }
-        for row in h["act"]
-    ]
-
-    canonical = {
-        "schema_version": "visual-extract-3.0",
-        "image_overview": wire["o"],
-        "framing": {
-            "shot_scale_candidate": f[0],
-            "visible_extent": f[1],
-            "subject_frame_coverage": f[2],
-            "frame_observations": f[3],
-        },
-        "target_subject": {
-            "entity_ref": "target_subject",
-            "transient_appearance": {
-                "clothing": clothing,
-                "accessories": accessories,
-                "hair_state": s["hs"],
-                "expression_state": s["ex"],
-            },
-            "visible_body_parts": visible_body_parts,
-            "geometry_landmark_visibility": landmarks,
-            "orientation_cues": {
-                "torso": s["or"][0],
-                "head": s["or"][1],
-                "image_plane_body_axis": s["or"][2],
-            },
-            "gaze": {
-                "target_candidate": s["g"][0],
-                "image_direction": s["g"][1],
-                "confidence": _confidence(s["g"][2]),
-                "cues": s["g"][3],
-            },
-            "interactions": interactions,
-        },
-        "entities": entities,
-        "relations": relations,
-        "scene": {
-            "environment_candidate": env[0],
-            "environment_confidence": _confidence(env[1]),
-            "environment_cues": env[2],
-            "environment_counterevidence": env[3],
-            "illumination": {
-                "type": ill[0],
-                "directionality": ill[1],
-                "contrast": ill[2],
-                "observations": ill[3],
-            },
-            "background_structure": {
-                "texture_complexity": bg[0],
-                "structural_complexity": bg[1],
-                "specular_reflective": bg[2],
-                "repeated_geometry": bg[3],
-                "strong_lines_or_angles": bg[4],
-                "reflections_present": bg[5],
-                "observations": bg[6],
-            },
-            "background_regions": background_regions,
-            "nuisance_regions": nuisance_regions,
-        },
-        "composition_observations": {
-            "subject_dominance": co[0],
-            "foreground_relations": co[1],
-            "visual_thrust_cues": co[2],
-        },
-        "hypotheses": {
-            "posture": {
-                "value": p[0], "confidence": _confidence(p[1]), "cues": p[2], "limitations": p[3]
-            },
-            "torso_orientation": {
-                "orientation_band": torso[0], "body_faces_frame": torso[1], "confidence": _confidence(torso[2]),
-                "cues": torso[3], "limitations": torso[4]
-            },
-            "head_orientation": {
-                "yaw": head[0], "pitch": head[1], "roll": head[2], "confidence": _confidence(head[3]),
-                "cues": head[4], "limitations": head[5]
-            },
-            "head_body_relation": {
-                "value": head_body[0], "confidence": _confidence(head_body[1]),
-                "cues": head_body[2], "limitations": head_body[3]
-            },
-            "camera": {
-                "elevation": camera[0], "pitch": camera[1], "confidence": _confidence(camera[2]),
-                "cues": camera[3], "counterevidence": camera[4]
-            },
-            "capture": {
-                "mode": capture[0], "confidence": _confidence(capture[1]), "cues": capture[2]
-            },
-            "support_context": support_context,
-            "actions": actions,
-        },
-        "uncertainties": wire["u"],
-    }
+    canonical = VisualExtractV3(
+        schema_version="visual-extract-3.0",
+        image_overview=wire.overview,
+        framing=Framing(
+            shot_scale_candidate=wire.framing.shot_scale,
+            visible_extent=wire.framing.visible_extent,
+            subject_frame_coverage=wire.framing.subject_coverage,
+            frame_observations=wire.framing.observations,
+        ),
+        target_subject=TargetSubject(
+            entity_ref="target_subject",
+            transient_appearance=TransientAppearance(
+                clothing=clothing,
+                accessories=accessories,
+                hair_state=wire.subject.hair_state,
+                expression_state=wire.subject.expression_state,
+            ),
+            visible_body_parts=[
+                BodyPart(
+                    part=item.part,
+                    reported_anatomical_side=item.side,
+                    ownership_candidate=item.ownership,
+                    visibility=item.visibility,
+                    visible_subparts=item.visible_subparts,
+                    connectivity_to_target_chain=item.connectivity,
+                    geometry_cues=item.geometry_cues,
+                    contact_cues=item.contact_cues,
+                    frame_location=item.frame_location,
+                    confidence=_confidence(item.confidence),
+                )
+                for item in wire.subject.body_parts
+            ],
+            geometry_landmark_visibility=landmark_map,
+            orientation_cues=OrientationCues(
+                torso=wire.subject.orientation_cues.torso,
+                head=wire.subject.orientation_cues.head,
+                image_plane_body_axis=wire.subject.orientation_cues.image_axis,
+            ),
+            gaze=Gaze(
+                target_candidate=wire.subject.gaze.target,
+                image_direction=wire.subject.gaze.image_direction,
+                confidence=_confidence(wire.subject.gaze.confidence),
+                cues=wire.subject.gaze.cues,
+            ),
+            interactions=interactions,
+        ),
+        entities=entities,
+        relations=relations,
+        scene=Scene(
+            environment_candidate=wire.scene.environment.candidate,
+            environment_confidence=_confidence(wire.scene.environment.confidence),
+            environment_cues=wire.scene.environment.cues,
+            environment_counterevidence=wire.scene.environment.counterevidence,
+            illumination=Illumination(
+                type=wire.scene.illumination.kind,
+                directionality=wire.scene.illumination.directionality,
+                contrast=wire.scene.illumination.contrast,
+                observations=wire.scene.illumination.observations,
+            ),
+            background_structure=BackgroundStructure(
+                texture_complexity=wire.scene.background.texture,
+                structural_complexity=wire.scene.background.structural,
+                specular_reflective=wire.scene.background.specular,
+                repeated_geometry=wire.scene.background.repeated_geometry,
+                strong_lines_or_angles=wire.scene.background.lines_angles,
+                reflections_present=wire.scene.background.reflections,
+                observations=wire.scene.background.observations,
+            ),
+            background_regions=[
+                BackgroundRegion(
+                    description=item.description,
+                    relation_to_subject=item.relation,
+                    frame_location=item.frame_location,
+                    evidence_status=item.evidence,
+                    confidence=_confidence(item.confidence),
+                )
+                for item in wire.scene.background_regions
+            ],
+            nuisance_regions=[
+                NuisanceRegion(
+                    description=item.description,
+                    frame_location=item.frame_location,
+                    frame_coverage=item.coverage,
+                    texture_complexity=item.texture,
+                    structural_complexity=item.structural,
+                    specular_reflective=item.specular,
+                    entropy_focus_candidate=item.entropy_focus,
+                )
+                for item in wire.scene.nuisance_regions
+            ],
+        ),
+        composition_observations=CompositionObservations(
+            subject_dominance=wire.composition.subject_dominance,
+            foreground_relations=wire.composition.foreground_relations,
+            visual_thrust_cues=wire.composition.visual_thrust,
+        ),
+        hypotheses=Hypotheses(
+            posture=Posture(
+                value=wire.hypotheses.posture.value,
+                confidence=_confidence(wire.hypotheses.posture.confidence),
+                cues=wire.hypotheses.posture.cues,
+                limitations=wire.hypotheses.posture.limitations,
+            ),
+            torso_orientation=TorsoOrientation(
+                orientation_band=wire.hypotheses.torso.band,
+                body_faces_frame=wire.hypotheses.torso.faces_frame,
+                confidence=_confidence(wire.hypotheses.torso.confidence),
+                cues=wire.hypotheses.torso.cues,
+                limitations=wire.hypotheses.torso.limitations,
+            ),
+            head_orientation=HeadOrientation(
+                yaw=wire.hypotheses.head.yaw,
+                pitch=wire.hypotheses.head.pitch,
+                roll=wire.hypotheses.head.roll,
+                confidence=_confidence(wire.hypotheses.head.confidence),
+                cues=wire.hypotheses.head.cues,
+                limitations=wire.hypotheses.head.limitations,
+            ),
+            head_body_relation=HeadBodyRelation(
+                value=wire.hypotheses.head_body.value,
+                confidence=_confidence(wire.hypotheses.head_body.confidence),
+                cues=wire.hypotheses.head_body.cues,
+                limitations=wire.hypotheses.head_body.limitations,
+            ),
+            camera=Camera(
+                elevation=wire.hypotheses.camera.elevation,
+                pitch=wire.hypotheses.camera.pitch,
+                confidence=_confidence(wire.hypotheses.camera.confidence),
+                cues=wire.hypotheses.camera.cues,
+                counterevidence=wire.hypotheses.camera.counterevidence,
+            ),
+            capture=Capture(
+                mode=wire.hypotheses.capture.mode,
+                confidence=_confidence(wire.hypotheses.capture.confidence),
+                cues=wire.hypotheses.capture.cues,
+            ),
+            support_context=supports,
+            actions=[
+                Action(
+                    value=item.value,
+                    confidence=_confidence(item.confidence),
+                    cues=item.cues,
+                    limitations=item.limitations,
+                )
+                for item in wire.hypotheses.actions
+            ],
+        ),
+        uncertainties=wire.uncertainties,
+    )
 
     metadata = {
-        "wire_schema_version": "x3w1",
+        "wire_schema_version": "x3p1",
+        "wire_contract": "Pydantic ExtractWireV1",
+        "canonical_contract": "Pydantic VisualExtractV3",
         "confidence_band_mapping": dict(CONFIDENCE_BANDS),
-        "entity_ref_mapping": entity_ref_map,
+        "entity_ref_mapping": entity_ref_mapping,
         "warnings": warnings,
     }
     return canonical, metadata
