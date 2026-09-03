@@ -156,6 +156,19 @@ def _load_vllm(
     if not torch.cuda.is_available():
         raise RuntimeError("vLLM backend requires a CUDA GPU for this validator")
 
+    # Configure vLLM before importing it.  The dedicated workspace deliberately
+    # pins vLLM 0.11.0 + torch cu128 because some rented L40S hosts expose
+    # 570-series drivers that cannot execute CUDA 12.9 runtime code.  vLLM V1
+    # automatically uses FlashInfer's top-k/top-p sampler whenever FlashInfer is
+    # importable; FlashInfer can carry/JIT against a newer CUDA runtime than the
+    # cu128 PyTorch stack and then fail only during engine warmup with
+    # cudaErrorInsufficientDriver.  Sampling is not semantically important to
+    # this harness (generation uses temperature=0), so default to vLLM's native
+    # PyTorch sampler.  An explicit environment override still permits targeted
+    # FlashInfer testing on a compatible host.
+    os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
+    os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
+
     try:
         from vllm import LLM
     except ImportError as exc:
@@ -164,8 +177,11 @@ def _load_vllm(
             "Install the optional stack described in README.md."
         ) from exc
 
-    # Qwen's offline vLLM examples use spawn for the worker process.
-    os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
+    print(
+        "vLLM runtime: "
+        f"worker_method={os.environ.get('VLLM_WORKER_MULTIPROC_METHOD')} "
+        f"flashinfer_sampler={os.environ.get('VLLM_USE_FLASHINFER_SAMPLER')}"
+    )
 
     started = time.perf_counter()
     processor = AutoProcessor.from_pretrained(
@@ -238,10 +254,6 @@ def load_model(
 
 
 def unload_model(loaded: LoadedModel) -> None:
-    # Modern vLLM V1 engines have finalizers that tear down workers and release
-    # model/KV memory when the LLM object is collected. Keep cleanup deliberately
-    # conservative here; if a specific vLLM release leaks across sequential models,
-    # the CLI can be run once per model while reusing the same --run-name.
     del loaded.model
     del loaded.processor
     gc.collect()
