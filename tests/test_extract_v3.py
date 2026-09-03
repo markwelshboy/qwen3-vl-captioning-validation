@@ -82,12 +82,12 @@ class ExtractV3Tests(unittest.TestCase):
         self.assertIn("hypotheses.camera", audit["gestalt_missing_paths"])
 
     def test_prompt_encodes_observe_once_and_specificity_persistence(self) -> None:
-        prompt = DEFAULT_PROMPT.read_text(encoding="utf-8")
-        self.assertIn("OBSERVE ONCE, REASON MANY TIMES", prompt)
-        self.assertIn("Preserve specificity", prompt)
-        self.assertIn("Separate OBSERVATIONS from HYPOTHESES", prompt)
-        self.assertIn("Later Analyze, Gestalt", prompt)
-        self.assertIn("WITHOUT seeing the image again", prompt)
+        prompt = DEFAULT_PROMPT.read_text(encoding="utf-8").lower()
+        self.assertIn("observe once, reason many times", prompt)
+        self.assertIn("preserve specificity", prompt)
+        self.assertIn("separate observations from hypotheses", prompt)
+        self.assertIn("later analyze, gestalt", prompt)
+        self.assertIn("without seeing the image again", prompt)
 
 
 if __name__ == "__main__":
