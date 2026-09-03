@@ -40,24 +40,27 @@ Usage:
 Rebuilds only the SAM3D/DWPose relational profile and pose-library census from
 existing caches. It does not load or run SAM3D inference.
 
-v0.15 keeps the v0.14 physical-family scores unchanged and adds a separate
-pose-assertion authority layer. A reclined reconstruction is only published as
-an observed pose when a whole-body, direction-aware upper-body, or sufficiently
-broad crop-supported evidence path is directly supported. Otherwise the best
-candidate remains reclined but the public pose is withheld as uncertain for
-Fusion. Non-reclined public decisions are unchanged by construction.
+v0.16 keeps all v0.15 posture-family scores unchanged. Crouching now has a
+pose-specific publication gate: an observed/corroborated hip+knee path is
+required before the public pose may say crouching. A cropped reconstruction can
+still retain crouching as its best candidate for later Fusion.
 
-v0.15 also reports camera-relative body yaw/rotation (for example, a roughly
-45-degree / three-quarter body turn) as a report-only modifier. It does not use
-that rotation to alter the primary pose family.
+The profile also reports image-plane shoulder declination and torso inclination
+as composable modifiers, including sitting_leaning_back / sitting_heavily_leaning_back
+style hints when supported. DWPose-observed axes and SAM3D reconstruction remain
+explicitly separated.
 
-The generated profile directory includes v15_authority_regression_audit.md/json.
-The audit lists every public-pose change and flags any change other than the
-intended reclined -> uncertain authority withhold.
+"Crop authority" in older review pages is pose-joint corroboration, not literal
+visual body extent. v0.16 names that distinction explicitly and flags strong
+withheld reconstruction candidates for semantic recovery by Analyze/Fusion.
+
+The generated profile directory includes v16_authority_regression_audit.md/json.
+The audit lists every public-pose change versus v0.15; only crouching -> uncertain
+withholds are expected in this pass, and posture scores are unchanged.
 
 Options:
   --sam3d-dir PATH      Existing SAM3D array cache (default: RUN_DIR/sam3d-pose-discovery-01)
-  --profile-output PATH Profile v0.15 output directory
+  --profile-output PATH Profile v0.16 output directory
   --census-output PATH  Census v0.2 output directory
   --tar                 Tar the profile directory (including default census/audit)
 EOF
@@ -74,13 +77,13 @@ PY="${ROOT}/.venv/bin/python"
 [[ -d "${IMAGES_DIR}" ]] || { echo "Images directory not found: ${IMAGES_DIR}" >&2; exit 2; }
 
 SAM3D_DIR="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${SAM3D_DIR}")"
-if [[ -z "${PROFILE_OUTPUT}" ]]; then PROFILE_OUTPUT="${SAM3D_DIR}/relational-pose-profile-v0.15"; fi
+if [[ -z "${PROFILE_OUTPUT}" ]]; then PROFILE_OUTPUT="${SAM3D_DIR}/relational-pose-profile-v0.16"; fi
 PROFILE_OUTPUT="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${PROFILE_OUTPUT}")"
 if [[ -z "${CENSUS_OUTPUT}" ]]; then CENSUS_OUTPUT="${PROFILE_OUTPUT}/pose-library-census"; fi
 CENSUS_OUTPUT="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${CENSUS_OUTPUT}")"
 
-echo "=== 1/2 Relational pose profile v0.15 (assertion authority + body orientation) ==="
-QWEN_WORKSPACE_ROOT="${ROOT}" bash "${REPO_ROOT}/run_sam3d_relational_pose_profile_15_workspace.sh" \
+echo "=== 1/2 Relational pose profile v0.16 (crouch authority + posture modifiers) ==="
+QWEN_WORKSPACE_ROOT="${ROOT}" bash "${REPO_ROOT}/run_sam3d_relational_pose_profile_16_workspace.sh" \
   "${SAM3D_DIR}" \
   --dwpose-dir "${DWPOSE_DIR}" \
   --images-dir "${IMAGES_DIR}" \
@@ -102,5 +105,5 @@ fi
 echo
 echo "Pose profile recalibration complete."
 echo "Profile: ${PROFILE_OUTPUT}"
-echo "Audit: ${PROFILE_OUTPUT}/v15_authority_regression_audit.md"
+echo "Audit: ${PROFILE_OUTPUT}/v16_authority_regression_audit.md"
 echo "Census: ${CENSUS_OUTPUT}/pose_library_census.md"
