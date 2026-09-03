@@ -86,7 +86,7 @@ class ExtractV3Tests(unittest.TestCase):
         self.assertIn("OBSERVE ONCE, REASON MANY TIMES", prompt)
         self.assertIn("Preserve specificity", prompt)
         self.assertIn("Separate OBSERVATIONS from HYPOTHESES", prompt)
-        self.assertIn("later Analyze, Gestalt", prompt)
+        self.assertIn("Later Analyze, Gestalt", prompt)
         self.assertIn("without seeing the image again", prompt)
 
 
