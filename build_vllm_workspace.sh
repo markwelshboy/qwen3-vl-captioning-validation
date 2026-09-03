@@ -11,7 +11,7 @@ set -euo pipefail
 #   The rented L40S fleet can expose NVIDIA 570-series host drivers. Those are
 #   compatible with CUDA 12.8, but not CUDA 12.9. vLLM 0.12+ moved its standard
 #   CUDA build to 12.9, so using --torch-backend=auto can silently install a
-#   cu129 stack that imports correctly and then dies during FlashAttention engine
+#   cu129 stack that imports correctly and then dies during native CUDA engine
 #   initialization with "CUDA driver version is insufficient".
 #
 #   vLLM 0.11.0 is the last release whose standard NVIDIA build is CUDA 12.8.1.
@@ -20,6 +20,13 @@ set -euo pipefail
 #       vllm==0.11.0
 #       torch==2.8.0+cu128 (via vLLM dependency + uv torch backend)
 #       transformers==4.57.6
+#
+#   The known-good validation environment did NOT contain the optional
+#   FlashInfer sampler stack. Reusing a venv that previously held a newer vLLM
+#   can leave flashinfer-python / flashinfer-cubin behind even after vLLM is
+#   downgraded. On 570.124.06 those stale CUDA extensions can both fail with
+#   cudaErrorInsufficientDriver and alter startup memory profiling. Therefore
+#   the default compatibility profile removes and rejects FlashInfer entirely.
 #
 # Usage:
 #   bash ./build_vllm_workspace.sh --clean
@@ -34,6 +41,7 @@ set -euo pipefail
 #   QWEN_VLLM_TRANSFORMERS_VERSION=4.57.6
 #   QWEN_VLLM_TORCH_BACKEND=cu128
 #   QWEN_VLLM_EXPECTED_CUDA=12.8
+#   QWEN_VLLM_ALLOW_FLASHINFER=0
 
 WORK_ROOT="${QWEN_VLLM_WORKSPACE_ROOT:-/workspace/qwen3-vllm}"
 PYTHON_VERSION="${QWEN_VLLM_PYTHON_VERSION:-3.12}"
@@ -41,6 +49,7 @@ VLLM_VERSION="${QWEN_VLLM_VERSION:-0.11.0}"
 TRANSFORMERS_VERSION="${QWEN_VLLM_TRANSFORMERS_VERSION:-4.57.6}"
 TORCH_BACKEND="${QWEN_VLLM_TORCH_BACKEND:-cu128}"
 EXPECTED_CUDA="${QWEN_VLLM_EXPECTED_CUDA:-12.8}"
+ALLOW_FLASHINFER="${QWEN_VLLM_ALLOW_FLASHINFER:-0}"
 CLEAN=0
 
 usage() {
@@ -58,6 +67,7 @@ Environment overrides:
   QWEN_VLLM_TRANSFORMERS_VERSION  Transformers version (default: 4.57.6)
   QWEN_VLLM_TORCH_BACKEND         uv torch backend (default: cu128)
   QWEN_VLLM_EXPECTED_CUDA         required torch CUDA runtime prefix (default: 12.8)
+  QWEN_VLLM_ALLOW_FLASHINFER      allow optional FlashInfer stack (default: 0)
 EOF
 }
 
@@ -81,6 +91,11 @@ done
 
 if [[ "$WORK_ROOT" != /workspace && "$WORK_ROOT" != /workspace/* ]]; then
     echo "ERROR: QWEN_VLLM_WORKSPACE_ROOT must be /workspace or beneath it." >&2
+    exit 2
+fi
+
+if [[ "$ALLOW_FLASHINFER" != "0" && "$ALLOW_FLASHINFER" != "1" ]]; then
+    echo "ERROR: QWEN_VLLM_ALLOW_FLASHINFER must be 0 or 1." >&2
     exit 2
 fi
 
@@ -146,6 +161,7 @@ echo "vLLM:              $VLLM_VERSION"
 echo "Transformers:      $TRANSFORMERS_VERSION"
 echo "Torch backend:     $TORCH_BACKEND"
 echo "Expected CUDA:     $EXPECTED_CUDA"
+echo "Allow FlashInfer:  $ALLOW_FLASHINFER"
 echo "HF cache:          $HF_HUB_CACHE"
 echo
 
@@ -167,6 +183,12 @@ else
 fi
 
 PY="$VENV/bin/python"
+
+if [[ "$ALLOW_FLASHINFER" == "0" ]]; then
+    echo
+    echo "Removing optional FlashInfer packages from compatibility workspace, if present ..."
+    "$UV_BIN" pip uninstall --python "$PY" flashinfer-python flashinfer-cubin >/dev/null 2>&1 || true
+fi
 
 echo
 echo "Installing pinned CUDA-compatible vLLM / Transformers stack ..."
@@ -193,8 +215,10 @@ echo
 echo "=== vLLM runtime preflight ==="
 QWEN_VLLM_EXPECTED_VERSION="$VLLM_VERSION" \
 QWEN_VLLM_EXPECTED_CUDA="$EXPECTED_CUDA" \
+QWEN_VLLM_ALLOW_FLASHINFER="$ALLOW_FLASHINFER" \
 "$PY" - <<'PY'
 import importlib.metadata as md
+import importlib.util
 import os
 import sys
 
@@ -205,8 +229,10 @@ from qwen_vl_utils import process_vision_info
 
 expected_vllm = os.environ["QWEN_VLLM_EXPECTED_VERSION"]
 expected_cuda = os.environ["QWEN_VLLM_EXPECTED_CUDA"]
+allow_flashinfer = os.environ["QWEN_VLLM_ALLOW_FLASHINFER"] == "1"
 actual_vllm = md.version("vllm")
 actual_cuda = str(torch.version.cuda or "")
+flashinfer_importable = importlib.util.find_spec("flashinfer") is not None
 
 print("python:", sys.executable)
 print("torch:", torch.__version__)
@@ -215,6 +241,12 @@ print("transformers:", transformers.__version__)
 print("vllm:", actual_vllm)
 print("qwen-vl-utils:", md.version("qwen-vl-utils"))
 print("CUDA available:", torch.cuda.is_available())
+print("FlashInfer importable:", flashinfer_importable)
+for package in ("flashinfer-python", "flashinfer-cubin", "apache-tvm-ffi"):
+    try:
+        print(f"{package}:", md.version(package))
+    except md.PackageNotFoundError:
+        print(f"{package}: NOT INSTALLED")
 print("vLLM LLM import: OK")
 print("vLLM SamplingParams import: OK")
 print("qwen_vl_utils.process_vision_info import: OK")
@@ -228,6 +260,12 @@ if not actual_cuda.startswith(expected_cuda):
     )
 if not torch.cuda.is_available():
     raise SystemExit("ERROR: CUDA is not available to PyTorch; refusing to accept this vLLM build.")
+if flashinfer_importable and not allow_flashinfer:
+    raise SystemExit(
+        "ERROR: FlashInfer is importable in the default cu128 compatibility workspace. "
+        "This usually means the venv retained optional native packages from a newer vLLM stack. "
+        "Rebuild with --clean."
+    )
 
 # Force a real CUDA runtime call; import-only checks are insufficient because a
 # newer native extension can import successfully and fail only when initialized.
@@ -250,6 +288,7 @@ printf '%s\n' \
     "transformers=$TRANSFORMERS_VERSION" \
     "torch_backend=$TORCH_BACKEND" \
     "expected_cuda=$EXPECTED_CUDA" \
+    "allow_flashinfer=$ALLOW_FLASHINFER" \
     > "$WORK_ROOT/environment.spec.txt"
 
 echo
