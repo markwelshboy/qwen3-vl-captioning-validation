@@ -32,5 +32,16 @@ export HF_XET_CACHE="$WORK_ROOT/huggingface/xet"
 export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
 unset HF_HUB_ENABLE_HF_TRANSFER || true
 
+# vLLM V1 enables FlashInfer sampling automatically when FlashInfer is
+# importable.  The dedicated workspace is intentionally torch cu128 for rented
+# L40S hosts whose 570-series driver cannot execute CUDA 12.9 runtime code, but
+# FlashInfer may carry/JIT a newer CUDA runtime independently of torch.  The
+# native vLLM/PyTorch sampler is fully adequate for our deterministic
+# temperature=0 extraction workload and avoids that optional compatibility
+# hazard.  Explicitly setting 1 still allows targeted testing on newer hosts.
+export VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-0}"
+
+echo "vLLM FlashInfer sampler: $VLLM_USE_FLASHINFER_SAMPLER (0 = PyTorch-native sampler)"
+
 cd "$REPO_ROOT"
 exec "$PY" -m qwen_caption_validate.extract_v3 "$@"
