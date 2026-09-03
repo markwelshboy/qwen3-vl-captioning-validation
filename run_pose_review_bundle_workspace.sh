@@ -45,12 +45,12 @@ while (($#)); do
   esac
 done
 
-"${PY}" -m qwen_caption_validate.pose_review_bundle_10 "${ARGS[@]}"
+"${PY}" -m qwen_caption_validate.pose_review_bundle_11 "${ARGS[@]}"
 
 if [[ "${MAKE_TAR}" -eq 1 ]]; then
   RUN_DIR_ABS="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${RUN_DIR}")"
   if [[ -z "${OUTPUT}" ]]; then
-    OUTPUT="${RUN_DIR_ABS}/semantic-v3/pose-review-v0.10"
+    OUTPUT="${RUN_DIR_ABS}/semantic-v3/pose-review-v0.11"
   else
     OUTPUT="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${OUTPUT}")"
   fi
