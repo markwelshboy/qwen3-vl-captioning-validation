@@ -37,5 +37,11 @@ export HF_XET_CACHE="$WORK_ROOT/huggingface/xet"
 export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
 unset HF_HUB_ENABLE_HF_TRANSFER || true
 
+# Safe default for the dedicated vLLM cu128 workspace. vLLM V1 otherwise uses
+# FlashInfer sampling automatically when FlashInfer is importable; that optional
+# extension can carry a newer CUDA runtime than torch and fail on 570-series
+# host drivers. This variable is harmless for Transformers-only runs.
+export VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-0}"
+
 cd "$REPO_ROOT"
 exec "$PY" -m "$CLI_MODULE" "$@"
