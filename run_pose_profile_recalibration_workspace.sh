@@ -40,18 +40,26 @@ Usage:
 Rebuilds only the SAM3D/DWPose relational profile and pose-library census from
 existing caches. It does not load or run SAM3D inference.
 
-v0.14 is a targeted refinement over v0.13: strong whole-body recline suppresses
-ordinary-sitting promotion; open-hand head support requires proximal palm/wrist
-contact rather than fingertip proximity; and deep squat confidence is reduced
-when torso compensation is insufficient relative to pelvis/foot displacement.
-The v0.12 support hull, v0.13 retreat logic, single-leg handling, and crop
-authority model remain unchanged.
+v0.15 keeps the v0.14 physical-family scores unchanged and adds a separate
+pose-assertion authority layer. A reclined reconstruction is only published as
+an observed pose when a whole-body, direction-aware upper-body, or sufficiently
+broad crop-supported evidence path is directly supported. Otherwise the best
+candidate remains reclined but the public pose is withheld as uncertain for
+Fusion. Non-reclined public decisions are unchanged by construction.
+
+v0.15 also reports camera-relative body yaw/rotation (for example, a roughly
+45-degree / three-quarter body turn) as a report-only modifier. It does not use
+that rotation to alter the primary pose family.
+
+The generated profile directory includes v15_authority_regression_audit.md/json.
+The audit lists every public-pose change and flags any change other than the
+intended reclined -> uncertain authority withhold.
 
 Options:
   --sam3d-dir PATH      Existing SAM3D array cache (default: RUN_DIR/sam3d-pose-discovery-01)
-  --profile-output PATH Profile v0.14 output directory
+  --profile-output PATH Profile v0.15 output directory
   --census-output PATH  Census v0.2 output directory
-  --tar                 Tar the profile directory (including default census)
+  --tar                 Tar the profile directory (including default census/audit)
 EOF
       exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
@@ -66,13 +74,13 @@ PY="${ROOT}/.venv/bin/python"
 [[ -d "${IMAGES_DIR}" ]] || { echo "Images directory not found: ${IMAGES_DIR}" >&2; exit 2; }
 
 SAM3D_DIR="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${SAM3D_DIR}")"
-if [[ -z "${PROFILE_OUTPUT}" ]]; then PROFILE_OUTPUT="${SAM3D_DIR}/relational-pose-profile-v0.14"; fi
+if [[ -z "${PROFILE_OUTPUT}" ]]; then PROFILE_OUTPUT="${SAM3D_DIR}/relational-pose-profile-v0.15"; fi
 PROFILE_OUTPUT="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${PROFILE_OUTPUT}")"
 if [[ -z "${CENSUS_OUTPUT}" ]]; then CENSUS_OUTPUT="${PROFILE_OUTPUT}/pose-library-census"; fi
 CENSUS_OUTPUT="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${CENSUS_OUTPUT}")"
 
-echo "=== 1/2 Relational pose profile v0.14 (targeted physical governance) ==="
-QWEN_WORKSPACE_ROOT="${ROOT}" bash "${REPO_ROOT}/run_sam3d_relational_pose_profile_14_workspace.sh" \
+echo "=== 1/2 Relational pose profile v0.15 (assertion authority + body orientation) ==="
+QWEN_WORKSPACE_ROOT="${ROOT}" bash "${REPO_ROOT}/run_sam3d_relational_pose_profile_15_workspace.sh" \
   "${SAM3D_DIR}" \
   --dwpose-dir "${DWPOSE_DIR}" \
   --images-dir "${IMAGES_DIR}" \
@@ -94,4 +102,5 @@ fi
 echo
 echo "Pose profile recalibration complete."
 echo "Profile: ${PROFILE_OUTPUT}"
+echo "Audit: ${PROFILE_OUTPUT}/v15_authority_regression_audit.md"
 echo "Census: ${CENSUS_OUTPUT}/pose_library_census.md"
