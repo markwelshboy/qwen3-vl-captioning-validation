@@ -40,15 +40,16 @@ Usage:
 Rebuilds only the SAM3D/DWPose relational profile and pose-library census from
 existing caches. It does not load or run SAM3D inference.
 
-v0.13 keeps the v0.12 foot-contact-area model, but replaces low-authority
-support-veto restoration with a soft directional feasibility gate. Torso retreat
-suppresses crouch/squat, while flexed legs + horizontal-ish thighs + an
-upright/backward torso become positive sitting evidence. Strong visible forward
-compensation may rescue a true squat from an over-pessimistic support estimate.
+v0.14 is a targeted refinement over v0.13: strong whole-body recline suppresses
+ordinary-sitting promotion; open-hand head support requires proximal palm/wrist
+contact rather than fingertip proximity; and deep squat confidence is reduced
+when torso compensation is insufficient relative to pelvis/foot displacement.
+The v0.12 support hull, v0.13 retreat logic, single-leg handling, and crop
+authority model remain unchanged.
 
 Options:
   --sam3d-dir PATH      Existing SAM3D array cache (default: RUN_DIR/sam3d-pose-discovery-01)
-  --profile-output PATH Profile v0.13 output directory
+  --profile-output PATH Profile v0.14 output directory
   --census-output PATH  Census v0.2 output directory
   --tar                 Tar the profile directory (including default census)
 EOF
@@ -65,13 +66,13 @@ PY="${ROOT}/.venv/bin/python"
 [[ -d "${IMAGES_DIR}" ]] || { echo "Images directory not found: ${IMAGES_DIR}" >&2; exit 2; }
 
 SAM3D_DIR="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${SAM3D_DIR}")"
-if [[ -z "${PROFILE_OUTPUT}" ]]; then PROFILE_OUTPUT="${SAM3D_DIR}/relational-pose-profile-v0.13"; fi
+if [[ -z "${PROFILE_OUTPUT}" ]]; then PROFILE_OUTPUT="${SAM3D_DIR}/relational-pose-profile-v0.14"; fi
 PROFILE_OUTPUT="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${PROFILE_OUTPUT}")"
 if [[ -z "${CENSUS_OUTPUT}" ]]; then CENSUS_OUTPUT="${PROFILE_OUTPUT}/pose-library-census"; fi
 CENSUS_OUTPUT="$(${PY} -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${CENSUS_OUTPUT}")"
 
-echo "=== 1/2 Relational pose profile v0.13 (seated / low-stance topology governance) ==="
-QWEN_WORKSPACE_ROOT="${ROOT}" bash "${REPO_ROOT}/run_sam3d_relational_pose_profile_13_workspace.sh" \
+echo "=== 1/2 Relational pose profile v0.14 (targeted physical governance) ==="
+QWEN_WORKSPACE_ROOT="${ROOT}" bash "${REPO_ROOT}/run_sam3d_relational_pose_profile_14_workspace.sh" \
   "${SAM3D_DIR}" \
   --dwpose-dir "${DWPOSE_DIR}" \
   --images-dir "${IMAGES_DIR}" \
