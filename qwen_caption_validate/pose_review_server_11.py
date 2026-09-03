@@ -11,6 +11,13 @@ from . import pose_review_server_10 as _v10  # noqa: F401  (applies all prior UI
 from . import pose_review_server_06 as _v06
 
 
+# Older review layers called this value "Crop authority".  It is actually
+# DWPose/SAM3D pose-joint corroboration inside the crop, not a segmentation-like
+# estimate of how much of the visible human body is present.  The distinction is
+# important for severe foreshortening such as poseblind-02_00200.
+base.HTML = base.HTML.replace("Crop authority", "Pose-joint authority")
+
+
 EXTRA_UI = r'''
 <script>
 (function(){
@@ -73,6 +80,7 @@ def _packet_html_v11(
     raw_by_key: dict[str, Any],
 ) -> str:
     text = _old_packet_html(bundle, records, annotations, raw_by_key)
+    text = text.replace("<th>Crop authority</th>", "<th>Pose-joint authority</th>")
     for record in records:
         key = str(record.get("image_key") or "")
         if not key:
@@ -84,7 +92,7 @@ def _packet_html_v11(
         modifiers = ", ".join(str(x) for x in (mod.get("suggested_modifiers") or [])) or "-"
         row = (
             "<tr><th>v0.16 authority / lean</th><td>"
-            f"joint-authority {a.get('crop_support_percent',0)}% · "
+            f"pose-joint-authority {a.get('crop_support_percent',0)}% · "
             f"crouch-path {crouch.get('path_authority_percent',0)}% "
             f"({'PASS' if crouch.get('qualifies') else 'no'}) · "
             f"{html.escape(str(a.get('public_pose_before_v16',a.get('public_pose_before','-'))))} → "
