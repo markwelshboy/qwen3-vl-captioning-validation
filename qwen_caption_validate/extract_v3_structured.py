@@ -3,11 +3,8 @@ from __future__ import annotations
 """Structured-output launcher for Extract v3.
 
 The base Extract runner owns batching, timing, artifact persistence and contract
-checks. This launcher constrains vLLM generation to the configured Extract JSON
-schema and configures xgrammar to emit compact JSON without structural
-whitespace. The latter matters materially for this large persistent record:
-pretty-printed JSON can add thousands of decode tokens without adding semantic
-information.
+checks. This launcher replaces only the vLLM batch generation function so vLLM
+constrains generation to the configured canonical Extract JSON schema.
 """
 
 import json
@@ -27,46 +24,6 @@ def _schema_path_from_argv() -> Path:
         if value.startswith("--schema="):
             return Path(value.split("=", 1)[1]).expanduser().resolve()
     return extract_v3.DEFAULT_SCHEMA.resolve()
-
-
-def _install_compact_structured_vllm() -> None:
-    """Declare the Extract-only multimodal and structured-output engine policy."""
-    try:
-        import vllm
-    except ImportError:
-        return
-
-    original_llm = vllm.LLM
-    if getattr(original_llm, "_extract_v3_compact_structured", False):
-        return
-
-    def compact_structured_llm(*args, **kwargs):
-        requested_mm = kwargs.get("limit_mm_per_prompt")
-        if requested_mm is not None and requested_mm != {"image": 1, "video": 0}:
-            raise RuntimeError(
-                "Extract v3 requires image-only vLLM limits {'image': 1, 'video': 0}; "
-                f"refusing conflicting limits {requested_mm!r}"
-            )
-        kwargs["limit_mm_per_prompt"] = {"image": 1, "video": 0}
-
-        requested_so = kwargs.get("structured_outputs_config")
-        if requested_so is not None:
-            raise RuntimeError(
-                "Extract v3 owns vLLM structured_outputs_config; refusing a "
-                f"conflicting caller value {requested_so!r}"
-            )
-        kwargs["structured_outputs_config"] = {
-            "backend": "xgrammar",
-            "disable_any_whitespace": True,
-        }
-        print(
-            "vLLM structured-output engine: "
-            "backend=xgrammar disable_any_whitespace=true"
-        )
-        return original_llm(*args, **kwargs)
-
-    compact_structured_llm._extract_v3_compact_structured = True  # type: ignore[attr-defined]
-    vllm.LLM = compact_structured_llm
 
 
 def _generate_vllm_batch_structured(
@@ -128,7 +85,6 @@ def _generate_vllm_batch_structured(
         fields["prepare_seconds"] = item_prepare
         fields["shared_generation_seconds"] = generation_seconds
         fields["structured_json"] = True
-        fields["structural_whitespace_disabled"] = True
         items.append(fields)
 
     total_output_tokens = sum(int(item["output_tokens"]) for item in items)
@@ -141,19 +97,14 @@ def _generate_vllm_batch_structured(
             total_output_tokens / generation_seconds if generation_seconds > 0 else 0.0
         ),
         "structured_json": True,
-        "structural_whitespace_disabled": True,
         "schema": str(schema_path),
     }
     return items, batch
 
 
 def main() -> int:
-    extract_v3._install_image_only_vllm = _install_compact_structured_vllm
     extract_v3._generate_vllm_batch_profiled = _generate_vllm_batch_structured
-    print(
-        f"Extract structured JSON: enabled ({_schema_path_from_argv()}); "
-        "xgrammar structural whitespace disabled"
-    )
+    print(f"Extract structured JSON: enabled ({_schema_path_from_argv()})")
     return extract_v3.main()
 
 
