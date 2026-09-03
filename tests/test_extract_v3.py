@@ -87,7 +87,7 @@ class ExtractV3Tests(unittest.TestCase):
         self.assertIn("Preserve specificity", prompt)
         self.assertIn("Separate OBSERVATIONS from HYPOTHESES", prompt)
         self.assertIn("Later Analyze, Gestalt", prompt)
-        self.assertIn("without seeing the image again", prompt)
+        self.assertIn("WITHOUT seeing the image again", prompt)
 
 
 if __name__ == "__main__":
