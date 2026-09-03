@@ -285,7 +285,7 @@ class ExtractWireV1(_WireModel):
 # Canonical persistent model -------------------------------------------------
 
 class _CanonicalModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 
 class AppearanceItem(_CanonicalModel):
