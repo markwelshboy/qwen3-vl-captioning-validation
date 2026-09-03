@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Extract v3 compact semantic wire",
+  "type": "object",
+  "required": ["v", "o", "f", "s", "e", "r", "sc", "co", "h", "u"],
+  "additionalProperties": false,
+  "properties": {
+    "v": {"const": "x3w1"},
+    "o": {"type": ["string", "null"]},
+    "f": {
+      "type": "array", "minItems": 4, "maxItems": 4,
+      "prefixItems": [
+        {"enum": ["extreme_close_up", "close_up", "medium_close_up", "medium", "three_quarter", "near_full_body", "full_body", "unknown"]},
+        {"type": ["string", "null"]},
+        {"enum": ["small", "medium", "large", "face_dominant", "unknown"]},
+        {"$ref": "#/$defs/strings"}
+      ]
+    },
+    "s": {
+      "type": "object", "required": ["cl", "ac", "hs", "ex", "bp", "lm", "or", "g", "ix"], "additionalProperties": false,
+      "properties": {
+        "cl": {"type": "array", "items": {"$ref": "#/$defs/appearance"}},
+        "ac": {"type": "array", "items": {"$ref": "#/$defs/appearance"}},
+        "hs": {"$ref": "#/$defs/strings"},
+        "ex": {"$ref": "#/$defs/strings"},
+        "bp": {"type": "array", "items": {"$ref": "#/$defs/body_part"}},
+        "lm": {
+          "type": "object", "required": ["hd", "ls", "rs", "lh", "rh", "lk", "rk", "la", "ra"], "additionalProperties": false,
+          "properties": {
+            "hd": {"$ref": "#/$defs/landmark"}, "ls": {"$ref": "#/$defs/landmark"}, "rs": {"$ref": "#/$defs/landmark"},
+            "lh": {"$ref": "#/$defs/landmark"}, "rh": {"$ref": "#/$defs/landmark"}, "lk": {"$ref": "#/$defs/landmark"},
+            "rk": {"$ref": "#/$defs/landmark"}, "la": {"$ref": "#/$defs/landmark"}, "ra": {"$ref": "#/$defs/landmark"}
+          }
+        },
+        "or": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "prefixItems": [{"$ref": "#/$defs/strings"}, {"$ref": "#/$defs/strings"}, {"$ref": "#/$defs/strings"}]
+        },
+        "g": {
+          "type": "array", "minItems": 4, "maxItems": 4,
+          "prefixItems": [
+            {"enum": ["camera_lens", "near_camera", "object", "down", "up", "off_camera", "unknown"]},
+            {"enum": ["image_left", "image_center", "image_right", "unknown"]},
+            {"$ref": "#/$defs/conf"}, {"$ref": "#/$defs/strings"}
+          ]
+        },
+        "ix": {"type": "array", "items": {"$ref": "#/$defs/interaction"}}
+      }
+    },
+    "e": {"type": "array", "items": {"$ref": "#/$defs/entity"}},
+    "r": {"type": "array", "items": {"$ref": "#/$defs/relation"}},
+    "sc": {
+      "type": "object", "required": ["env", "ill", "bg", "br", "nr"], "additionalProperties": false,
+      "properties": {
+        "env": {
+          "type": "array", "minItems": 4, "maxItems": 4,
+          "prefixItems": [
+            {"enum": ["indoor", "outdoor", "vehicle", "elevator", "studio_like", "mixed", "ambiguous", "unknown"]},
+            {"$ref": "#/$defs/conf"}, {"$ref": "#/$defs/strings"}, {"$ref": "#/$defs/strings"}
+          ]
+        },
+        "ill": {
+          "type": "array", "minItems": 4, "maxItems": 4,
+          "prefixItems": [
+            {"enum": ["natural", "artificial", "mixed", "unknown"]},
+            {"enum": ["flat", "directional", "mixed", "unknown"]},
+            {"enum": ["low", "medium", "high", "unknown"]}, {"$ref": "#/$defs/strings"}
+          ]
+        },
+        "bg": {
+          "type": "array", "minItems": 7, "maxItems": 7,
+          "prefixItems": [
+            {"enum": ["low", "medium", "high", "unknown"]},
+            {"enum": ["low", "medium", "high", "unknown"]},
+            {"enum": ["none", "low", "medium", "high", "unknown"]},
+            {"type": ["boolean", "null"]},
+            {"enum": ["low", "medium", "high", "unknown"]},
+            {"type": ["boolean", "null"]}, {"$ref": "#/$defs/strings"}
+          ]
+        },
+        "br": {"type": "array", "items": {"$ref": "#/$defs/background_region"}},
+        "nr": {"type": "array", "items": {"$ref": "#/$defs/nuisance"}}
+      }
+    },
+    "co": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "prefixItems": [
+        {"enum": ["dominant", "balanced", "minor", "unknown"]},
+        {"$ref": "#/$defs/strings"}, {"$ref": "#/$defs/strings"}
+      ]
+    },
+    "h": {
+      "type": "object", "required": ["p", "to", "ho", "hb", "cam", "cap", "sup", "act"], "additionalProperties": false,
+      "properties": {
+        "p": {"$ref": "#/$defs/posture"},
+        "to": {"$ref": "#/$defs/torso_orientation"},
+        "ho": {"$ref": "#/$defs/head_orientation"},
+        "hb": {"$ref": "#/$defs/head_body"},
+        "cam": {"$ref": "#/$defs/camera"},
+        "cap": {"$ref": "#/$defs/capture"},
+        "sup": {"type": "array", "items": {"$ref": "#/$defs/support"}},
+        "act": {"type": "array", "items": {"$ref": "#/$defs/action"}}
+      }
+    },
+    "u": {"$ref": "#/$defs/strings"}
+  },
+  "$defs": {
+    "strings": {"type": "array", "items": {"type": "string"}},
+    "conf": {"enum": ["h", "m", "l", "u"]},
+    "ref": {"anyOf": [{"const": "t"}, {"type": "string", "pattern": "^e[1-9][0-9]?$"}]},
+    "appearance": {
+      "type": "array", "minItems": 5, "maxItems": 5,
+      "prefixItems": [
+        {"type": "string", "minLength": 1}, {"$ref": "#/$defs/strings"}, {"type": "string"},
+        {"enum": ["full", "partial", "fragment", "occluded", "unknown"]}, {"$ref": "#/$defs/conf"}
+      ]
+    },
+    "body_part": {
+      "type": "array", "minItems": 10, "maxItems": 10,
+      "prefixItems": [
+        {"type": "string"}, {"enum": ["left", "right", "midline", "unknown"]}, {"enum": ["target", "other", "unknown"]},
+        {"enum": ["full", "partial", "fragment"]}, {"$ref": "#/$defs/strings"},
+        {"enum": ["connected_visible", "connected_but_occluded", "disconnected_in_crop", "unknown"]},
+        {"$ref": "#/$defs/strings"}, {"$ref": "#/$defs/strings"}, {"type": "string"}, {"$ref": "#/$defs/conf"}
+      ]
+    },
+    "landmark": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "prefixItems": [
+        {"enum": ["visible", "partial", "not_visible", "unknown"]}, {"$ref": "#/$defs/conf"}, {"type": ["string", "null"]}
+      ]
+    },
+    "interaction": {
+      "type": "array", "minItems": 8, "maxItems": 8,
+      "prefixItems": [
+        {"enum": ["holding", "contact", "support", "reaching", "crossing", "gesture", "wearing", "unknown"]},
+        {"type": "string"}, {"enum": ["target", "other", "unknown"]},
+        {"anyOf": [{"$ref": "#/$defs/ref"}, {"type": "null"}]}, {"type": ["string", "null"]},
+        {"enum": ["observed", "contextual", "hypothesis", "unknown"]}, {"$ref": "#/$defs/conf"}, {"$ref": "#/$defs/strings"}
+      ]
+    },
+    "entity": {
+      "type": "array", "minItems": 8, "maxItems": 8,
+      "prefixItems": [
+        {"type": "string", "pattern": "^e[1-9][0-9]?$"},
+        {"enum": ["person", "object", "furniture", "architecture", "vehicle", "device", "animal", "depiction", "reflection", "region", "other"]},
+        {"type": "string", "minLength": 1}, {"$ref": "#/$defs/strings"},
+        {"enum": ["full", "partial", "fragment", "occluded", "blurred", "unknown"]},
+        {"type": "string"}, {"enum": ["foreground", "subject_plane", "background", "through_opening", "unknown"]}, {"$ref": "#/$defs/conf"}
+      ]
+    },
+    "relation": {
+      "type": "array", "minItems": 7, "maxItems": 7,
+      "prefixItems": [
+        {"$ref": "#/$defs/ref"},
+        {"enum": ["visible_through", "reflected_in", "behind", "in_front_of", "beside", "near", "touching", "overlapping", "holding", "held_by", "wearing", "attached_to", "on", "under", "inside", "occludes", "supports_candidate", "resting_candidate", "other"]},
+        {"anyOf": [{"$ref": "#/$defs/ref"}, {"type": "null"}]}, {"type": ["string", "null"]},
+        {"enum": ["observed", "contextual", "hypothesis", "unknown"]}, {"$ref": "#/$defs/conf"}, {"$ref": "#/$defs/strings"}
+      ]
+    },
+    "background_region": {
+      "type": "array", "minItems": 5, "maxItems": 5,
+      "prefixItems": [
+        {"type": "string"}, {"enum": ["behind_subject", "foreground", "beside_subject", "surrounding", "unknown"]},
+        {"enum": ["left", "center", "right", "spanning", "unknown"]},
+        {"enum": ["observed", "contextual", "hypothesis", "unknown"]}, {"$ref": "#/$defs/conf"}
+      ]
+    },
+    "nuisance": {
+      "type": "array", "minItems": 7, "maxItems": 7,
+      "prefixItems": [
+        {"type": "string"}, {"type": "string"}, {"enum": ["small", "medium", "large"]},
+        {"enum": ["low", "medium", "high", "unknown"]}, {"enum": ["low", "medium", "high", "unknown"]},
+        {"enum": ["none", "low", "medium", "high", "unknown"]}, {"type": "boolean"}
+      ]
+    },
+    "posture": {
+      "type": "array", "minItems": 4, "maxItems": 4,
+      "prefixItems": [{"enum": ["standing", "seated", "squatting", "crouching", "kneeling", "lying", "reclining", "unknown"]}, {"$ref": "#/$defs/conf"}, {"$ref": "#/$defs/strings"}, {"$ref": "#/$defs/strings"}]
+    },
+    "torso_orientation": {
+      "type": "array", "minItems": 5, "maxItems": 5,
+      "prefixItems": [{"enum": ["frontal", "slightly_angled", "three_quarter", "side_on", "rear_three_quarter", "rear", "unknown"]}, {"enum": ["left", "right", "unknown"]}, {"$ref": "#/$defs/conf"}, {"$ref": "#/$defs/strings"}, {"$ref": "#/$defs/strings"}]
+    },
+    "head_orientation": {
+      "type": "array", "minItems": 6, "maxItems": 6,
+      "prefixItems": [{"enum": ["frontal", "turned_left", "turned_right", "back_to_camera", "unknown"]}, {"enum": ["up", "down", "neutral", "unknown"]}, {"enum": ["image_left", "image_right", "neutral", "unknown"]}, {"$ref": "#/$defs/conf"}, {"$ref": "#/$defs/strings"}, {"$ref": "#/$defs/strings"}]
+    },
+    "head_body": {
+      "type": "array", "minItems": 4, "maxItems": 4,
+      "prefixItems": [{"enum": ["aligned", "turned_toward_camera", "turned_away_from_camera", "unknown"]}, {"$ref": "#/$defs/conf"}, {"$ref": "#/$defs/strings"}, {"$ref": "#/$defs/strings"}]
+    },
+    "camera": {
+      "type": "array", "minItems": 5, "maxItems": 5,
+      "prefixItems": [{"enum": ["very_low", "low", "eye_level", "high", "very_high", "unknown"]}, {"enum": ["upward", "level", "downward", "unknown"]}, {"$ref": "#/$defs/conf"}, {"$ref": "#/$defs/strings"}, {"$ref": "#/$defs/strings"}]
+    },
+    "capture": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "prefixItems": [{"enum": ["handheld_selfie", "mirror_selfie", "external_camera", "unknown"]}, {"$ref": "#/$defs/conf"}, {"$ref": "#/$defs/strings"}]
+    },
+    "support": {
+      "type": "array", "minItems": 6, "maxItems": 6,
+      "prefixItems": [
+        {"enum": ["lying_on", "reclining_on", "seated_on", "standing_on", "leaning_against", "resting_on", "braced_on", "unknown"]},
+        {"anyOf": [{"$ref": "#/$defs/ref"}, {"type": "null"}]}, {"type": ["string", "null"]},
+        {"enum": ["observed", "contextual", "hypothesis", "unknown"]}, {"$ref": "#/$defs/conf"}, {"$ref": "#/$defs/strings"}
+      ]
+    },
+    "action": {
+      "type": "array", "minItems": 4, "maxItems": 4,
+      "prefixItems": [{"type": "string"}, {"$ref": "#/$defs/conf"}, {"$ref": "#/$defs/strings"}, {"$ref": "#/$defs/strings"}]
+    }
+  }
+}
