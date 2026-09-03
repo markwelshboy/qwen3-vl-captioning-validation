@@ -22,11 +22,12 @@ set -euo pipefail
 #       transformers==4.57.6
 #
 #   The known-good validation environment did NOT contain the optional
-#   FlashInfer sampler stack. Reusing a venv that previously held a newer vLLM
-#   can leave flashinfer-python / flashinfer-cubin behind even after vLLM is
-#   downgraded. On 570.124.06 those stale CUDA extensions can both fail with
-#   cudaErrorInsufficientDriver and alter startup memory profiling. Therefore
-#   the default compatibility profile removes and rejects FlashInfer entirely.
+#   FlashInfer sampler stack. A current dependency-resolution path can introduce
+#   a newer FlashInfer package even though vLLM 0.11.0 itself only exposes
+#   FlashInfer as an optional extra. On 570.124.06 these CUDA extensions can fail
+#   with cudaErrorInsufficientDriver and can change startup memory profiling.
+#   Therefore the default compatibility profile removes and rejects FlashInfer
+#   after all dependencies have been resolved and installed.
 #
 # Usage:
 #   bash ./build_vllm_workspace.sh --clean
@@ -184,12 +185,6 @@ fi
 
 PY="$VENV/bin/python"
 
-if [[ "$ALLOW_FLASHINFER" == "0" ]]; then
-    echo
-    echo "Removing optional FlashInfer packages from compatibility workspace, if present ..."
-    "$UV_BIN" pip uninstall --python "$PY" flashinfer-python flashinfer-cubin >/dev/null 2>&1 || true
-fi
-
 echo
 echo "Installing pinned CUDA-compatible vLLM / Transformers stack ..."
 "$UV_BIN" pip install \
@@ -210,6 +205,12 @@ echo "Installing validation harness into the vLLM environment ..."
     cd "$REPO_ROOT"
     "$UV_BIN" pip install --python "$PY" -e .
 )
+
+if [[ "$ALLOW_FLASHINFER" == "0" ]]; then
+    echo
+    echo "Removing optional FlashInfer packages from compatibility workspace, if present ..."
+    "$UV_BIN" pip uninstall --python "$PY" flashinfer-python flashinfer-cubin flashinfer-jit-cache >/dev/null 2>&1 || true
+fi
 
 echo
 echo "=== vLLM runtime preflight ==="
@@ -263,8 +264,7 @@ if not torch.cuda.is_available():
 if flashinfer_importable and not allow_flashinfer:
     raise SystemExit(
         "ERROR: FlashInfer is importable in the default cu128 compatibility workspace. "
-        "This usually means the venv retained optional native packages from a newer vLLM stack. "
-        "Rebuild with --clean."
+        "The compatibility profile expects the known-good PyTorch-native path."
     )
 
 # Force a real CUDA runtime call; import-only checks are insufficient because a
