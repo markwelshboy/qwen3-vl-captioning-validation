@@ -44,7 +44,7 @@ from .extract_v3_models import (
     WireTorsoOrientation,
     _WireModel,
 )
-from .extract_v3_normalize_x3p3 import normalize_x3p3_wire
+from .extract_v3_normalize_x3p3_v03 import normalize_x3p3_wire
 
 _NON_TARGET_ENTITY_REF_PATTERN = r"^e[1-9][0-9]*$"
 
