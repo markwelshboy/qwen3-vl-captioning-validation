@@ -12,8 +12,6 @@ from tests.test_extract_v3_pydantic_x3p3 import ExtractV3PydanticX3P3Tests
 
 class ExtractV3X3P3NormalizeTests(unittest.TestCase):
     def _wire_dict(self) -> dict:
-        # Reuse the canonical x3p3 synthetic fixture so these tests isolate only
-        # governance normalization rather than maintaining a second giant wire.
         return copy.deepcopy(ExtractV3PydanticX3P3Tests()._wire_dict())
 
     def test_unanchored_target_hand_is_downgraded_with_dependent_claims(self) -> None:
@@ -26,7 +24,7 @@ class ExtractV3X3P3NormalizeTests(unittest.TestCase):
                 "v": "full",
                 "s": ["palm", "fingers", "wrist"],
                 "k": "connected_visible",
-                "g": ["hand_near_neck", "fingers_extended"],
+                "g": ["palm facing up", "fingers extended"],
                 "c": ["hand_touching_neck"],
                 "l": "lower_center",
                 "q": "h",
@@ -42,7 +40,7 @@ class ExtractV3X3P3NormalizeTests(unittest.TestCase):
                 "x": None,
                 "e": "observed",
                 "q": "h",
-                "c": ["touching neck"],
+                "c": ["touching neck", "palm against skin"],
             }
         ]
         data["s"]["mk"] = [
@@ -64,7 +62,10 @@ class ExtractV3X3P3NormalizeTests(unittest.TestCase):
         self.assertEqual(fragment.ownership, "unknown")
         self.assertEqual(fragment.connectivity, "unknown")
         self.assertIsNone(fragment.visible_count)
+        self.assertEqual(fragment.geometry_cues, ["fingers extended"])
+        self.assertNotIn("palm facing up", fragment.geometry_cues)
         self.assertEqual(wire.subject.interactions[0].ownership, "unknown")
+        self.assertEqual(wire.subject.interactions[0].cues, ["touching neck"])
         self.assertEqual(wire.subject.markings, [])
         self.assertTrue(any("rose motif" in item for item in wire.uncertainties))
 
@@ -74,6 +75,12 @@ class ExtractV3X3P3NormalizeTests(unittest.TestCase):
         self.assertIn("interaction_actor_ownership_follows_fragment", rules)
         self.assertIn("target_marking_to_ambiguous_fragment_uncertainty", rules)
         self.assertEqual(report["action_count"], 3)
+        downgrade = next(
+            action
+            for action in report["actions"]
+            if action["rule"] == "unanchored_distal_target_part_to_fragment"
+        )
+        self.assertEqual(downgrade["removed_completion_cues"], ["palm facing up"])
 
     def test_visible_parent_arm_prevents_hand_downgrade(self) -> None:
         data = self._wire_dict()
