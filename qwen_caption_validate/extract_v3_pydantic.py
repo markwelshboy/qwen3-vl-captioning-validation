@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Pydantic-first one-pass Visual Extract experiment.
+"""Pydantic-first one-pass Visual Extract.
 
 The VLM-facing JSON Schema is generated directly from `ExtractWireV1` and
 passed to vLLM/xgrammar. The returned JSON is parsed by Pydantic, expanded
@@ -36,6 +36,8 @@ PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROMPT = PACKAGE_ROOT / "prompts" / "extract_v3_wire.txt"
 DEFAULT_CANONICAL_SCHEMA = PACKAGE_ROOT / "schemas" / "extract_v3.schema.json"
 DEFAULT_BATCH_SIZE = 2
+DEFAULT_MAX_TOKENS = 4000
+WIRE_VERSION = "x3p2"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -48,7 +50,12 @@ def _wire_schema() -> dict[str, Any]:
 
 
 def _schema_sha256(schema: dict[str, Any]) -> str:
-    encoded = json.dumps(schema, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    encoded = json.dumps(
+        schema,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -79,7 +86,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--backend", choices=["auto", "transformers", "vllm"], default="vllm")
     parser.add_argument("--dtype", choices=["auto", "bfloat16", "float16", "float32"], default="auto")
     parser.add_argument("--cache-dir", type=Path)
-    parser.add_argument("--max-tokens", type=int, default=3200)
+    parser.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--vllm-gpu-memory-utilization", type=float, default=0.92)
     parser.add_argument("--vllm-max-model-len", type=int, default=8192)
@@ -123,7 +130,7 @@ def main() -> int:
     model_id = resolve_model_id(args.model)
     slug = model_slug(model_id)
     output_dir = (
-        args.output_dir or (run_dir / "extract-v3-pydantic.1" / slug)
+        args.output_dir or (run_dir / "extract-v3-pydantic.2" / slug)
     ).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -151,7 +158,7 @@ def main() -> int:
         _install_image_only_vllm()
 
     print(
-        "Extract contract: Pydantic ExtractWireV1(x3p1) "
+        f"Extract contract: Pydantic ExtractWireV1({WIRE_VERSION}) "
         f"-> model_json_schema(by_alias=True) sha256={wire_schema_hash[:12]}... "
         "-> xgrammar -> model_validate_json -> VisualExtractV3"
     )
@@ -172,7 +179,7 @@ def main() -> int:
         )
         print(
             f"Loaded in {loaded.load_seconds:.2f}s. Extracting {len(pending)} image(s). "
-            f"wire=x3p1 batch_size={args.batch_size} max_tokens={args.max_tokens}"
+            f"wire={WIRE_VERSION} batch_size={args.batch_size} max_tokens={args.max_tokens}"
         )
 
     try:
@@ -212,8 +219,6 @@ def main() -> int:
                 if wire_model is not None:
                     try:
                         canonical_model, expansion = expand_extract_wire(wire_model)
-                        # Round-trip through the canonical Pydantic contract so the
-                        # persisted dictionary is independently revalidated.
                         canonical = canonical_model.model_dump(mode="json", by_alias=True)
                         VisualExtractV3.model_validate(canonical)
                         canonical_errors = validate_analysis(canonical, canonical_schema)
@@ -244,14 +249,14 @@ def main() -> int:
                     "post_seconds": post_seconds,
                 }
                 payload = {
-                    "schema_version": "visual-extract-pydantic-artifact-0.1",
+                    "schema_version": "visual-extract-pydantic-artifact-0.2",
                     "image_key": key,
                     "image": str(image),
                     "model": model_id,
                     "backend": loaded.backend if loaded is not None else None,
                     "inference_seconds": generation_perf["generation_seconds"],
                     "performance": request_perf,
-                    "wire_schema_version": "x3p1",
+                    "wire_schema_version": WIRE_VERSION,
                     "wire_contract": "ExtractWireV1",
                     "wire_schema_sha256": wire_schema_hash,
                     "wire_extract": wire_model.model_dump(mode="json", by_alias=True) if wire_model else None,
@@ -331,11 +336,12 @@ def main() -> int:
 
     records = sorted(reused + generated, key=lambda item: str(item.get("image_key") or ""))
     index = {
-        "schema_version": "visual-extract-pydantic-run-0.1",
+        "schema_version": "visual-extract-pydantic-run-0.2",
         "run_dir": str(run_dir),
         "images_dir": str(images_dir or (run_dir / "images")),
         "model": model_id,
         "prompt": str(prompt_path),
+        "wire_schema_version": WIRE_VERSION,
         "wire_contract": "ExtractWireV1",
         "wire_schema_source": "ExtractWireV1.model_json_schema(by_alias=True)",
         "wire_schema_sha256": wire_schema_hash,
@@ -348,8 +354,12 @@ def main() -> int:
         "generated": len(generated),
         "reused": len(reused),
         "schema_valid_count": sum(1 for record in records if record.get("schema_valid")),
-        "analyze_reconstructable_count": sum(1 for record in records if (record.get("contract") or {}).get("analyze_reconstructable")),
-        "gestalt_reconstructable_count": sum(1 for record in records if (record.get("contract") or {}).get("gestalt_reconstructable")),
+        "analyze_reconstructable_count": sum(
+            1 for record in records if (record.get("contract") or {}).get("analyze_reconstructable")
+        ),
+        "gestalt_reconstructable_count": sum(
+            1 for record in records if (record.get("contract") or {}).get("gestalt_reconstructable")
+        ),
         "batch_runtime": batch_runtime,
         "records": records,
     }
