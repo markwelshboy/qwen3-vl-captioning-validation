@@ -15,12 +15,12 @@ from .extract_v3_wire_contract import (
 def expand_extract_wire(
     wire: ExtractWireX3P3Runtime,
 ) -> tuple[VisualExtractV3, dict[str, Any]]:
-    """Expand x3p3 without adding image semantics.
+    """Expand normalized x3p3 without adding image semantics.
 
-    The x3p2-shaped expander handles all unchanged fields.  x3p3's explicit
-    human-fragment channel is then folded into canonical ``visible_body_parts``
-    using only values already emitted by the VLM.  This keeps downstream
-    Analyze/Gestalt on the stable ``visual-extract-3.0`` canonical contract.
+    The x3p2-shaped expander handles unchanged fields. x3p3's explicit
+    human-fragment channel is then folded into canonical ``visible_body_parts``.
+    Raw VLM output remains external provenance; ``wire.normalization_report()``
+    records every mechanical pre-validation governance action.
     """
 
     canonical, metadata = _expand_x3p2_shape(wire)  # structural duck-typing is intentional
@@ -56,12 +56,12 @@ def expand_extract_wire(
             }
         )
         canonical = canonical.model_copy(update={"target_subject": target})
-        # Revalidate the stable canonical object after deterministic augmentation.
         canonical = VisualExtractV3.model_validate(
             canonical.model_dump(mode="json", by_alias=True)
         )
 
     semantic_warnings = wire.semantic_warnings()
+    normalization = wire.normalization_report()
     warnings = list(metadata.get("warnings") or [])
     warnings.extend(semantic_warnings)
 
@@ -71,6 +71,7 @@ def expand_extract_wire(
             "wire_contract": "Pydantic ExtractWireX3P3Runtime",
             "canonical_contract": "Pydantic VisualExtractV3",
             "ambiguous_human_fragment_count": len(fragment_parts),
+            "normalization": normalization,
             "semantic_warnings": semantic_warnings,
             "warnings": warnings,
         }
