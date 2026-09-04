@@ -2,9 +2,13 @@ from __future__ import annotations
 
 """x3p3 runtime entrypoint.
 
-The base runner is reused for batching/performance/provenance.  This module
+The base runner is reused for batching/performance/provenance. This module
 swaps in the x3p3 Pydantic wire contract, fragment-aware deterministic expander,
-prompt, version label and isolated output tree.
+prompt, version label and an isolated calibration output tree.
+
+Revision ``extract-v3-pydantic.4`` keeps the x3p3 wire schema unchanged while
+isolating the tightened ownership/marking/support prompt plus governance v0.2
+from the earlier x3p3 calibration artifacts in ``extract-v3-pydantic.3``.
 """
 
 from . import extract_v3_pydantic as base
@@ -22,14 +26,14 @@ _base_parse_args = base.parse_args
 
 def _parse_args():
     args = _base_parse_args()
-    # Keep every wire calibration revision isolated.  This also overrides the
-    # x3p2 default path hard-coded in the generic runner without changing old
-    # artifacts or requiring a second copy of the batching implementation.
+    # Keep every calibration revision isolated. The generic runner otherwise
+    # reuses an existing artifact solely by path, so sharing a tree across prompt
+    # revisions would make an old raw response look like a test of new guidance.
     if args.output_dir is None:
         run_dir = args.run_dir.expanduser().resolve()
         model_id = base.resolve_model_id(args.model)
         slug = base.model_slug(model_id)
-        args.output_dir = run_dir / "extract-v3-pydantic.3" / slug
+        args.output_dir = run_dir / "extract-v3-pydantic.4" / slug
     return args
 
 
