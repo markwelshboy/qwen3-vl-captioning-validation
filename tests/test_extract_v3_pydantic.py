@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import copy
 import json
 import unittest
+
+from pydantic import ValidationError
 
 from qwen_caption_validate.extract_v3 import DEFAULT_SCHEMA
 from qwen_caption_validate.extract_v3_contract import audit_extract_contract
@@ -15,27 +18,37 @@ class ExtractV3PydanticTests(unittest.TestCase):
         landmark_visible = {"v": "visible", "q": "h", "e": "region represented"}
         landmark_missing = {"v": "not_visible", "q": "h", "e": "outside crop"}
         return {
-            "v": "x3p1",
+            "v": "x3p2",
             "o": "Person indoors with a red car visible through a window.",
-            "f": {"z": "medium_close_up", "x": "head through upper torso", "c": "large", "o": ["lower torso exits crop"]},
+            "f": {
+                "z": "medium_close_up",
+                "x": "head through upper torso",
+                "c": "large",
+                "o": ["lower torso exits crop"],
+            },
             "s": {
                 "cl": [{"c": "shirt", "d": ["dark"], "l": "center", "v": "partial", "q": "h"}],
                 "ac": [{"c": "watch_strap", "d": ["white"], "l": "lower center", "v": "partial", "q": "h"}],
+                "mk": [{"c": "tattoo", "d": ["dark linework"], "l": "forearm", "v": "partial", "q": "h"}],
                 "hs": ["hair falls over shoulders"],
                 "ex": ["slight smile"],
                 "bp": [],
                 "lm": {
-                    "hd": landmark_visible,
-                    "ls": landmark_visible,
-                    "rs": landmark_visible,
-                    "lh": landmark_missing,
-                    "rh": landmark_missing,
-                    "lk": landmark_missing,
-                    "rk": landmark_missing,
-                    "la": landmark_missing,
-                    "ra": landmark_missing,
+                    "head": landmark_visible,
+                    "lshoulder": landmark_visible,
+                    "rshoulder": landmark_visible,
+                    "lhip": landmark_missing,
+                    "rhip": landmark_missing,
+                    "lknee": landmark_missing,
+                    "rknee": landmark_missing,
+                    "lankle": landmark_missing,
+                    "rankle": landmark_missing,
                 },
-                "or": {"t": ["shoulders depth-staggered"], "h": ["face more frontal than torso"], "a": ["torso axis near upright"]},
+                "or": {
+                    "t": ["shoulders depth-staggered"],
+                    "h": ["face more frontal than torso"],
+                    "a": ["torso axis near upright"],
+                },
                 "g": {"t": "camera_lens", "d": "image_center", "q": "h", "c": ["eyes near lens"]},
                 "ix": [],
             },
@@ -74,13 +87,20 @@ class ExtractV3PydanticTests(unittest.TestCase):
         self.assertNotIn("schema_version", schema["properties"])
         self.assertFalse(schema["additionalProperties"])
 
+        landmark_props = schema["$defs"]["WireLandmarks"]["properties"]
+        self.assertIn("lhip", landmark_props)
+        self.assertIn("rhip", landmark_props)
+        self.assertNotIn("lh", landmark_props)
+        self.assertNotIn("rh", landmark_props)
+
     def test_wire_json_round_trip_is_pydantic_valid(self) -> None:
         wire = ExtractWireV1.model_validate(self._wire_dict())
         compact = wire.model_dump_json(by_alias=True)
         restored = ExtractWireV1.model_validate_json(compact)
-        self.assertEqual(restored.schema_version, "x3p1")
+        self.assertEqual(restored.schema_version, "x3p2")
         self.assertEqual(restored.entities[0].class_name, "car")
         self.assertEqual(restored.subject.accessories[0].category, "watch_strap")
+        self.assertEqual(restored.subject.markings[0].category, "tattoo")
 
     def test_expansion_is_canonical_and_reconstructable(self) -> None:
         wire = ExtractWireV1.model_validate(self._wire_dict())
@@ -93,9 +113,59 @@ class ExtractV3PydanticTests(unittest.TestCase):
         audit = audit_extract_contract(canonical)
         self.assertTrue(audit["analyze_reconstructable"])
         self.assertTrue(audit["gestalt_reconstructable"])
-        self.assertEqual(metadata["wire_schema_version"], "x3p1")
+        self.assertEqual(metadata["wire_schema_version"], "x3p2")
         self.assertEqual(canonical["entities"][0]["class"], "car")
-        self.assertEqual(canonical["target_subject"]["transient_appearance"]["accessories"][0]["descriptors"], ["white"])
+        appearance = canonical["target_subject"]["transient_appearance"]
+        self.assertEqual(appearance["accessories"][0]["descriptors"], ["white"])
+        self.assertEqual(appearance["markings"][0]["category"], "tattoo")
+
+    def test_relation_vocabulary_excludes_duplicate_semantic_channels(self) -> None:
+        schema = ExtractWireV1.model_json_schema(by_alias=True)
+        predicates = schema["$defs"]["WireRelation"]["properties"]["p"]["enum"]
+        self.assertNotIn("wearing", predicates)
+        self.assertNotIn("holding", predicates)
+        self.assertNotIn("touching", predicates)
+        self.assertNotIn("supports_candidate", predicates)
+        self.assertIn("visible_through", predicates)
+        self.assertIn("occludes", predicates)
+
+    def test_dangling_entity_reference_is_rejected(self) -> None:
+        data = copy.deepcopy(self._wire_dict())
+        data["r"][0]["o"] = "e3"
+        with self.assertRaises(ValidationError):
+            ExtractWireV1.model_validate(data)
+
+    def test_duplicate_entity_id_is_rejected(self) -> None:
+        data = copy.deepcopy(self._wire_dict())
+        data["e"][1]["i"] = "e1"
+        with self.assertRaises(ValidationError):
+            ExtractWireV1.model_validate(data)
+
+    def test_non_contiguous_entity_ids_are_rejected(self) -> None:
+        data = copy.deepcopy(self._wire_dict())
+        data["e"][1]["i"] = "e3"
+        with self.assertRaises(ValidationError):
+            ExtractWireV1.model_validate(data)
+
+    def test_self_relation_is_rejected(self) -> None:
+        data = copy.deepcopy(self._wire_dict())
+        data["r"][0]["o"] = "e1"
+        with self.assertRaises(ValidationError):
+            ExtractWireV1.model_validate(data)
+
+    def test_full_body_cannot_be_face_dominant(self) -> None:
+        data = copy.deepcopy(self._wire_dict())
+        data["f"]["z"] = "full_body"
+        data["f"]["c"] = "face_dominant"
+        with self.assertRaises(ValidationError):
+            ExtractWireV1.model_validate(data)
+
+    def test_frontal_torso_does_not_claim_left_right_frame_direction(self) -> None:
+        data = copy.deepcopy(self._wire_dict())
+        data["h"]["to"]["b"] = "frontal"
+        data["h"]["to"]["f"] = "left"
+        with self.assertRaises(ValidationError):
+            ExtractWireV1.model_validate(data)
 
     def test_confidence_bands_are_fixed_not_fake_precision(self) -> None:
         self.assertEqual(CONFIDENCE_BANDS, {"h": 0.90, "m": 0.65, "l": 0.35, "u": 0.00})
