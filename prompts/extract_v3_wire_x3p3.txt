@@ -4,7 +4,7 @@ Return exactly one JSON object matching the supplied Pydantic-generated structur
 
 CORE RULE: OBSERVE ONCE, REASON MANY TIMES.
 
-Be HIGH RECALL but COMPACT. Preserve information that cannot be recovered later. Do not repeat the same fact across several fields. Prefer short factual strings and 0-2 short cues per ordinary field; use a third only for a real ambiguity.
+Be HIGH RECALL but COMPACT. Preserve information that cannot be recovered later. Do not repeat the same fact across several fields. Prefer short factual strings and 0-2 short cues per ordinary field; use a third only for a real ambiguity. `u` is for material unresolved ambiguity, not an inventory of generic absent objects.
 
 The constrained decoder enforces JSON field names, required fields and vocabularies. Your job is to choose the correct observations and evidence.
 
@@ -95,6 +95,13 @@ Aliases:
 - `q` confidence
 
 Use `bp` ONLY when the represented anatomy can actually be followed into the target's visible anatomical chain. Do not use `bp` for isolated fingers/hands/limb-like pieces whose connection disappears outside the crop or behind an occlusion gap.
+
+PROXIMAL-CHAIN TEST FOR LIMBS
+- A broad label such as `right_arm` or `left_leg` does NOT itself prove connection to target.
+- For `arm`/`right_arm`/`left_arm` with `k="connected_visible"`, the visible evidence must include a proximal anchor such as shoulder or upper arm, either in that item's `s` subparts or in another visibly connected same-side target body-part item.
+- If only forearm/hand/fingers are represented and shoulder/upper-arm continuity is absent, use `s.hf` (`arm_fragment`, `hand_fragment`, or `fingers`) with unknown ownership instead of a connected target arm.
+- Likewise, if only knee/shin/calf/foot are represented without visible thigh/hip continuity, use `s.hf` rather than a connected target leg.
+- Never hide a disconnected distal fragment inside a broader `arm` or `leg` label.
 
 AMBIGUOUS HUMAN FRAGMENTS `s.hf`
 Use this channel whenever human-looking anatomy is visible but cannot be visibly traced into the target body chain.
@@ -226,7 +233,7 @@ SUPPORT `h.sup`
 Postural support is distinct from ordinary contact.
 - If no defensible postural support candidate exists, emit `sup=[]`. Do NOT emit an `unknown` placeholder.
 - Every emitted support must name either a real NON-TARGET entity ref (`eN`) that was actually emitted, or a defensible visible/contextual target description with `t=null`.
-- Never invent an `eN` solely to fill a support reference.
+- If the support target is not already present in `e`, `t` MUST be null. Never guess the next entity id and never create an `eN` solely to satisfy support.
 - A support target can NEVER be `t` / target_subject itself.
 - `unknown` is not a support relation; omit the item instead.
 - A hand touching/resting on something is interaction/contact unless it truly supports the subject's posture.
