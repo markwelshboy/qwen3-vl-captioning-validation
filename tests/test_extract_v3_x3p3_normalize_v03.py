@@ -5,12 +5,12 @@ import json
 import unittest
 
 from qwen_caption_validate.extract_v3_models_x3p3 import ExtractWireX3P3Runtime
-from tests.test_extract_v3_pydantic_x3p3 import ExtractV3PydanticX3P3Tests
+from tests import test_extract_v3_pydantic_x3p3 as x3p3_fixture
 
 
 class ExtractV3X3P3NormalizeV03Tests(unittest.TestCase):
     def _wire_dict(self) -> dict:
-        return copy.deepcopy(ExtractV3PydanticX3P3Tests()._wire_dict())
+        return copy.deepcopy(x3p3_fixture.ExtractV3PydanticX3P3Tests()._wire_dict())
 
     def test_distal_only_arm_label_is_downgraded(self) -> None:
         data = self._wire_dict()
