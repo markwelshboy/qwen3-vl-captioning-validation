@@ -37,7 +37,7 @@ def install_text_only_vllm() -> None:
 
 def main() -> int:
     install_text_only_vllm()
-    from .semantic_v3_gestalt import main as gestalt_main
+    from .semantic_v3_gestalt_runtime import main as gestalt_main
 
     return gestalt_main()
 
