@@ -6,18 +6,23 @@ x3p3 keeps the x3p2 Pydantic/xgrammar architecture but adds one explicit
 representation for ambiguous human-body fragments, tightens postural-support
 semantics, and makes body markings precision-first.
 
-The canonical persistent model remains ``VisualExtractV3``.  The x3p3
+The canonical persistent model remains ``VisualExtractV3``. The x3p3
 wire-to-canonical expander deterministically folds ambiguous fragments into the
 canonical ``visible_body_parts`` list with fragment/unknown ownership semantics.
+
+A narrow governance normalizer runs after raw JSON decoding and before Pydantic
+structural validation. The original raw response is retained by the runner; the
+normalizer only performs conservative, record-internal downgrades/repairs and
+attaches a complete action report to the validated model.
 """
 
-from typing import Literal
+import json
+from typing import Any, Literal
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, PrivateAttr, model_validator
 
 from .extract_v3_models import (
     ConfidenceBand,
-    EvidenceStatus,
     Side,
     WireAction,
     WireAppearance,
@@ -30,10 +35,8 @@ from .extract_v3_models import (
     WireGaze,
     WireHeadBody,
     WireHeadOrientation,
-    WireIllumination,
     WireInteraction,
     WireLandmarks,
-    WireNuisanceRegion,
     WireOrientationCues,
     WirePosture,
     WireRelation,
@@ -41,8 +44,8 @@ from .extract_v3_models import (
     WireTorsoOrientation,
     _WireModel,
 )
+from .extract_v3_normalize_x3p3 import normalize_x3p3_wire
 
-_ENTITY_REF_PATTERN = r"^(t|e[1-9][0-9]*)$"
 _NON_TARGET_ENTITY_REF_PATTERN = r"^e[1-9][0-9]*$"
 
 
@@ -75,9 +78,7 @@ class WireHumanFragmentX3P3(_WireModel):
     ] = Field(alias="p")
     visible_count: int | None = Field(default=None, alias="n", ge=1, le=10)
     side: Side = Field(alias="a")
-    # An ambiguous/disconnected fragment cannot be asserted to belong to target.
     ownership: Literal["other", "unknown"] = Field(alias="o")
-    # The channel itself guarantees no visible anatomical chain to target.
     connectivity: Literal["disconnected_in_crop", "unknown"] = Field(alias="k")
     geometry_cues: list[str] = Field(alias="g")
     contact_cues: list[str] = Field(alias="c")
@@ -137,9 +138,8 @@ class WireHypothesesX3P3(_WireModel):
 
 
 class ExtractWireX3P3Runtime(_WireModel):
-    """x3p3 runtime contract: structural hard gates + semantic warnings."""
+    """x3p3 runtime contract: normalized structural hard gates + semantic warnings."""
 
-    # Keep a stable root title for schema provenance and readable xgrammar logs.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, title="ExtractWireV1")
 
     schema_version: Literal["x3p3"] = Field(alias="v")
@@ -152,6 +152,71 @@ class ExtractWireX3P3Runtime(_WireModel):
     composition: WireComposition = Field(alias="co")
     hypotheses: WireHypothesesX3P3 = Field(alias="h")
     uncertainties: list[str] = Field(alias="u")
+
+    _normalization_report: dict[str, Any] = PrivateAttr(
+        default_factory=lambda: {"version": None, "action_count": 0, "actions": []}
+    )
+
+    @classmethod
+    def model_validate_json(
+        cls,
+        json_data: str | bytes | bytearray,
+        *,
+        strict: bool | None = None,
+        extra: str | None = None,
+        context: Any | None = None,
+        by_alias: bool | None = None,
+        by_name: bool | None = None,
+    ) -> "ExtractWireX3P3Runtime":
+        """Decode, mechanically normalize, then run ordinary Pydantic validation.
+
+        Invalid JSON is delegated back to Pydantic so callers continue receiving
+        a normal ``ValidationError`` rather than a raw ``JSONDecodeError``.
+        """
+
+        try:
+            if isinstance(json_data, (bytes, bytearray)):
+                parsed = json.loads(bytes(json_data).decode("utf-8"))
+            else:
+                parsed = json.loads(json_data)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return super().model_validate_json(
+                json_data,
+                strict=strict,
+                extra=extra,
+                context=context,
+                by_alias=by_alias,
+                by_name=by_name,
+            )
+
+        if not isinstance(parsed, dict):
+            return super().model_validate_json(
+                json_data,
+                strict=strict,
+                extra=extra,
+                context=context,
+                by_alias=by_alias,
+                by_name=by_name,
+            )
+
+        normalized, report = normalize_x3p3_wire(parsed)
+        model = cls.model_validate(
+            normalized,
+            strict=strict,
+            extra=extra,
+            context=context,
+            by_alias=by_alias,
+            by_name=by_name,
+        )
+        model._normalization_report = report
+        return model
+
+    def normalization_report(self) -> dict[str, Any]:
+        return {
+            "version": self._normalization_report.get("version"),
+            "action_count": int(self._normalization_report.get("action_count") or 0),
+            "actions": list(self._normalization_report.get("actions") or []),
+        }
 
     @model_validator(mode="after")
     def _structural_invariants(self) -> "ExtractWireX3P3Runtime":
@@ -174,15 +239,12 @@ class ExtractWireX3P3Runtime(_WireModel):
         for index, interaction in enumerate(self.subject.interactions):
             require_ref(interaction.target_ref, f"subject.interactions.{index}.target_ref")
 
-        # Support refs are schema-constrained to eN only, then resolved here.
         for index, support in enumerate(self.hypotheses.support):
             require_ref(support.target_ref, f"hypotheses.support.{index}.target_ref")
 
         return self
 
     def semantic_warnings(self) -> list[str]:
-        """Reviewable semantic inconsistencies that must not destroy the Extract."""
-
         warnings: list[str] = []
         ids = [entity.entity_id for entity in self.entities]
         expected = [f"e{i}" for i in range(1, len(ids) + 1)]
@@ -223,5 +285,19 @@ class ExtractWireX3P3Runtime(_WireModel):
                 warnings.append(
                     f"support hypothesis inconsistency: posture={posture} with support.{index}={relation}"
                 )
+
+        # Broad posture remains non-authoritative, but close crops without any
+        # lower-body/support evidence deserve an audit warning rather than silent
+        # confidence. This does not alter the hypothesis value.
+        if (
+            self.framing.shot_scale in {"extreme_close_up", "close_up", "medium_close_up"}
+            and posture in {"seated", "standing", "kneeling", "squatting", "crouching"}
+            and not self.hypotheses.support
+            and self.subject.landmarks.left_hip.visibility == "not_visible"
+            and self.subject.landmarks.right_hip.visibility == "not_visible"
+        ):
+            warnings.append(
+                f"posture hypothesis weakly constrained by crop: {posture} with hips not_visible and no support"
+            )
 
         return warnings
