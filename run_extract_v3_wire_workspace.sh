@@ -34,8 +34,8 @@ unset HF_HUB_ENABLE_HF_TRANSFER || true
 
 export VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-0}"
 echo "vLLM FlashInfer sampler: $VLLM_USE_FLASHINFER_SAMPLER (0 = PyTorch-native sampler)"
-echo "Extract mode: Pydantic x3p3 -> xgrammar -> governance normalize v0.2 -> structural hard gates + semantic warnings -> typed visual-extract-3.0"
-echo "Calibration output: extract-v3-pydantic.4 (x3p3 schema; tightened ownership/marking/support guidance)"
+echo "Extract mode: Pydantic x3p3 -> xgrammar -> governance normalize v0.3 -> structural hard gates + semantic warnings -> typed visual-extract-3.0"
+echo "Calibration output: extract-v3-pydantic.5 (default max_tokens=4500)"
 
 cd "$REPO_ROOT"
 exec "$PY" -m qwen_caption_validate.extract_v3_pydantic_runtime "$@"
