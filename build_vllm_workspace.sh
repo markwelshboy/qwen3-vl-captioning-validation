@@ -23,11 +23,14 @@ set -euo pipefail
 #
 #   The known-good validation environment did NOT contain the optional
 #   FlashInfer sampler stack. A current dependency-resolution path can introduce
-#   a newer FlashInfer package even though vLLM 0.11.0 itself only exposes
-#   FlashInfer as an optional extra. On 570.124.06 these CUDA extensions can fail
+#   FlashInfer/TVM packages even though vLLM 0.11.0 does not require them for the
+#   PyTorch-native sampler path. On 570.124.06 these CUDA extensions have failed
 #   with cudaErrorInsufficientDriver and can change startup memory profiling.
-#   Therefore the default compatibility profile removes and rejects FlashInfer
-#   after all dependencies have been resolved and installed.
+#
+#   Therefore the default compatibility profile continuously sanitizes the
+#   optional sampler stack after every install phase and rejects the workspace
+#   at preflight if any of it remains. QWEN_VLLM_ALLOW_FLASHINFER=1 is an
+#   explicit escape hatch for deliberate compatibility experiments only.
 #
 # Usage:
 #   bash ./build_vllm_workspace.sh --clean
@@ -52,6 +55,16 @@ TORCH_BACKEND="${QWEN_VLLM_TORCH_BACKEND:-cu128}"
 EXPECTED_CUDA="${QWEN_VLLM_EXPECTED_CUDA:-12.8}"
 ALLOW_FLASHINFER="${QWEN_VLLM_ALLOW_FLASHINFER:-0}"
 CLEAN=0
+
+# Keep this list aligned with the known problematic optional sampler/native-FFI
+# stack. apache-tvm-ffi was present in the earlier failing FlashInfer environment
+# and is not needed by the known-good PyTorch-native sampler profile.
+FLASHINFER_STACK=(
+    flashinfer-python
+    flashinfer-cubin
+    flashinfer-jit-cache
+    apache-tvm-ffi
+)
 
 usage() {
     cat <<EOF
@@ -185,6 +198,19 @@ fi
 
 PY="$VENV/bin/python"
 
+sanitize_flashinfer_stack() {
+    if [[ "$ALLOW_FLASHINFER" == "1" ]]; then
+        return 0
+    fi
+
+    echo
+    echo "Sanitizing optional FlashInfer/TVM sampler stack ..."
+    "$UV_BIN" pip uninstall \
+        --python "$PY" \
+        "${FLASHINFER_STACK[@]}" \
+        >/dev/null 2>&1 || true
+}
+
 echo
 echo "Installing pinned CUDA-compatible vLLM / Transformers stack ..."
 "$UV_BIN" pip install \
@@ -192,12 +218,14 @@ echo "Installing pinned CUDA-compatible vLLM / Transformers stack ..."
     --torch-backend="$TORCH_BACKEND" \
     "vllm==$VLLM_VERSION" \
     "transformers==$TRANSFORMERS_VERSION"
+sanitize_flashinfer_stack
 
 echo
 echo "Installing Qwen VL image utilities ..."
 "$UV_BIN" pip install \
     --python "$PY" \
     'qwen-vl-utils>=0.0.14'
+sanitize_flashinfer_stack
 
 echo
 echo "Installing validation harness into the vLLM environment ..."
@@ -205,12 +233,7 @@ echo "Installing validation harness into the vLLM environment ..."
     cd "$REPO_ROOT"
     "$UV_BIN" pip install --python "$PY" -e .
 )
-
-if [[ "$ALLOW_FLASHINFER" == "0" ]]; then
-    echo
-    echo "Removing optional FlashInfer packages from compatibility workspace, if present ..."
-    "$UV_BIN" pip uninstall --python "$PY" flashinfer-python flashinfer-cubin flashinfer-jit-cache >/dev/null 2>&1 || true
-fi
+sanitize_flashinfer_stack
 
 echo
 echo "=== vLLM runtime preflight ==="
@@ -243,11 +266,24 @@ print("vllm:", actual_vllm)
 print("qwen-vl-utils:", md.version("qwen-vl-utils"))
 print("CUDA available:", torch.cuda.is_available())
 print("FlashInfer importable:", flashinfer_importable)
-for package in ("flashinfer-python", "flashinfer-cubin", "apache-tvm-ffi"):
+
+for package in (
+    "flashinfer-python",
+    "flashinfer-cubin",
+    "flashinfer-jit-cache",
+    "apache-tvm-ffi",
+):
     try:
-        print(f"{package}:", md.version(package))
+        version = md.version(package)
     except md.PackageNotFoundError:
-        print(f"{package}: NOT INSTALLED")
+        version = None
+    print(f"{package}:", version or "NOT INSTALLED")
+    if version is not None and not allow_flashinfer:
+        raise SystemExit(
+            f"ERROR: optional sampler-stack package {package}={version} is installed. "
+            "The default compatibility profile requires the PyTorch-native path."
+        )
+
 print("vLLM LLM import: OK")
 print("vLLM SamplingParams import: OK")
 print("qwen_vl_utils.process_vision_info import: OK")
