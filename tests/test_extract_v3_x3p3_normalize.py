@@ -31,6 +31,15 @@ class ExtractV3X3P3NormalizeTests(unittest.TestCase):
             }
         ]
         data["s"]["hf"] = []
+        data["s"]["ac"] = [
+            {
+                "c": "bracelet",
+                "d": ["dark", "beaded"],
+                "l": "right_wrist",
+                "v": "partial",
+                "q": "m",
+            }
+        ]
         data["s"]["ix"] = [
             {
                 "k": "contact",
@@ -65,22 +74,33 @@ class ExtractV3X3P3NormalizeTests(unittest.TestCase):
         self.assertEqual(fragment.geometry_cues, ["fingers extended"])
         self.assertNotIn("palm facing up", fragment.geometry_cues)
         self.assertEqual(wire.subject.interactions[0].ownership, "unknown")
+        self.assertEqual(wire.subject.interactions[0].actor_part, "hand_fragment")
         self.assertEqual(wire.subject.interactions[0].cues, ["touching neck"])
+        self.assertEqual(wire.subject.accessories, [])
         self.assertEqual(wire.subject.markings, [])
+        self.assertTrue(any("bracelet" in item for item in wire.uncertainties))
         self.assertTrue(any("rose motif" in item for item in wire.uncertainties))
 
         report = wire.normalization_report()
         rules = [action["rule"] for action in report["actions"]]
         self.assertIn("unanchored_distal_target_part_to_fragment", rules)
         self.assertIn("interaction_actor_ownership_follows_fragment", rules)
+        self.assertIn("target_accessory_to_ambiguous_fragment_uncertainty", rules)
         self.assertIn("target_marking_to_ambiguous_fragment_uncertainty", rules)
-        self.assertEqual(report["action_count"], 3)
+        self.assertEqual(report["action_count"], 4)
         downgrade = next(
             action
             for action in report["actions"]
             if action["rule"] == "unanchored_distal_target_part_to_fragment"
         )
         self.assertEqual(downgrade["removed_completion_cues"], ["palm facing up"])
+        interaction = next(
+            action
+            for action in report["actions"]
+            if action["rule"] == "interaction_actor_ownership_follows_fragment"
+        )
+        self.assertEqual(interaction["actor_part_from"], "right_hand")
+        self.assertEqual(interaction["actor_part_to"], "hand_fragment")
 
     def test_visible_parent_arm_prevents_hand_downgrade(self) -> None:
         data = self._wire_dict()
@@ -115,6 +135,85 @@ class ExtractV3X3P3NormalizeTests(unittest.TestCase):
         wire = ExtractWireX3P3Runtime.model_validate_json(json.dumps(data))
         self.assertEqual(len(wire.subject.body_parts), 2)
         self.assertEqual(wire.subject.human_fragments, [])
+        self.assertEqual(wire.normalization_report()["action_count"], 0)
+
+    def test_precision_marking_requires_explicit_palm_visibility(self) -> None:
+        data = self._wire_dict()
+        data["s"]["bp"] = [
+            {
+                "p": "left_arm",
+                "a": "left",
+                "o": "target",
+                "v": "full",
+                "s": ["shoulder", "upper_arm", "forearm", "hand"],
+                "k": "connected_visible",
+                "g": ["arm visible from shoulder to hand"],
+                "c": [],
+                "l": "left_center",
+                "q": "h",
+            }
+        ]
+        data["s"]["hf"] = []
+        data["s"]["mk"] = [
+            {
+                "c": "tattoo",
+                "d": ["small", "dark", "on_left_hand_palm"],
+                "l": "left_hand",
+                "v": "partial",
+                "q": "h",
+            }
+        ]
+
+        wire = ExtractWireX3P3Runtime.model_validate_json(json.dumps(data))
+        self.assertEqual(wire.subject.markings, [])
+        self.assertTrue(any("palm visibility not established" in item for item in wire.uncertainties))
+        report = wire.normalization_report()
+        self.assertEqual(report["action_count"], 1)
+        self.assertEqual(report["actions"][0]["rule"], "target_marking_requires_visible_subpart")
+        self.assertEqual(report["actions"][0]["required_subpart"], "palm")
+        self.assertEqual(report["actions"][0]["required_side"], "left")
+
+    def test_precision_marking_kept_when_palm_is_explicitly_visible(self) -> None:
+        data = self._wire_dict()
+        data["s"]["bp"] = [
+            {
+                "p": "left_hand",
+                "a": "left",
+                "o": "target",
+                "v": "full",
+                "s": ["palm", "fingers", "wrist"],
+                "k": "connected_visible",
+                "g": ["palm visible"],
+                "c": [],
+                "l": "left_center",
+                "q": "h",
+            },
+            {
+                "p": "left_arm",
+                "a": "left",
+                "o": "target",
+                "v": "partial",
+                "s": ["upper_arm", "forearm"],
+                "k": "connected_visible",
+                "g": ["arm traceable from shoulder"],
+                "c": [],
+                "l": "left_center",
+                "q": "h",
+            },
+        ]
+        data["s"]["hf"] = []
+        data["s"]["mk"] = [
+            {
+                "c": "tattoo",
+                "d": ["small", "dark", "on_left_hand_palm"],
+                "l": "left_hand",
+                "v": "partial",
+                "q": "h",
+            }
+        ]
+
+        wire = ExtractWireX3P3Runtime.model_validate_json(json.dumps(data))
+        self.assertEqual(len(wire.subject.markings), 1)
         self.assertEqual(wire.normalization_report()["action_count"], 0)
 
     def test_dangling_support_ref_with_description_is_cleared(self) -> None:
