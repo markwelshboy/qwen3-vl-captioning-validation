@@ -45,8 +45,8 @@ Describe represented crop truth only. Do not complete hidden anatomy.
 
 TARGET SUBJECT `s`
 - `cl`: clothing actually worn by target
-- `ac`: worn/attached accessories such as glasses, watch/strap, bracelet, rings, necklace, hat, mask
-- `mk`: high-confidence visible body markings such as tattoos
+- `ac`: accessories visibly attached to/worn by the target, such as glasses, watch/strap, bracelet, rings, necklace, hat, mask
+- `mk`: high-confidence visible body markings on target anatomy
 - `hs`: transient hair-state strings
 - `ex`: transient expression strings
 - `bp`: body regions visibly traceable into the target anatomical chain
@@ -57,6 +57,12 @@ TARGET SUBJECT `s`
 - `ix`: direct holding/contact/reaching/crossing/gesture interactions
 
 Held objects such as phones, cups and laptops are NOT accessories. If visibly present, emit them as entities and connect them through `s.ix` when direct interaction is observed.
+
+OWNERSHIP-DEPENDENT APPEARANCE
+- `ac` and `mk` are TARGET appearance channels, not generic visible-object channels.
+- If an accessory or marking is attached to an `s.hf` fragment whose ownership is `unknown`, do NOT place it in target `ac` or `mk`.
+- If such a fragment-local accessory/marking is visually salient, preserve it as an ownership-unresolved statement in `u` instead.
+- Contact with target skin does NOT make a fragment-local bracelet/ring/tattoo target-owned.
 
 APPEARANCE OBJECT ALIASES
 - `c` category
@@ -69,6 +75,8 @@ MARKINGS `s.mk`: PRECISION FIRST
 False tattoos/body markings are especially harmful identity evidence.
 - Emit a marking only when it is unmistakably represented in the pixels.
 - Every emitted marking must therefore use the schema's high-confidence value.
+- The SPECIFIC marked skin subpart must itself be directly visible. A visible hand does not establish a visible palm; a visible arm does not establish a visible wrist.
+- If you describe a palm/finger/wrist marking, that same subpart should be explicitly represented in the target `bp.s` visible-subparts evidence.
 - A shadow, crease, jewelry edge, vein, occlusion boundary or uncertain dark patch is NOT a tattoo.
 - If uncertain, emit no marking. An empty `mk` list is correct.
 - Record only visible extent/pattern/location; never complete a hidden tattoo.
@@ -217,15 +225,18 @@ Capture mode may be inferred from composition/mirror geometry, but inference doe
 SUPPORT `h.sup`
 Postural support is distinct from ordinary contact.
 - If no defensible postural support candidate exists, emit `sup=[]`. Do NOT emit an `unknown` placeholder.
-- Every emitted support must name either a real NON-TARGET entity ref (`eN`) or a defensible visible/contextual target description.
+- Every emitted support must name either a real NON-TARGET entity ref (`eN`) that was actually emitted, or a defensible visible/contextual target description with `t=null`.
+- Never invent an `eN` solely to fill a support reference.
 - A support target can NEVER be `t` / target_subject itself.
 - `unknown` is not a support relation; omit the item instead.
 - A hand touching/resting on something is interaction/contact unless it truly supports the subject's posture.
-- A support target must be adjacent/connected or contextually implicated by visible geometry.
+- A support target must be adjacent/connected or contextually implicated by visible BODY geometry.
+- An object resting on a surface does NOT imply the subject is supported by that same surface. In particular, `laptop_on_surface` is not evidence that the subject is `seated_on` that surface.
+- Broad posture may be defensible while the specific support target remains unknown; in that case keep the posture hypothesis and emit `sup=[]`.
 - Do not attach subject to a distant background chair/table/bench merely because it exists.
 - Clothing/lap beneath an arm is not automatically a table.
-- If surface class is ambiguous, use a generic description such as `light-colored surface`; do not invent `table`.
-- Support relation must be compatible with the broad posture when possible: seated normally pairs with `seated_on`, lying with `lying_on`, reclining with `reclining_on`.
+- If surface class is ambiguous, use a generic description only when the surface is actually implicated in postural support; do not invent `table`.
+- Support relation must be compatible with broad posture when possible: seated normally pairs with `seated_on`, lying with `lying_on`, reclining with `reclining_on`.
 - Contextual support may remain contextual; never upgrade to observed merely because posture makes it likely.
 
 ACTIONS `h.act`
