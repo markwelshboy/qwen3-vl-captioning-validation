@@ -35,7 +35,8 @@ export VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-0}"
 unset HF_HUB_ENABLE_HF_TRANSFER || true
 
 cd "$REPO_ROOT"
-echo "Semantic V3 Gestalt: canonical Extract JSON -> text-only reasoning -> composition-gestalt-1.4"
+echo "Semantic V3 Gestalt v0.2: observation-bearing Extract JSON -> text-only reasoning -> composition-gestalt-1.4"
+echo "Extract hypotheses: OMITTED (Gestalt must aggregate observations, not echo Extract interpretations.)"
 echo "Image input: DISABLED (Observe once. Reason many times.)"
 echo "vLLM modalities: image=0 video=0; multimodal startup profiling disabled"
 exec "$PY" -m qwen_caption_validate.semantic_v3_text_only_bootstrap "$@"
