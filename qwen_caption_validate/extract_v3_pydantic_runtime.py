@@ -6,9 +6,10 @@ The base runner is reused for batching/performance/provenance. This module
 swaps in the x3p3 Pydantic wire contract, fragment-aware deterministic expander,
 prompt, version label and an isolated calibration output tree.
 
-Revision ``extract-v3-pydantic.4`` keeps the x3p3 wire schema unchanged while
-isolating the tightened ownership/marking/support prompt plus governance v0.2
-from the earlier x3p3 calibration artifacts in ``extract-v3-pydantic.3``.
+Revision ``extract-v3-pydantic.5`` keeps the x3p3 wire schema unchanged while
+isolating the proximal-limb-chain prompt plus governance v0.3 from the prior
+``extract-v3-pydantic.4`` calibration. The safety ceiling is 4500 tokens after
+one fresh x3p3 control reached the former 4000-token ceiling mid-JSON.
 """
 
 from . import extract_v3_pydantic as base
@@ -20,6 +21,7 @@ base.ExtractWireV1 = ExtractWireX3P3Runtime
 base.expand_extract_wire = expand_extract_wire
 base.WIRE_VERSION = "x3p3"
 base.DEFAULT_PROMPT = base.PACKAGE_ROOT / "prompts" / "extract_v3_wire_x3p3.txt"
+base.DEFAULT_MAX_TOKENS = 4500
 
 _base_parse_args = base.parse_args
 
@@ -33,7 +35,7 @@ def _parse_args():
         run_dir = args.run_dir.expanduser().resolve()
         model_id = base.resolve_model_id(args.model)
         slug = base.model_slug(model_id)
-        args.output_dir = run_dir / "extract-v3-pydantic.4" / slug
+        args.output_dir = run_dir / "extract-v3-pydantic.5" / slug
     return args
 
 
