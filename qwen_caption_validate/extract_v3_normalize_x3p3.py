@@ -12,7 +12,7 @@ import copy
 import re
 from typing import Any
 
-NORMALIZER_VERSION = "x3p3-governance-0.1"
+NORMALIZER_VERSION = "x3p3-governance-0.2"
 
 
 def _norm(value: Any) -> str:
@@ -37,6 +37,22 @@ def _fragment_part(part: Any) -> str:
     if "toe" in value or "foot" in value or "ankle" in value:
         return "foot_fragment"
     return "human_fragment"
+
+
+def _side_from_text(value: Any) -> str:
+    normalized = _norm(value)
+    left = bool(re.search(r"(^|_)left($|_)", normalized))
+    right = bool(re.search(r"(^|_)right($|_)", normalized))
+    if left and not right:
+        return "left"
+    if right and not left:
+        return "right"
+    return "unknown"
+
+
+def _same_side_or_unknown(location: Any, side: str) -> bool:
+    location_side = _side_from_text(location)
+    return side == "unknown" or location_side == "unknown" or location_side == side
 
 
 def _parent_matches(item: dict[str, Any], *, family: str, side: str) -> bool:
@@ -89,53 +105,123 @@ def _actor_matches_downgrade(actor_part: Any, downgraded: dict[str, str]) -> boo
     side = downgraded["side"]
     if _distal_family(actor) != family:
         return False
-    if side in {"left", "right"}:
-        opposite = "right" if side == "left" else "left"
-        if opposite in actor:
-            return False
-    return True
+    return _same_side_or_unknown(actor, side)
+
+
+def _appearance_matches_downgrade(
+    appearance: dict[str, Any],
+    downgraded: list[dict[str, str]],
+) -> dict[str, str] | None:
+    location = _norm(appearance.get("l"))
+    family = _distal_family(location)
+    if family is None:
+        return None
+
+    same_family = [item for item in downgraded if item["family"] == family]
+    for item in same_family:
+        if _same_side_or_unknown(location, item["side"]):
+            location_side = _side_from_text(location)
+            if item["side"] == "unknown" or location_side == item["side"]:
+                return item
+
+    if len(same_family) == 1 and _same_side_or_unknown(location, same_family[0]["side"]):
+        return same_family[0]
+    return None
+
+
+def _appearance_uncertainty(
+    appearance: dict[str, Any],
+    downgraded: dict[str, str],
+    *,
+    kind: str,
+) -> str:
+    category = str(appearance.get("c") or kind)
+    descriptors = [str(value) for value in (appearance.get("d") or []) if str(value).strip()]
+    location = str(appearance.get("l") or "ambiguous fragment")
+    detail = f" ({', '.join(descriptors)})" if descriptors else ""
+    return (
+        f"{kind} candidate on ambiguous {downgraded['family']} fragment: "
+        f"{category}{detail} at {location}; target ownership unresolved"
+    )
 
 
 def _marking_matches_downgrade(
     marking: dict[str, Any],
     downgraded: list[dict[str, str]],
 ) -> dict[str, str] | None:
-    location = _norm(marking.get("l"))
-    marking_family = _distal_family(location)
-    if marking_family is None:
-        return None
-
-    for item in downgraded:
-        if item["family"] != marking_family:
-            continue
-        side = item["side"]
-        if side in {"left", "right"}:
-            opposite = "right" if side == "left" else "left"
-            if opposite in location:
-                continue
-            if side in location:
-                return item
-        else:
-            return item
-
-    same_family = [item for item in downgraded if item["family"] == marking_family]
-    if len(same_family) == 1:
-        side = same_family[0]["side"]
-        opposite = "right" if side == "left" else "left" if side == "right" else None
-        if opposite is None or opposite not in location:
-            return same_family[0]
-    return None
+    return _appearance_matches_downgrade(marking, downgraded)
 
 
 def _marking_uncertainty(marking: dict[str, Any], downgraded: dict[str, str]) -> str:
-    category = str(marking.get("c") or "marking")
-    descriptors = [str(value) for value in (marking.get("d") or []) if str(value).strip()]
-    location = str(marking.get("l") or "ambiguous fragment")
-    detail = f" ({', '.join(descriptors)})" if descriptors else ""
-    return (
-        f"marking candidate on ambiguous {downgraded['family']} fragment: "
-        f"{category}{detail} at {location}; target ownership unresolved"
+    return _appearance_uncertainty(marking, downgraded, kind="marking")
+
+
+def _specific_distal_subpart(appearance: dict[str, Any]) -> tuple[str, str] | None:
+    """Return a precision-critical distal subpart and side, if explicitly named.
+
+    The rule intentionally covers only subparts where a broad visible ``hand`` or
+    ``foot`` is insufficient evidence for a high-confidence marking claim.
+    """
+
+    pieces = [appearance.get("l"), *(appearance.get("d") or [])]
+    text = _norm(" ".join(str(value) for value in pieces if value is not None))
+    side = _side_from_text(text)
+
+    if "palm" in text:
+        return "palm", side
+    if any(term in text for term in ("index_finger", "middle_finger", "ring_finger", "pinky", "little_finger", "thumb")):
+        return "fingers", side
+    if "wrist" in text:
+        return "wrist", side
+    if any(term in text for term in ("big_toe", "little_toe", "toe")):
+        return "toes", side
+    if "ankle" in text:
+        return "ankle", side
+    return None
+
+
+def _body_part_explicitly_supports_subpart(
+    body_part: dict[str, Any],
+    *,
+    required: str,
+    side: str,
+) -> bool:
+    if body_part.get("o") != "target":
+        return False
+    body_side = str(body_part.get("a") or "unknown")
+    if side in {"left", "right"} and body_side not in {side, "unknown"}:
+        return False
+
+    part = _norm(body_part.get("p"))
+    subparts = {_norm(value) for value in (body_part.get("s") or [])}
+    if required == "palm":
+        return "palm" in part or "palm" in subparts
+    if required == "fingers":
+        return "finger" in part or "fingers" in subparts or any("finger" in value for value in subparts)
+    if required == "wrist":
+        return "wrist" in part or "wrist" in subparts
+    if required == "toes":
+        return "toe" in part or "toes" in subparts or any("toe" in value for value in subparts)
+    if required == "ankle":
+        return "ankle" in part or "ankle" in subparts
+    return False
+
+
+def _marking_has_specific_subpart_support(
+    marking: dict[str, Any],
+    body_parts: list[Any],
+) -> tuple[bool, str | None, str]:
+    requirement = _specific_distal_subpart(marking)
+    if requirement is None:
+        return True, None, "unknown"
+
+    required, side = requirement
+    supported = any(
+        isinstance(body_part, dict)
+        and _body_part_explicitly_supports_subpart(body_part, required=required, side=side)
+        for body_part in body_parts
     )
+    return supported, required, side
 
 
 def normalize_x3p3_wire(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -143,6 +229,7 @@ def normalize_x3p3_wire(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
 
     out = copy.deepcopy(data)
     actions: list[dict[str, Any]] = []
+    uncertainties = out.get("u") if isinstance(out.get("u"), list) else []
 
     entities = out.get("e") if isinstance(out.get("e"), list) else []
     known_entity_ids = {
@@ -229,6 +316,7 @@ def normalize_x3p3_wire(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
             "family": family or "human",
             "side": side,
             "original_part": str(body_part.get("p") or "unknown"),
+            "fragment_part": str(normalized_fragment["p"]),
         }
         downgraded.append(downgraded_item)
         actions.append(
@@ -260,7 +348,9 @@ def normalize_x3p3_wire(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
             )
             if matched is None:
                 continue
+            original_actor_part = interaction.get("p")
             interaction["o"] = "unknown"
+            interaction["p"] = matched["fragment_part"]
             original_cues = list(interaction.get("c") or [])
             safe_cues, removed_cues = _filter_completion_cues(
                 original_cues, family=matched["family"]
@@ -269,26 +359,51 @@ def normalize_x3p3_wire(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
             actions.append(
                 {
                     "rule": "interaction_actor_ownership_follows_fragment",
-                    "path": f"s.ix.{index}.o",
-                    "from": "target",
-                    "to": "unknown",
-                    "actor_part": interaction.get("p"),
+                    "path": f"s.ix.{index}",
+                    "ownership_from": "target",
+                    "ownership_to": "unknown",
+                    "actor_part_from": original_actor_part,
+                    "actor_part_to": interaction.get("p"),
                     "removed_completion_cues": removed_cues,
                 }
             )
 
-        markings = subject.get("mk") if isinstance(subject.get("mk"), list) else []
-        kept_markings: list[Any] = []
-        uncertainties = out.get("u") if isinstance(out.get("u"), list) else []
-        for index, marking in enumerate(markings):
-            if not isinstance(marking, dict):
-                kept_markings.append(marking)
+        accessories = subject.get("ac") if isinstance(subject.get("ac"), list) else []
+        kept_accessories: list[Any] = []
+        for index, accessory in enumerate(accessories):
+            if not isinstance(accessory, dict):
+                kept_accessories.append(accessory)
                 continue
-            matched = _marking_matches_downgrade(marking, downgraded)
+            matched = _appearance_matches_downgrade(accessory, downgraded)
             if matched is None:
-                kept_markings.append(marking)
+                kept_accessories.append(accessory)
                 continue
 
+            uncertainty = _appearance_uncertainty(accessory, matched, kind="accessory")
+            if uncertainty not in uncertainties:
+                uncertainties.append(uncertainty)
+            actions.append(
+                {
+                    "rule": "target_accessory_to_ambiguous_fragment_uncertainty",
+                    "path": f"s.ac.{index}",
+                    "original": copy.deepcopy(accessory),
+                    "uncertainty": uncertainty,
+                }
+            )
+        subject["ac"] = kept_accessories
+
+    # Markings are deliberately precision-first. First quarantine markings tied
+    # to an ownership-downgraded fragment. Then require explicit visibility for
+    # precision-critical distal subparts such as palm/wrist/specific fingers.
+    markings = subject.get("mk") if isinstance(subject.get("mk"), list) else []
+    kept_markings: list[Any] = []
+    for index, marking in enumerate(markings):
+        if not isinstance(marking, dict):
+            kept_markings.append(marking)
+            continue
+
+        matched = _marking_matches_downgrade(marking, downgraded) if downgraded else None
+        if matched is not None:
             uncertainty = _marking_uncertainty(marking, matched)
             if uncertainty not in uncertainties:
                 uncertainties.append(uncertainty)
@@ -300,8 +415,39 @@ def normalize_x3p3_wire(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
                     "uncertainty": uncertainty,
                 }
             )
-        subject["mk"] = kept_markings
-        out["u"] = uncertainties
+            continue
+
+        supported, required_subpart, side = _marking_has_specific_subpart_support(
+            marking, kept_body_parts
+        )
+        if not supported and required_subpart is not None:
+            category = str(marking.get("c") or "marking")
+            descriptors = [str(value) for value in (marking.get("d") or []) if str(value).strip()]
+            detail = f" ({', '.join(descriptors)})" if descriptors else ""
+            location = str(marking.get("l") or "unknown")
+            uncertainty = (
+                f"marking candidate lacks explicit visible-subpart support: "
+                f"{category}{detail} at {location}; required {side + ' ' if side != 'unknown' else ''}"
+                f"{required_subpart} visibility not established"
+            )
+            if uncertainty not in uncertainties:
+                uncertainties.append(uncertainty)
+            actions.append(
+                {
+                    "rule": "target_marking_requires_visible_subpart",
+                    "path": f"s.mk.{index}",
+                    "original": copy.deepcopy(marking),
+                    "required_subpart": required_subpart,
+                    "required_side": side,
+                    "uncertainty": uncertainty,
+                }
+            )
+            continue
+
+        kept_markings.append(marking)
+
+    subject["mk"] = kept_markings
+    out["u"] = uncertainties
 
     report = {
         "version": NORMALIZER_VERSION,
