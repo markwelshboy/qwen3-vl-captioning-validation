@@ -4,13 +4,9 @@ from __future__ import annotations
 
 The first x3p2 smoke showed that hypothesis/crop consistency checks do not belong
 in Pydantic hard validation: a perfectly complete structured response was being
-discarded because two non-authoritative semantic fields disagreed.  This module
+discarded because two non-authoritative semantic fields disagreed. This module
 keeps malformed graph state as a hard failure while surfacing semantic
 inconsistencies for audit without destroying the Extract.
-
-The field layout and aliases intentionally match ``ExtractWireV1`` x3p2, so the
-VLM-facing constrained-output grammar is unchanged apart from non-semantic model
-metadata such as class identity.
 """
 
 from typing import Literal
@@ -30,9 +26,7 @@ from .extract_v3_models import (
 
 
 class ExtractWireV1Runtime(_WireModel):
-    """x3p2 wire record with only structural/referential hard validation."""
-
-    # Keep the generated schema title stable for provenance/hash comparisons.
+    # Keep the generated root title stable for provenance/hash comparisons.
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
