@@ -34,7 +34,9 @@ unset HF_HUB_ENABLE_HF_TRANSFER || true
 
 export VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-0}"
 echo "vLLM FlashInfer sampler: $VLLM_USE_FLASHINFER_SAMPLER (0 = PyTorch-native sampler)"
-echo "Extract mode: Pydantic x3p1 -> generated JSON Schema -> xgrammar -> typed visual-extract-3.0"
+echo "Extract mode: Pydantic x3p2 -> generated JSON Schema -> xgrammar -> typed visual-extract-3.0"
+
+echo "Extract default safety ceiling: 4000 output tokens (natural stop preferred)"
 
 cd "$REPO_ROOT"
 exec "$PY" -m qwen_caption_validate.extract_v3_pydantic "$@"
