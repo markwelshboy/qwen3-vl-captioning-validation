@@ -54,8 +54,8 @@ def _has_explicit_camera_perspective_evidence(evidence: dict[str, Any]) -> bool:
 
 
 def _has_explicit_capture_evidence(evidence: dict[str, Any]) -> bool:
-    """Positive capture evidence only; absence of phone/mirror is never external-camera proof."""
-    tokens = ("mirror", "selfie", "phone", "camera", "tripod", "remote_shutter", "device")
+    """Positive capture evidence only; a generic device (for example a laptop) is not enough."""
+    tokens = ("mirror", "selfie", "phone", "camera", "tripod", "remote_shutter")
     candidates = []
     candidates.extend(_list(evidence.get("entities")))
     candidates.extend(_list(evidence.get("relations")))
