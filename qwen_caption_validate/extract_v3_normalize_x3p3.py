@@ -3,8 +3,8 @@ from __future__ import annotations
 """Mechanical governance normalization for x3p3 Extract wire records.
 
 The normalizer runs after xgrammar has produced JSON and before Pydantic
-structural validation.  It may only repair/downgrade claims that are
-unambiguously unsafe from the record's own topology.  It never adds image
+structural validation. It may only repair/downgrade claims that are
+unambiguously unsafe from the record's own topology. It never adds image
 semantics, and callers must retain the original raw response for provenance.
 """
 
@@ -64,6 +64,25 @@ def _parent_matches(item: dict[str, Any], *, family: str, side: str) -> bool:
     return False
 
 
+def _filter_completion_cues(cues: list[Any], *, family: str) -> tuple[list[Any], list[Any]]:
+    """Drop cues that reconstruct a parent/whole region after topology downgrade."""
+
+    blocked = (
+        {"palm", "wrist", "forearm", "upper_arm", "lower_arm"}
+        if family == "hand"
+        else {"ankle", "shin", "calf", "lower_leg", "upper_leg"}
+    )
+    kept: list[Any] = []
+    removed: list[Any] = []
+    for cue in cues:
+        normalized = _norm(cue)
+        if any(term in normalized for term in blocked):
+            removed.append(cue)
+        else:
+            kept.append(cue)
+    return kept, removed
+
+
 def _actor_matches_downgrade(actor_part: Any, downgraded: dict[str, str]) -> bool:
     actor = _norm(actor_part)
     family = downgraded["family"]
@@ -99,9 +118,6 @@ def _marking_matches_downgrade(
         else:
             return item
 
-    # If there is exactly one downgraded fragment in this distal family and the
-    # marking location has no explicit contradictory side, the association is
-    # still mechanically unambiguous within the record.
     same_family = [item for item in downgraded if item["family"] == marking_family]
     if len(same_family) == 1:
         side = same_family[0]["side"]
@@ -135,9 +151,8 @@ def normalize_x3p3_wire(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
         if isinstance(item, dict) and isinstance(item.get("i"), str)
     }
 
-    # Support is a non-authoritative hypothesis.  If the VLM emitted a dangling
-    # eN but also supplied a usable textual support description, clearing only
-    # the broken ref preserves the observation without inventing an entity.
+    # Support is non-authoritative. If Qwen emits a dangling eN but also a
+    # usable textual description, clear only the broken ref and preserve text.
     hypotheses = out.get("h") if isinstance(out.get("h"), dict) else {}
     supports = hypotheses.get("sup") if isinstance(hypotheses.get("sup"), list) else []
     for index, support in enumerate(supports):
@@ -194,13 +209,17 @@ def normalize_x3p3_wire(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
             kept_body_parts.append(body_part)
             continue
 
+        original_geometry = list(body_part.get("g") or [])
+        safe_geometry, removed_geometry = _filter_completion_cues(
+            original_geometry, family=family or "human"
+        )
         normalized_fragment = {
             "p": _fragment_part(body_part.get("p")),
             "n": None,
             "a": body_part.get("a", "unknown"),
             "o": "unknown",
             "k": "unknown",
-            "g": list(body_part.get("g") or []),
+            "g": safe_geometry,
             "c": list(body_part.get("c") or []),
             "l": body_part.get("l", "unknown"),
             "q": body_part.get("q", "m"),
@@ -218,6 +237,7 @@ def normalize_x3p3_wire(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
                 "path": f"s.bp.{index}",
                 "original": copy.deepcopy(body_part),
                 "normalized_fragment": copy.deepcopy(normalized_fragment),
+                "removed_completion_cues": removed_geometry,
                 "reason": "no visible parent limb chain in s.bp",
             }
         )
@@ -241,6 +261,11 @@ def normalize_x3p3_wire(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
             if matched is None:
                 continue
             interaction["o"] = "unknown"
+            original_cues = list(interaction.get("c") or [])
+            safe_cues, removed_cues = _filter_completion_cues(
+                original_cues, family=matched["family"]
+            )
+            interaction["c"] = safe_cues
             actions.append(
                 {
                     "rule": "interaction_actor_ownership_follows_fragment",
@@ -248,6 +273,7 @@ def normalize_x3p3_wire(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
                     "from": "target",
                     "to": "unknown",
                     "actor_part": interaction.get("p"),
+                    "removed_completion_cues": removed_cues,
                 }
             )
 
