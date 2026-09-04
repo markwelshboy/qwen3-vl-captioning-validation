@@ -2,9 +2,10 @@ from __future__ import annotations
 
 """Typed contracts for the V3 observe-once visual Extract.
 
-`ExtractWireV1` is the VLM-facing transport contract. Its short field aliases are
-used to generate the JSON Schema handed to vLLM/xgrammar. Python code uses the
-long descriptive field names.
+`ExtractWireV1` is the VLM-facing transport contract. Its compact aliases are
+used to generate the JSON Schema handed to vLLM/xgrammar. Python code uses long
+descriptive field names. x3p2 deliberately spends a few extra characters on
+anatomy aliases where x3p1's abbreviations proved semantically ambiguous.
 
 `VisualExtractV3` is the canonical persistent contract consumed downstream. The
 wire-to-canonical transform is deterministic and contains no image semantics.
@@ -12,7 +13,7 @@ wire-to-canonical transform is deterministic and contains no image semantics.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ConfidenceBand = Literal["h", "m", "l", "u"]
 Visibility = Literal["full", "partial", "fragment", "occluded", "unknown"]
@@ -23,6 +24,8 @@ Connectivity = Literal[
     "connected_visible", "connected_but_occluded", "disconnected_in_crop", "unknown"
 ]
 EvidenceStatus = Literal["observed", "contextual", "hypothesis", "unknown"]
+
+_ENTITY_REF_PATTERN = r"^(t|e[1-9][0-9]*)$"
 
 
 class _WireModel(BaseModel):
@@ -67,15 +70,18 @@ class WireLandmark(_WireModel):
 
 
 class WireLandmarks(_WireModel):
-    head: WireLandmark = Field(alias="hd")
-    left_shoulder: WireLandmark = Field(alias="ls")
-    right_shoulder: WireLandmark = Field(alias="rs")
-    left_hip: WireLandmark = Field(alias="lh")
-    right_hip: WireLandmark = Field(alias="rh")
-    left_knee: WireLandmark = Field(alias="lk")
-    right_knee: WireLandmark = Field(alias="rk")
-    left_ankle: WireLandmark = Field(alias="la")
-    right_ankle: WireLandmark = Field(alias="ra")
+    # x3p1 used lh/rh for hip landmarks; Qwen repeatedly interpreted those as
+    # left/right hand. x3p2 makes anatomy aliases explicit while keeping the
+    # surrounding transport compact.
+    head: WireLandmark = Field(alias="head")
+    left_shoulder: WireLandmark = Field(alias="lshoulder")
+    right_shoulder: WireLandmark = Field(alias="rshoulder")
+    left_hip: WireLandmark = Field(alias="lhip")
+    right_hip: WireLandmark = Field(alias="rhip")
+    left_knee: WireLandmark = Field(alias="lknee")
+    right_knee: WireLandmark = Field(alias="rknee")
+    left_ankle: WireLandmark = Field(alias="lankle")
+    right_ankle: WireLandmark = Field(alias="rankle")
 
 
 class WireOrientationCues(_WireModel):
@@ -94,10 +100,11 @@ class WireGaze(_WireModel):
 
 
 class WireInteraction(_WireModel):
-    kind: Literal["holding", "contact", "support", "reaching", "crossing", "gesture", "wearing", "unknown"] = Field(alias="k")
+    # Wearing belongs to transient appearance; support belongs to support_context.
+    kind: Literal["holding", "contact", "reaching", "crossing", "gesture", "unknown"] = Field(alias="k")
     actor_part: str = Field(alias="p")
     ownership: Ownership = Field(alias="o")
-    target_ref: str | None = Field(alias="r")
+    target_ref: str | None = Field(alias="r", pattern=_ENTITY_REF_PATTERN)
     target_text: str | None = Field(alias="x")
     evidence: EvidenceStatus = Field(alias="e")
     confidence: ConfidenceBand = Field(alias="q")
@@ -107,6 +114,7 @@ class WireInteraction(_WireModel):
 class WireSubject(_WireModel):
     clothing: list[WireAppearance] = Field(alias="cl")
     accessories: list[WireAppearance] = Field(alias="ac")
+    markings: list[WireAppearance] = Field(alias="mk")
     hair_state: list[str] = Field(alias="hs")
     expression_state: list[str] = Field(alias="ex")
     body_parts: list[WireBodyPart] = Field(alias="bp")
@@ -128,17 +136,24 @@ class WireEntity(_WireModel):
 
 
 class WireRelation(_WireModel):
-    subject_ref: str = Field(alias="s")
+    # Generic relations are scene/spatial only. Holding/contact live in ix,
+    # clothing/accessories/markings live under s, and support lives under h.sup.
+    subject_ref: str = Field(alias="s", pattern=_ENTITY_REF_PATTERN)
     predicate: Literal[
         "visible_through", "reflected_in", "behind", "in_front_of", "beside", "near",
-        "touching", "overlapping", "holding", "held_by", "wearing", "attached_to", "on",
-        "under", "inside", "occludes", "supports_candidate", "resting_candidate", "other",
+        "overlapping", "inside", "occludes", "other",
     ] = Field(alias="p")
-    object_ref: str | None = Field(alias="o")
+    object_ref: str | None = Field(alias="o", pattern=_ENTITY_REF_PATTERN)
     object_text: str | None = Field(alias="x")
     evidence: EvidenceStatus = Field(alias="e")
     confidence: ConfidenceBand = Field(alias="q")
     cues: list[str] = Field(alias="c")
+
+    @model_validator(mode="after")
+    def _object_is_present(self) -> "WireRelation":
+        if self.object_ref is None and not self.object_text:
+            raise ValueError("relation requires object_ref or object_text")
+        return self
 
 
 class WireEnvironment(_WireModel):
@@ -244,7 +259,7 @@ class WireCapture(_WireModel):
 
 class WireSupport(_WireModel):
     relation: Literal["lying_on", "reclining_on", "seated_on", "standing_on", "leaning_against", "resting_on", "braced_on", "unknown"] = Field(alias="r")
-    target_ref: str | None = Field(alias="t")
+    target_ref: str | None = Field(alias="t", pattern=_ENTITY_REF_PATTERN)
     target_description: str | None = Field(alias="d")
     evidence: EvidenceStatus = Field(alias="e")
     confidence: ConfidenceBand = Field(alias="q")
@@ -270,7 +285,7 @@ class WireHypotheses(_WireModel):
 
 
 class ExtractWireV1(_WireModel):
-    schema_version: Literal["x3p1"] = Field(alias="v")
+    schema_version: Literal["x3p2"] = Field(alias="v")
     overview: str | None = Field(alias="o")
     framing: WireFraming = Field(alias="f")
     subject: WireSubject = Field(alias="s")
@@ -280,6 +295,50 @@ class ExtractWireV1(_WireModel):
     composition: WireComposition = Field(alias="co")
     hypotheses: WireHypotheses = Field(alias="h")
     uncertainties: list[str] = Field(alias="u")
+
+    @model_validator(mode="after")
+    def _semantic_contract_invariants(self) -> "ExtractWireV1":
+        ids = [entity.entity_id for entity in self.entities]
+        if len(ids) != len(set(ids)):
+            raise ValueError("entity ids must be unique")
+
+        expected = {f"e{i}" for i in range(1, len(ids) + 1)}
+        if set(ids) != expected:
+            raise ValueError("entity ids must be contiguous e1..eN")
+
+        known = {"t", *ids}
+
+        def require_ref(value: str | None, path: str) -> None:
+            if value is not None and value not in known:
+                raise ValueError(f"{path} references missing entity {value!r}")
+
+        banned_target_classes = {
+            "target", "target_subject", "target subject", "main_subject", "main subject",
+            "primary_subject", "primary subject",
+        }
+        for entity in self.entities:
+            if entity.class_name.strip().lower() in banned_target_classes:
+                raise ValueError("target subject must not be duplicated in entities")
+
+        for index, relation in enumerate(self.relations):
+            require_ref(relation.subject_ref, f"relations.{index}.subject_ref")
+            require_ref(relation.object_ref, f"relations.{index}.object_ref")
+            if relation.object_ref is not None and relation.subject_ref == relation.object_ref:
+                raise ValueError(f"relations.{index} cannot be a self-relation")
+
+        for index, interaction in enumerate(self.subject.interactions):
+            require_ref(interaction.target_ref, f"subject.interactions.{index}.target_ref")
+
+        for index, support in enumerate(self.hypotheses.support):
+            require_ref(support.target_ref, f"hypotheses.support.{index}.target_ref")
+
+        if self.framing.shot_scale == "full_body" and self.framing.subject_coverage == "face_dominant":
+            raise ValueError("full_body framing cannot be face_dominant")
+
+        if self.hypotheses.torso.band == "frontal" and self.hypotheses.torso.faces_frame != "unknown":
+            raise ValueError("frontal torso orientation must use body_faces_frame=unknown")
+
+        return self
 
 
 # Canonical persistent model -------------------------------------------------
@@ -331,6 +390,7 @@ class LandmarkMap(_CanonicalModel):
 class TransientAppearance(_CanonicalModel):
     clothing: list[AppearanceItem]
     accessories: list[AppearanceItem]
+    markings: list[AppearanceItem]
     hair_state: list[str]
     expression_state: list[str]
 
@@ -349,7 +409,7 @@ class Gaze(_CanonicalModel):
 
 
 class Interaction(_CanonicalModel):
-    type: Literal["holding", "contact", "support", "reaching", "crossing", "gesture", "wearing", "unknown"]
+    type: Literal["holding", "contact", "reaching", "crossing", "gesture", "unknown"]
     actor_part: str
     actor_ownership_candidate: Ownership
     target_ref: str | None
@@ -384,8 +444,7 @@ class Relation(_CanonicalModel):
     subject_ref: str
     predicate: Literal[
         "visible_through", "reflected_in", "behind", "in_front_of", "beside", "near",
-        "touching", "overlapping", "holding", "held_by", "wearing", "attached_to", "on",
-        "under", "inside", "occludes", "supports_candidate", "resting_candidate", "other",
+        "overlapping", "inside", "occludes", "other",
     ]
     object_ref: str | None
     object_text: str | None
