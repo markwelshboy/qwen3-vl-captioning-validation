@@ -8,7 +8,8 @@ from pydantic import ValidationError
 
 from qwen_caption_validate.extract_v3 import DEFAULT_SCHEMA
 from qwen_caption_validate.extract_v3_contract import audit_extract_contract
-from qwen_caption_validate.extract_v3_models import ExtractWireV1, VisualExtractV3
+from qwen_caption_validate.extract_v3_models import VisualExtractV3
+from qwen_caption_validate.extract_v3_models_runtime import ExtractWireV1Runtime as ExtractWireV1
 from qwen_caption_validate.extract_v3_wire_contract import CONFIDENCE_BANDS, expand_extract_wire
 from qwen_caption_validate.runner import validate_analysis
 
@@ -141,11 +142,11 @@ class ExtractV3PydanticTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ExtractWireV1.model_validate(data)
 
-    def test_non_contiguous_entity_ids_are_rejected(self) -> None:
+    def test_non_contiguous_entity_ids_are_warning_not_failure(self) -> None:
         data = copy.deepcopy(self._wire_dict())
         data["e"][1]["i"] = "e3"
-        with self.assertRaises(ValidationError):
-            ExtractWireV1.model_validate(data)
+        wire = ExtractWireV1.model_validate(data)
+        self.assertTrue(any("non-contiguous" in warning for warning in wire.semantic_warnings()))
 
     def test_self_relation_is_rejected(self) -> None:
         data = copy.deepcopy(self._wire_dict())
@@ -153,19 +154,19 @@ class ExtractV3PydanticTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ExtractWireV1.model_validate(data)
 
-    def test_full_body_cannot_be_face_dominant(self) -> None:
+    def test_full_body_face_dominant_is_warning_not_failure(self) -> None:
         data = copy.deepcopy(self._wire_dict())
         data["f"]["z"] = "full_body"
         data["f"]["c"] = "face_dominant"
-        with self.assertRaises(ValidationError):
-            ExtractWireV1.model_validate(data)
+        wire = ExtractWireV1.model_validate(data)
+        self.assertTrue(any("full_body" in warning for warning in wire.semantic_warnings()))
 
-    def test_frontal_torso_does_not_claim_left_right_frame_direction(self) -> None:
+    def test_frontal_torso_frame_direction_is_warning_not_failure(self) -> None:
         data = copy.deepcopy(self._wire_dict())
         data["h"]["to"]["b"] = "frontal"
         data["h"]["to"]["f"] = "left"
-        with self.assertRaises(ValidationError):
-            ExtractWireV1.model_validate(data)
+        wire = ExtractWireV1.model_validate(data)
+        self.assertTrue(any("torso hypothesis inconsistency" in warning for warning in wire.semantic_warnings()))
 
     def test_confidence_bands_are_fixed_not_fake_precision(self) -> None:
         self.assertEqual(CONFIDENCE_BANDS, {"h": 0.90, "m": 0.65, "l": 0.35, "u": 0.00})
