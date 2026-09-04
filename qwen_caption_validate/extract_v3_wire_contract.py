@@ -61,6 +61,8 @@ def _known_entity_ids(wire: ExtractWireV1) -> set[str]:
 
 
 def _check_ref(value: str | None, known: set[str], warnings: list[str], path: str) -> None:
+    # x3p2 validates graph references in ExtractWireV1 itself. Keep this audit
+    # here as a defensive invariant and as provenance in expansion metadata.
     if value is None or value == "t":
         return
     if value not in known:
@@ -86,7 +88,7 @@ def _appearance(items: list[Any], start_index: int) -> tuple[list[AppearanceItem
 
 
 def expand_extract_wire(wire: ExtractWireV1) -> tuple[VisualExtractV3, dict[str, Any]]:
-    """Deterministically expand `x3p1` into canonical `visual-extract-3.0`.
+    """Deterministically expand `x3p2` into canonical `visual-extract-3.0`.
 
     No image semantics are added here. The transform only expands aliases,
     stable short references, generated appearance IDs and confidence bands.
@@ -97,7 +99,8 @@ def expand_extract_wire(wire: ExtractWireV1) -> tuple[VisualExtractV3, dict[str,
     known_entities = _known_entity_ids(wire)
 
     clothing, next_appearance = _appearance(wire.subject.clothing, 1)
-    accessories, _ = _appearance(wire.subject.accessories, next_appearance)
+    accessories, next_appearance = _appearance(wire.subject.accessories, next_appearance)
+    markings, _ = _appearance(wire.subject.markings, next_appearance)
 
     landmarks = wire.subject.landmarks
     landmark_map = LandmarkMap(
@@ -191,6 +194,7 @@ def expand_extract_wire(wire: ExtractWireV1) -> tuple[VisualExtractV3, dict[str,
             transient_appearance=TransientAppearance(
                 clothing=clothing,
                 accessories=accessories,
+                markings=markings,
                 hair_state=wire.subject.hair_state,
                 expression_state=wire.subject.expression_state,
             ),
@@ -328,7 +332,7 @@ def expand_extract_wire(wire: ExtractWireV1) -> tuple[VisualExtractV3, dict[str,
     )
 
     metadata = {
-        "wire_schema_version": "x3p1",
+        "wire_schema_version": "x3p2",
         "wire_contract": "Pydantic ExtractWireV1",
         "canonical_contract": "Pydantic VisualExtractV3",
         "confidence_band_mapping": dict(CONFIDENCE_BANDS),
