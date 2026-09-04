@@ -7,12 +7,12 @@ import unittest
 from pydantic import ValidationError
 
 from qwen_caption_validate.extract_v3_models_x3p3 import ExtractWireX3P3Runtime
-from tests.test_extract_v3_pydantic_x3p3 import ExtractV3PydanticX3P3Tests
+from tests import test_extract_v3_pydantic_x3p3 as x3p3_fixture
 
 
 class ExtractV3X3P3NormalizeTests(unittest.TestCase):
     def _wire_dict(self) -> dict:
-        return copy.deepcopy(ExtractV3PydanticX3P3Tests()._wire_dict())
+        return copy.deepcopy(x3p3_fixture.ExtractV3PydanticX3P3Tests()._wire_dict())
 
     def test_unanchored_target_hand_is_downgraded_with_dependent_claims(self) -> None:
         data = self._wire_dict()
