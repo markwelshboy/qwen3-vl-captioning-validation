@@ -145,6 +145,7 @@ class ExtractV3PydanticTests(unittest.TestCase):
     def test_non_contiguous_entity_ids_are_warning_not_failure(self) -> None:
         data = copy.deepcopy(self._wire_dict())
         data["e"][1]["i"] = "e3"
+        data["r"][0]["o"] = "e3"
         wire = ExtractWireV1.model_validate(data)
         self.assertTrue(any("non-contiguous" in warning for warning in wire.semantic_warnings()))
 
