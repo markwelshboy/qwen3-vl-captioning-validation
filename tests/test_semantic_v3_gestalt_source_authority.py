@@ -68,7 +68,7 @@ class SemanticV3GestaltSourceAuthorityTests(unittest.TestCase):
         return {
             "projection_policy": "observation_only",
             "subject_evidence": {"orientation_cues": []},
-            "entities": [{"class": "laptop"}],
+            "entities": [{"type": "device", "class": "laptop"}],
             "relations": [],
             "composition_observations": [],
         }
@@ -104,6 +104,12 @@ class SemanticV3GestaltSourceAuthorityTests(unittest.TestCase):
         self.assertTrue(audit["authority_surface"]["camera_perspective"])
         self.assertTrue(audit["authority_surface"]["capture"])
         self.assertTrue(audit["authority_surface"]["near_lens"])
+
+    def test_generic_device_does_not_authorize_capture(self) -> None:
+        evidence = self._evidence()
+        governed, audit = apply_source_authority(self._gestalt(), evidence)
+        self.assertEqual(governed["capture"]["mode"], "unknown")
+        self.assertFalse(audit["authority_surface"]["capture"])
 
     def test_authority_output_remains_gestalt_v14_schema_valid(self) -> None:
         schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
