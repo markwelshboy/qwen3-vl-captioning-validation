@@ -37,4 +37,5 @@ unset HF_HUB_ENABLE_HF_TRANSFER || true
 cd "$REPO_ROOT"
 echo "Semantic V3 Gestalt: canonical Extract JSON -> text-only reasoning -> composition-gestalt-1.4"
 echo "Image input: DISABLED (Observe once. Reason many times.)"
-exec "$PY" -m qwen_caption_validate.semantic_v3_gestalt "$@"
+echo "vLLM modalities: image=0 video=0; multimodal startup profiling disabled"
+exec "$PY" -m qwen_caption_validate.semantic_v3_text_only_bootstrap "$@"
