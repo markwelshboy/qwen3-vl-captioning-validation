@@ -17,6 +17,10 @@ Do not:
 - repeat the same fact in multiple bins
 - inventory trivial background clutter
 
+Geometry language:
+- Do not use anatomical left/right unless it is unmistakable. Prefer frame-relative position such as image-left/image-right, or omit the side.
+- Do not infer physical contact, support, or attachment from 2D overlap/proximity alone. Describe the visible overlap/proximity instead.
+
 Prefer omission to speculative detail.
 
 Bins:
