@@ -19,8 +19,8 @@ DEFAULT_PROMPT = PACKAGE_ROOT / "prompts" / "semantic_v3_kiss_packet.txt"
 DEFAULT_BATCH_SIZE = 2
 DEFAULT_MAX_TOKENS = 1800
 PACKET_VERSION = "kiss1"
-ARTIFACT_VERSION = "semantic-v3-kiss-packet-0.1"
-RUN_VERSION = "semantic-v3-kiss-packet-0.1-run"
+ARTIFACT_VERSION = "semantic-v3-kiss-packet-0.2"
+RUN_VERSION = "semantic-v3-kiss-packet-0.2-run"
 
 ShortFact = Annotated[
     str,
@@ -128,7 +128,7 @@ def main() -> int:
     model_id = resolve_model_id(args.model)
     slug = model_slug(model_id)
     output_dir = (
-        args.output_dir or (run_dir / "semantic-v3" / "kiss-packet-v0.1" / slug)
+        args.output_dir or (run_dir / "semantic-v3" / "kiss-packet-v0.2" / slug)
     ).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -157,7 +157,7 @@ def main() -> int:
         "no confidence/evidence/hypothesis interrogation"
     )
     print(
-        f"Contract: {PACKET_VERSION}; max_tokens={args.max_tokens}; "
+        f"Contract: {PACKET_VERSION}; artifact={ARTIFACT_VERSION}; max_tokens={args.max_tokens}; "
         f"batch_size={args.batch_size}; max_model_len={args.vllm_max_model_len}"
     )
 
