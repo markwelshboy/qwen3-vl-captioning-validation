@@ -144,6 +144,7 @@ class SemanticV3FusionV301Tests(unittest.TestCase):
         self.assertEqual(interaction["actor_part"], "distal_hand_or_finger_fragment")
         self.assertEqual(ownership["ownership"], "unknown")
         self.assertEqual(ownership["part"], "distal_hand_or_finger_fragment")
+        self.assertFalse(fused["canonical"]["physical_relations"]["head_supported_by_hand"]["value"])
 
     def test_unresolved_support_keeps_broad_relation_but_drops_ungrounded_target_description(self) -> None:
         analyze = self._analyze("seated", 0.9, "supported")
@@ -168,6 +169,19 @@ class SemanticV3FusionV301Tests(unittest.TestCase):
         self.assertEqual(support["target_status"], "unresolved")
         self.assertIsNone(support["target_ref"])
         self.assertIsNone(support["target_description"])
+
+    def test_negative_pose_relation_stays_provenance_when_semantics_never_claimed_it(self) -> None:
+        fused = fuse_semantic_v3(
+            image_key="no_head_support_claim",
+            extract_wrapper=self._extract(),
+            analyze_artifact=self._analyze("seated", 0.9, "supported"),
+            gestalt_artifact=self._gestalt(),
+            pose_record=self._pose(public="sitting", candidate="sitting", recovery=False, hand_reject=True),
+        )
+        relation = fused["canonical"]["physical_relations"]["head_supported_by_hand"]
+        self.assertIsNone(relation["value"])
+        self.assertEqual(relation["authority"], "not_asserted")
+        self.assertFalse(fused["pose_adapter"]["relations"]["head_supported_by_hand"]["value"])
 
 
 if __name__ == "__main__":
