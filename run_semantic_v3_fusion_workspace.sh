@@ -10,8 +10,9 @@ if [[ ! -x "$PY" ]]; then
 fi
 
 cd "$REPO_ROOT"
-echo "Semantic V3 Fusion 3.0.1: Extract + Analyze + Gestalt + governed Pose v0.16 -> canonical truth"
+echo "Semantic V3 Fusion 3.0.2: Extract + Analyze + Gestalt + governed Pose v0.16 -> canonical truth"
 echo "Model/GPU load: NONE"
 echo "Evidence policy: Extract+Analyze+Gestalt are one semantic family; Pose v0.16 is governed physical authority"
 echo "Authority corrections: pose joint authority != confidence; withheld reconstruction cannot leak through modifiers; rejected proximal hand chains lose whole-hand specificity"
-exec "$PY" -m qwen_caption_validate.semantic_v3_fusion_v301 "$@"
+echo "Evidence consistency: canonical evidence cannot reassert withheld anatomy or an observation explicitly denied by its own limitations"
+exec "$PY" -m qwen_caption_validate.semantic_v3_fusion_v302 "$@"
