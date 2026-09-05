@@ -154,6 +154,46 @@ def _govern_unresolved_support_descriptions(fused: dict[str, Any]) -> dict[str, 
     return fused
 
 
+def _has_semantic_hand_head_relation(canonical: dict[str, Any]) -> bool:
+    for item in _list(canonical.get("interactions")):
+        if not isinstance(item, dict):
+            continue
+        actor = str(item.get("actor_part") or "").lower()
+        if not any(token in actor for token in ("hand", "finger", "fist")):
+            continue
+        target = " ".join(
+            str(item.get(key) or "").lower()
+            for key in ("target_ref", "target_text", "interpretation")
+        )
+        if any(token in target for token in ("target_subject", "head", "face", "chin", "neck")):
+            return True
+    return False
+
+
+def _gate_negative_physical_relations(fused: dict[str, Any]) -> dict[str, Any]:
+    canonical = _dict(fused.get("canonical"))
+    physical = _dict(canonical.get("physical_relations"))
+    relation = _dict(physical.get("head_supported_by_hand"))
+    if relation.get("value") is not False:
+        return fused
+    if _has_semantic_hand_head_relation(canonical):
+        return fused
+
+    original = deepcopy(relation)
+    physical["head_supported_by_hand"] = {
+        "value": None,
+        "authority": "not_asserted",
+        "reason": "No semantic hand/head relation required resolution; negative Pose diagnostic remains provenance only.",
+        "support_class": None,
+    }
+    _list(fused.setdefault("authority_adjustments", [])).append({
+        "type": "withhold_unneeded_negative_physical_relation",
+        "relation": "head_supported_by_hand",
+        "pose_diagnostic": original,
+    })
+    return fused
+
+
 def fuse_semantic_v3(
     *,
     image_key: str,
@@ -175,6 +215,7 @@ def fuse_semantic_v3(
     _govern_pose_modifiers(fused)
     _downgrade_rejected_hand_specificity(fused)
     _govern_unresolved_support_descriptions(fused)
+    _gate_negative_physical_relations(fused)
     fused.setdefault("policy", {})["canonical_confidence"] = (
         "Pose joint/crop authority is never serialized as probability/confidence. "
         "Aligned Analyze confidence may be retained separately from Pose assertion authority."
@@ -184,6 +225,9 @@ def fuse_semantic_v3(
     )
     fused["policy"]["specificity_downgrade"] = (
         "A rejected proximal hand chain can reduce canonical anatomy from whole-hand specificity to a distal hand/finger fragment without inventing ownership."
+    )
+    fused["policy"]["negative_relation_policy"] = (
+        "A negative Pose relation diagnostic is canonical only when it resolves a relevant semantic relation; otherwise it remains provenance."
     )
     return fused
 
