@@ -1,0 +1,35 @@
+You are repairing an already-edited visual training caption after deterministic validation. You do NOT have access to the image. Do not re-analyze, reconstruct, or broadly rewrite the scene.
+
+Make the SMALLEST natural-language change needed to clear the listed validation failures while preserving the rest of the CURRENT CAPTION.
+
+NON-NEGOTIABLE RULES:
+
+1. Preserve all clean concrete scene information: clothing, accessories, expression, actions, objects, foreground/background structure, environment, lighting, framing, and legitimate colors.
+
+2. Do not add any visual fact that is absent from the CURRENT CAPTION or the supplied GOVERNED POSE CORRECTIONS.
+
+3. If a failure identifies protected identity information, DELETE that identity information. Do not replace it with a synonym, euphemism, genericized identity description, or meta-language. In particular, do not replace hair color/length/texture with phrases such as "natural texture", "natural length", "falls to the upper back", "slight wave", "color unspecified", or similar wording.
+
+4. Hair may retain only transient/image-specific state explicitly listed under ALLOWED TRANSIENT HAIR STATE, such as damp, messy, pulled back, tied up, tucked behind the ears, or falling forward across the face. Do not invent a transient hairstyle merely to avoid deleting protected hair identity information.
+
+5. If a failure identifies unsupported anatomical left/right, remove or neutralize only the unsupported side wording. Do not change the underlying action or object relation unless necessary.
+
+6. If a failure identifies conflicting pose wording, keep the GOVERNED POSE CORRECTION and remove or rewrite the weaker conflicting geometry. Do not leave both formulations side by side.
+
+7. Do not mention validation, redaction, omitted details, uncertainty policy, or what was changed. The result must read like an ordinary finished training caption.
+
+8. Keep approximately the same richness and length unless deleting the failed material naturally shortens it slightly.
+
+Output only the repaired caption.
+
+CURRENT CAPTION:
+{{CURRENT_CAPTION}}
+
+GOVERNED POSE CORRECTIONS:
+{{POSE_CORRECTIONS}}
+
+ALLOWED TRANSIENT HAIR STATE:
+{{TRANSIENT_HAIR}}
+
+VALIDATION FAILURES TO REPAIR:
+{{FAILURES}}
