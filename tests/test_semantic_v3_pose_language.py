@@ -75,7 +75,7 @@ class SemanticV3PoseLanguageTests(unittest.TestCase):
             }
         }
 
-    def test_withheld_posture_is_conditional_not_caption_ready(self):
+    def test_neutral_standing_recovery_is_suppressed(self):
         result = summarize_pose_language(self._record(
             public_pose="uncertain",
             best_candidate="standing",
@@ -84,7 +84,19 @@ class SemanticV3PoseLanguageTests(unittest.TestCase):
             winner_margin=0.78,
         ))
         self.assertEqual(result["caption_ready_phrases"], [])
-        self.assertEqual(result["conditional_hints"][0]["phrase"], "standing")
+        self.assertEqual(result["conditional_hints"], [])
+        self.assertEqual(result["injection_priority"], "low")
+
+    def test_nonneutral_withheld_posture_stays_conditional(self):
+        result = summarize_pose_language(self._record(
+            public_pose="uncertain",
+            best_candidate="sitting",
+            recovery_needed=True,
+            candidate_score=0.92,
+            winner_margin=0.44,
+        ))
+        self.assertEqual(result["caption_ready_phrases"], [])
+        self.assertEqual(result["conditional_hints"][0]["phrase"], "seated")
         self.assertEqual(result["conditional_hints"][0]["requires"], "semantic_corroboration")
 
     def test_cropped_shoulders_can_describe_upper_body_side_on(self):
