@@ -25,6 +25,16 @@ _HAIR_ONLY_TOKEN_RE = re.compile(
 )
 _HAIR_DYE_TOKEN_RE = re.compile(r"\b(?:highlights?|roots?|streaks?)\b", re.IGNORECASE)
 _HAIR_WORD_RE = re.compile(r"\bhair\b", re.IGNORECASE)
+_HAIR_DYE_FORWARD_CONTEXT_RE = re.compile(
+    r"\bhair\b[^.!?]{0,90}\b(?:with|featuring|showing|including|having|has)\b"
+    r"[^.!?]{0,60}\b(?:highlights?|roots?|streaks?)\b",
+    re.IGNORECASE,
+)
+_HAIR_DYE_REVERSE_CONTEXT_RE = re.compile(
+    r"\b(?:highlights?|roots?|streaks?)\b[^.!?]{0,50}\b(?:in|through|throughout)\b"
+    r"[^.!?]{0,30}\b(?:her|his|their|the)?\s*hair\b",
+    re.IGNORECASE,
+)
 _TRANSIENT_FORWARD_RE = re.compile(
     r"\bhair\s+(?:is\s+)?(?:falling|falls|hanging|hangs|swept|sweeps)\s+forward"
     r"(?:[^.!?]{0,80}(?:obscur(?:es|ing)?|cover(?:s|ing)?)[^.!?]{0,40}(?:face|eye|eyes|forehead|cheek))?",
@@ -41,6 +51,24 @@ def _dedupe(values: list[str]) -> list[str]:
             seen.add(key)
             result.append(value.strip())
     return result
+
+
+def _hair_dye_residue(text: str) -> list[str]:
+    """Return dye/color-treatment nouns only when the sentence actually describes hair treatment.
+
+    This intentionally does NOT flag lighting language such as 'gentle highlights on her hair'.
+    """
+    values: list[str] = []
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        if not _HAIR_WORD_RE.search(sentence):
+            continue
+        if not (
+            _HAIR_DYE_FORWARD_CONTEXT_RE.search(sentence)
+            or _HAIR_DYE_REVERSE_CONTEXT_RE.search(sentence)
+        ):
+            continue
+        values.extend(match.group(0) for match in _HAIR_DYE_TOKEN_RE.finditer(sentence))
+    return _dedupe(values)
 
 
 def _protected_hair_mentions(draft: str) -> list[str]:
@@ -64,18 +92,19 @@ def _protected_hair_mentions(draft: str) -> list[str]:
             continue
         filtered.append(stripped)
 
-    # Color-treatment nouns themselves are protected if they occur in a hair-bearing sentence.
-    for sentence in re.split(r"(?<=[.!?])\s+", draft):
-        if not _HAIR_WORD_RE.search(sentence):
-            continue
-        for match in _HAIR_DYE_TOKEN_RE.finditer(sentence):
-            filtered.append(match.group(0))
+    # If a draft explicitly describes dye/color-treatment details, remove the nouns too so
+    # editing 'lighter highlights' does not leave meaningless 'highlights'.
+    filtered.extend(_hair_dye_residue(draft))
     return _dedupe(filtered)
 
 
 def _protected_other_identity_mentions(draft: str) -> list[str]:
     hair = {value.lower() for value in _protected_hair_mentions(draft)}
-    return [value for value in v02._identity_mentions(draft) if value.lower() not in hair and not _HAIR_ONLY_TOKEN_RE.fullmatch(value.strip())]
+    return [
+        value
+        for value in v02._identity_mentions(draft)
+        if value.lower() not in hair and not _HAIR_ONLY_TOKEN_RE.fullmatch(value.strip())
+    ]
 
 
 def _transient_hair_mentions(draft: str) -> list[str]:
@@ -129,18 +158,11 @@ def build_editor_input(rich: dict[str, Any], pose: dict[str, Any], prompt_templa
     base = _BASE_BUILD_EDITOR_INPUT(rich, pose, prompt_template)
     draft = base["rich_draft"]
     redactions = _mandatory_redactions(draft, pose)
-    base["editor_prompt"] = base["editor_prompt"].replace("{{MANDATORY_REDACTIONS}}", _redaction_text(redactions))
+    base["editor_prompt"] = base["editor_prompt"].replace(
+        "{{MANDATORY_REDACTIONS}}", _redaction_text(redactions)
+    )
     base["mandatory_redactions"] = redactions
     return base
-
-
-def _hair_dye_residue(text: str) -> list[str]:
-    values: list[str] = []
-    for sentence in re.split(r"(?<=[.!?])\s+", text):
-        if not _HAIR_WORD_RE.search(sentence):
-            continue
-        values.extend(match.group(0) for match in _HAIR_DYE_TOKEN_RE.finditer(sentence))
-    return _dedupe(values)
 
 
 def quality_audit(draft: str, edited: str, pose: dict[str, Any]) -> dict[str, Any]:
