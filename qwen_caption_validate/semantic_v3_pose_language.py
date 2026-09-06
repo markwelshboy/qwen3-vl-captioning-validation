@@ -244,7 +244,9 @@ def summarize_pose_language(record: dict[str, Any]) -> dict[str, Any]:
     elif recovery.get("needed") is True:
         candidate = str(recovery.get("candidate") or "unknown")
         candidate_text = _posture_phrase(candidate)
-        if candidate_text:
+        # Neutral standing is not useful as a semantic-recovery hint. On tight portraits
+        # it can only bias the editor toward hidden lower-body state, so keep it out.
+        if candidate_text and candidate != "standing":
             conditional_hints.append({
                 "kind": "posture",
                 "value": candidate,
@@ -380,7 +382,7 @@ def main() -> int:
 
     if args.tar:
         import tarfile
-        tar_path = output.with_suffix(".tar")
+        tar_path = output.parent / f"{output.name}.tar"
         with tarfile.open(tar_path, "w") as archive:
             archive.add(output, arcname=output.name)
         print(f"Tar: {tar_path}")
