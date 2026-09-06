@@ -19,22 +19,39 @@ _V01_BUILD_EDITOR_INPUT = v01.build_editor_input
 _V01_QUALITY_AUDIT = v01.quality_audit
 
 
+_HAIR_COLOR_WORDS = r"blond(?:e)?|brunette|auburn|ginger|red|brown|black|gray|grey|silver|white|dark|light"
+_HAIR_LENGTH_WORDS = r"very\s+long|long|short|medium-length|shoulder-length|chin-length|jaw-length|neck-length|waist-length|hip-length|mid-back-length"
+_HAIR_STRUCTURE_WORDS = r"curly|straight|wavy|coily|kinky|layered|thick|fine"
+_HAIR_TRANSIENT_WORDS = r"messy|tousled|disheveled|windblown|wet|damp"
+
 _HAIR_COLOR_PATTERNS = (
-    re.compile(r"\b(?:blond(?:e)?|brunette|auburn|ginger|red|brown|black|gray|grey|silver|white|dark|light)(?:[- ](?:brown|blond(?:e)?|red|black|gray|grey|silver|white))?\s+hair\b", re.IGNORECASE),
-    re.compile(r"\bhair\s+(?:is|appears|looks)\s+(?:blond(?:e)?|brunette|auburn|ginger|red|brown|black|gray|grey|silver|white|dark|light)\b", re.IGNORECASE),
+    re.compile(rf"\b(?:{_HAIR_COLOR_WORDS})(?:[- ](?:brown|blond(?:e)?|red|black|gray|grey|silver|white))?\s+hair\b", re.IGNORECASE),
+    re.compile(rf"\bhair\s+(?:is|appears|looks)\s+(?:{_HAIR_COLOR_WORDS})\b", re.IGNORECASE),
     re.compile(r"\b(?:lighter|darker|blond(?:e)?|brown|black|red|gray|grey|silver)\s+(?:highlights?|roots?)\b", re.IGNORECASE),
 )
 _HAIR_LENGTH_PATTERNS = (
-    re.compile(r"\b(?:very\s+)?(?:long|short|medium-length|shoulder-length|chin-length|jaw-length|neck-length|waist-length|hip-length|mid-back-length)\s+hair\b", re.IGNORECASE),
-    re.compile(r"\bhair\s+(?:is|appears|looks|falls|reaches)\s+(?:very\s+)?(?:long|short|medium-length|shoulder-length|chin-length|jaw-length|neck-length|waist-length|hip-length|mid-back-length)\b", re.IGNORECASE),
+    re.compile(rf"\b(?:{_HAIR_LENGTH_WORDS})\s+hair\b", re.IGNORECASE),
+    re.compile(rf"\bhair\s+(?:is|appears|looks|falls|reaches)\s+(?:{_HAIR_LENGTH_WORDS})\b", re.IGNORECASE),
     re.compile(r"\b(?:shoulder-length|chin-length|jaw-length|neck-length|waist-length|hip-length|mid-back-length)\b", re.IGNORECASE),
 )
 _HAIR_STRUCTURE_PATTERNS = (
-    re.compile(r"\b(?:curly|straight|wavy|coily|kinky|layered)\s+hair\b", re.IGNORECASE),
-    re.compile(r"\bhair\s+(?:is|appears|looks)\s+(?:curly|straight|wavy|coily|kinky|layered)\b", re.IGNORECASE),
+    re.compile(rf"\b(?:{_HAIR_STRUCTURE_WORDS})\s+hair\b", re.IGNORECASE),
+    re.compile(rf"\bhair\s+(?:is|appears|looks)\s+(?:{_HAIR_STRUCTURE_WORDS})\b", re.IGNORECASE),
 )
-_HAIR_STRUCTURE_TOKEN_RE = re.compile(r"\b(?:curly|straight|wavy|coily|kinky|layered)\b", re.IGNORECASE)
 _HAIR_WORD_RE = re.compile(r"\bhair\b", re.IGNORECASE)
+_HAIR_PREFIX_MODIFIER_RE = re.compile(
+    rf"\b(?:{_HAIR_COLOR_WORDS}|{_HAIR_LENGTH_WORDS}|{_HAIR_STRUCTURE_WORDS}|{_HAIR_TRANSIENT_WORDS})\b",
+    re.IGNORECASE,
+)
+_HAIR_STABLE_PREFIX_RE = re.compile(
+    rf"^(?:{_HAIR_COLOR_WORDS}|{_HAIR_LENGTH_WORDS}|{_HAIR_STRUCTURE_WORDS})$",
+    re.IGNORECASE,
+)
+_HAIR_MODIFIER_CHAIN_RE = re.compile(
+    rf"(?P<mods>(?:(?:{_HAIR_COLOR_WORDS}|{_HAIR_LENGTH_WORDS}|{_HAIR_STRUCTURE_WORDS}|{_HAIR_TRANSIENT_WORDS})"
+    rf"(?:\s*,\s*|\s+))+)(?P<hair>hair)\b",
+    re.IGNORECASE,
+)
 
 _TRANSIENT_HAIR_PATTERNS = (
     re.compile(
@@ -48,11 +65,11 @@ _TRANSIENT_HAIR_PATTERNS = (
     ),
     re.compile(
         r"\bhair\s+(?:is\s+)?(?:worn|styled|tied|gathered)\s+(?:in|into|as)\s+(?:a\s+)?"
-        r"(?:bun|ponytail|braid|braids|pigtail|pigtails|topknot)\b",
+        r"(?:(?:loose|messy|high|low)\s+)?(?:bun|ponytail|braid|braids|pigtail|pigtails|topknot)\b",
         re.IGNORECASE,
     ),
-    re.compile(r"\b(?:messy|tousled|disheveled|windblown|wet|damp)\s+hair\b", re.IGNORECASE),
-    re.compile(r"\bhair\s+(?:is|appears|looks)\s+(?:messy|tousled|disheveled|windblown|wet|damp)\b", re.IGNORECASE),
+    re.compile(rf"\b(?:{_HAIR_TRANSIENT_WORDS})\s+hair\b", re.IGNORECASE),
+    re.compile(rf"\bhair\s+(?:is|appears|looks)\s+(?:{_HAIR_TRANSIENT_WORDS})\b", re.IGNORECASE),
     re.compile(r"\bloose\s+strands?(?:\s+of\s+hair)?(?:\s+(?:falling|hanging|lying|across|around)[^.!?;,]{0,50})?", re.IGNORECASE),
     re.compile(r"\bhair\s+(?:partially\s+)?(?:covers|covering|falls\s+across)\s+(?:her|his|their|the)?\s*(?:face|eye|eyes|forehead|cheek)\b", re.IGNORECASE),
 )
@@ -94,12 +111,30 @@ def _unique_matches(text: str, patterns: tuple[re.Pattern[str], ...]) -> list[st
     return values
 
 
+def _hair_prefix_identity_mentions(text: str) -> list[str]:
+    """Extract protected modifiers from mixed phrases such as 'shoulder-length blonde wavy hair'."""
+    values: list[str] = []
+    seen: set[str] = set()
+    for chain in _HAIR_MODIFIER_CHAIN_RE.finditer(text):
+        mods = chain.group("mods")
+        for match in _HAIR_PREFIX_MODIFIER_RE.finditer(mods):
+            value = match.group(0).strip()
+            if not _HAIR_STABLE_PREFIX_RE.match(value):
+                continue
+            key = value.lower()
+            if key not in seen:
+                seen.add(key)
+                values.append(value)
+    return values
+
+
 def _nearby_hair_structure_mentions(text: str) -> list[str]:
     """Catch stable texture/haircut modifiers in clauses such as 'hair is shoulder-length, layered'."""
     hair_spans = [match.span() for match in _HAIR_WORD_RE.finditer(text)]
+    structure_token_re = re.compile(rf"\b(?:{_HAIR_STRUCTURE_WORDS})\b", re.IGNORECASE)
     values: list[str] = []
     seen: set[str] = set()
-    for match in _HAIR_STRUCTURE_TOKEN_RE.finditer(text):
+    for match in structure_token_re.finditer(text):
         start, end = match.span()
         if not any(min(abs(start - h_end), abs(h_start - end)) <= 48 for h_start, h_end in hair_spans):
             continue
@@ -122,10 +157,11 @@ def _identity_mentions(text: str) -> list[str]:
         + _AGE_PATTERNS,
     )
     seen = {value.lower() for value in values}
-    for value in _nearby_hair_structure_mentions(text):
-        if value.lower() not in seen:
-            seen.add(value.lower())
-            values.append(value)
+    for extra_values in (_hair_prefix_identity_mentions(text), _nearby_hair_structure_mentions(text)):
+        for value in extra_values:
+            if value.lower() not in seen:
+                seen.add(value.lower())
+                values.append(value)
     return values
 
 
