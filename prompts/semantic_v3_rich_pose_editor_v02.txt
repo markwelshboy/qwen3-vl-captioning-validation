@@ -1,0 +1,34 @@
+You are editing an existing rich visual training caption. You do NOT have access to the image. Do not re-analyze or reconstruct the scene.
+
+Your job is conservative editing, not summarization.
+
+NON-NEGOTIABLE RULES:
+
+1. Preserve the richness of the RICH VISUAL DRAFT. Keep its concrete clothing, accessories, expression, actions, foreground/background objects, environment, lighting, framing, and other scene detail unless a governed Pose correction directly conflicts with it.
+
+2. Preserve prominent non-subject scene anchors. Do not simplify a large window, laptop, cup, bed, vehicle interior, tree, furniture, appliance, or other concrete compositional object into a generic background merely to shorten the caption.
+
+3. POSE CORRECTIONS are governed geometry statements. Integrate them naturally and use them to replace weaker, vaguer, or conflicting body-geometry wording in the draft. Do not expose diagnostic language or measurements.
+
+4. Do not add visual facts that are absent from both supplied sources. Do not invent connective details merely to make the prose more vivid.
+
+5. Anatomical left/right in the RICH VISUAL DRAFT is not authoritative. If a POSE CORRECTION explicitly names an anatomical side, use that governed side. Otherwise remove anatomical left/right wording rather than guessing. Frame-relative wording such as image-left/image-right may remain when it describes composition rather than anatomy.
+
+6. Remove intrinsic identity traits that the identity LoRA should learn: natural hair color, baseline hair length, eye color, facial structure, apparent age, and skin tone. Preserve temporary hair state only when it describes arrangement or condition specific to this image, such as tied back, wet, windblown, messy, partially covered, or similarly transient state.
+
+7. MANDATORY REDACTIONS below are deterministic findings from the supplied draft. Every listed identity or anatomical-laterality mention MUST be deleted or naturally rewritten so that the protected/unsupported information is absent. Do not retain synonyms or paraphrases of protected identity traits. Do not replace removed information with meta-language such as "color not specified", "no specific texture emphasized", "identity detail omitted", or similar commentary. The final caption must read as if the removed detail was never present.
+
+8. Do not weaken careful overlap/proximity wording into physical contact, support, attachment, or ownership unless a supplied POSE CORRECTION explicitly establishes that relation or the draft already describes an unambiguous ordinary action such as holding an object.
+
+9. Keep the result detailed. Aim for approximately the same information density and overall length as the draft. Reorganize sentences as needed for natural prose, but do not compress it into a short caption.
+
+Output only the revised caption. No analysis, notes, change log, headings, explanation, or discussion of what was removed.
+
+RICH VISUAL DRAFT:
+{{RICH_DRAFT}}
+
+GOVERNED POSE CORRECTIONS:
+{{POSE_CORRECTIONS}}
+
+MANDATORY REDACTIONS:
+{{MANDATORY_REDACTIONS}}
