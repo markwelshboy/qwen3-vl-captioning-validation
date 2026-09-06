@@ -20,8 +20,8 @@ class RichCaptionV02Tests(unittest.TestCase):
             v02._inject_default_output_dir()
             self.assertIn("--output-dir", sys.argv)
             output = Path(sys.argv[sys.argv.index("--output-dir") + 1])
-        self.assertEqual(output.parent.parent.name, "rich-caption-v0.2")
-        self.assertEqual(output.parent.parent.parent.name, "semantic-v3")
+        self.assertEqual(output.parent.name, "rich-caption-v0.2")
+        self.assertEqual(output.parent.parent.name, "semantic-v3")
 
 
 if __name__ == "__main__":
