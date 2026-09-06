@@ -29,6 +29,34 @@ _HAIR_LENGTH_PATTERNS = (
     re.compile(r"\bhair\s+(?:is|appears|looks|falls|reaches)\s+(?:very\s+)?(?:long|short|medium-length|shoulder-length|chin-length|jaw-length|neck-length|waist-length|hip-length|mid-back-length)\b", re.IGNORECASE),
     re.compile(r"\b(?:shoulder-length|chin-length|jaw-length|neck-length|waist-length|hip-length|mid-back-length)\b", re.IGNORECASE),
 )
+_HAIR_STRUCTURE_PATTERNS = (
+    re.compile(r"\b(?:curly|straight|wavy|coily|kinky|layered)\s+hair\b", re.IGNORECASE),
+    re.compile(r"\bhair\s+(?:is|appears|looks)\s+(?:curly|straight|wavy|coily|kinky|layered)\b", re.IGNORECASE),
+)
+_HAIR_STRUCTURE_TOKEN_RE = re.compile(r"\b(?:curly|straight|wavy|coily|kinky|layered)\b", re.IGNORECASE)
+_HAIR_WORD_RE = re.compile(r"\bhair\b", re.IGNORECASE)
+
+_TRANSIENT_HAIR_PATTERNS = (
+    re.compile(
+        r"\bhair\s+(?:is\s+)?(?:pulled|tied|pinned|slicked|swept|brushed|gathered)\s+"
+        r"(?:back|up|aside|away)(?:\s+(?:from|over|behind)\s+(?:her|his|their|the)?\s*(?:face|ears?|forehead))?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bhair\s+(?:is\s+)?(?:tucked|pulled)\s+(?:back\s+)?behind\s+(?:her|his|their|the)?\s*ears?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bhair\s+(?:is\s+)?(?:worn|styled|tied|gathered)\s+(?:in|into|as)\s+(?:a\s+)?"
+        r"(?:bun|ponytail|braid|braids|pigtail|pigtails|topknot)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(?:messy|tousled|disheveled|windblown|wet|damp)\s+hair\b", re.IGNORECASE),
+    re.compile(r"\bhair\s+(?:is|appears|looks)\s+(?:messy|tousled|disheveled|windblown|wet|damp)\b", re.IGNORECASE),
+    re.compile(r"\bloose\s+strands?(?:\s+of\s+hair)?(?:\s+(?:falling|hanging|lying|across|around)[^.!?;,]{0,50})?", re.IGNORECASE),
+    re.compile(r"\bhair\s+(?:partially\s+)?(?:covers|covering|falls\s+across)\s+(?:her|his|their|the)?\s*(?:face|eye|eyes|forehead|cheek)\b", re.IGNORECASE),
+)
+
 _EYE_COLOR_PATTERNS = (
     re.compile(r"\b(?:blue|green|brown|hazel|gray|grey|dark|light)\s+eyes\b", re.IGNORECASE),
 )
@@ -66,15 +94,43 @@ def _unique_matches(text: str, patterns: tuple[re.Pattern[str], ...]) -> list[st
     return values
 
 
+def _nearby_hair_structure_mentions(text: str) -> list[str]:
+    """Catch stable texture/haircut modifiers in clauses such as 'hair is shoulder-length, layered'."""
+    hair_spans = [match.span() for match in _HAIR_WORD_RE.finditer(text)]
+    values: list[str] = []
+    seen: set[str] = set()
+    for match in _HAIR_STRUCTURE_TOKEN_RE.finditer(text):
+        start, end = match.span()
+        if not any(min(abs(start - h_end), abs(h_start - end)) <= 48 for h_start, h_end in hair_spans):
+            continue
+        value = match.group(0).strip()
+        key = value.lower()
+        if key not in seen:
+            seen.add(key)
+            values.append(value)
+    return values
+
+
 def _identity_mentions(text: str) -> list[str]:
-    return _unique_matches(
+    values = _unique_matches(
         text,
         _HAIR_COLOR_PATTERNS
         + _HAIR_LENGTH_PATTERNS
+        + _HAIR_STRUCTURE_PATTERNS
         + _EYE_COLOR_PATTERNS
         + _SKIN_TONE_PATTERNS
         + _AGE_PATTERNS,
     )
+    seen = {value.lower() for value in values}
+    for value in _nearby_hair_structure_mentions(text):
+        if value.lower() not in seen:
+            seen.add(value.lower())
+            values.append(value)
+    return values
+
+
+def _transient_hair_mentions(text: str) -> list[str]:
+    return _unique_matches(text, _TRANSIENT_HAIR_PATTERNS)
 
 
 def _unsupported_laterality_mentions(text: str, pose: dict[str, Any]) -> list[str]:
@@ -101,6 +157,7 @@ def _unsupported_laterality_mentions(text: str, pose: dict[str, Any]) -> list[st
 def _mandatory_redactions(draft: str, pose: dict[str, Any]) -> dict[str, list[str]]:
     return {
         "protected_identity_mentions": _identity_mentions(draft),
+        "transient_hair_mentions_to_preserve": _transient_hair_mentions(draft),
         "unsupported_anatomical_laterality": _unsupported_laterality_mentions(draft, pose),
     }
 
@@ -108,11 +165,19 @@ def _mandatory_redactions(draft: str, pose: dict[str, Any]) -> dict[str, list[st
 def _redaction_text(redactions: dict[str, list[str]]) -> str:
     lines: list[str] = []
     identity = redactions["protected_identity_mentions"]
+    transient_hair = redactions["transient_hair_mentions_to_preserve"]
     laterality = redactions["unsupported_anatomical_laterality"]
     if identity:
         lines.append("- Protected identity mentions that MUST be removed without paraphrase: " + "; ".join(identity))
     else:
         lines.append("- Protected identity mentions detected in draft: none")
+    if transient_hair:
+        lines.append(
+            "- Transient/image-specific hair state that SHOULD be preserved while protected modifiers are removed: "
+            + "; ".join(transient_hair)
+        )
+    else:
+        lines.append("- Transient/image-specific hair state detected in draft: none")
     if laterality:
         lines.append("- Unsupported anatomical laterality that MUST be removed or neutralized: " + "; ".join(laterality))
     else:
@@ -149,6 +214,7 @@ def quality_audit(draft: str, edited: str, pose: dict[str, Any]) -> dict[str, An
         warnings.append("meta_redaction_language")
 
     base["identity_leaks"] = sorted(set(identity_leaks), key=str.lower)
+    base["transient_hair_mentions"] = _transient_hair_mentions(edited)
     base["unauthorized_anatomical_laterality"] = sorted(set(unsupported_laterality), key=str.lower)
     base["meta_redaction_language"] = meta_redaction_language
     base["warnings"] = warnings
