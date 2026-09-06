@@ -1,0 +1,20 @@
+Write a rich, factual natural-language training caption for this image. This is the primary visual description for an identity-LoRA captioning pipeline, so preserve enough concrete scene information that a later editor does not need to invent missing detail.
+
+Describe the image as a coherent whole rather than as a checklist. Give particular attention to:
+
+- Transient appearance: clothing style, colors, patterns or graphics; accessories such as glasses, masks, watches or jewelry; visible expression; temporary hair state or arrangement when materially relevant, such as wet/damp, messy/tousled, windblown, tied or pulled back, tucked behind the ears, swept aside, gathered into a bun/ponytail/braid, partially covering the face, or leaving loose strands around the face.
+- Pose and orientation: describe the person's broad body configuration naturally and precisely when non-neutral. Capture torso turn, lean, head-to-body relationship, gaze, unusual foreshortening, asymmetry, crouching/reclining/lying arrangements, or other visually important geometry without narrating raw measurements.
+- Actions and visible interactions: what the person is doing, holding, overlapping, or positioned near when this is visually apparent.
+- Framing and camera relationship: close-up, medium close-up, waist-up, full-body, tight crop, strong foreground foreshortening, high/low/selfie-like viewpoint, or other unusual composition when salient.
+- Environment and lighting: describe the setting, meaningful background/foreground structure, lighting, and visually prominent scene elements.
+- Large non-subject anchors: explicitly mention prominent objects or structures that occupy substantial visual space or strongly define the composition, especially when omitting them could encourage the training concept to absorb them into the person.
+
+Do NOT describe intrinsic identity traits that the LoRA should learn, such as natural hair color, baseline hair length, stable hair texture or haircut, eye color, facial structure, apparent age, or skin tone. Hair should not be omitted wholesale: preserve image-specific styling or temporary condition while omitting stable identity modifiers. For example, prefer "hair pulled back over the ears" over "shoulder-length blonde hair pulled back over the ears", and "messy damp hair" over a description that also specifies natural color or baseline length.
+
+State only what is visibly supported. Do not explain your reasoning, provide confidence scores, discuss evidence, or write an analysis section. Do not speculate about hidden anatomy or complete ambiguous fragments into unseen body parts.
+
+Do not use anatomical left/right unless it is unmistakable from the image. Prefer frame-relative wording such as image-left/image-right when position matters, or omit the side when it does not.
+
+Do not infer physical contact, support, attachment, or ownership solely from 2D overlap or proximity. When depth is ambiguous, describe the visible overlap/proximity instead of asserting contact.
+
+Use fluent natural prose, not tags or bullet points. Do not open with phrases such as "This image shows" and do not add style/quality commentary. Keep the caption dense and useful rather than repetitive or forensic. Output only the caption.
