@@ -5,6 +5,7 @@ import json
 import re
 import sys
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -54,11 +55,85 @@ def _record_summary(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "image_key": payload.get("image_key"),
         "finish_reason": performance.get("finish_reason"),
+        "prompt_tokens": performance.get("prompt_tokens"),
         "output_tokens": performance.get("output_tokens"),
         "words": stats.get("words"),
         "sentences": stats.get("sentences"),
         "characters": stats.get("characters"),
     }
+
+
+def _fmt_seconds(value: Any) -> str:
+    try:
+        if value is None:
+            return "n/a"
+        return f"{float(value):.3f}s"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def _fmt_rate(value: Any) -> str:
+    try:
+        if value is None:
+            return "n/a"
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def _approx_prefill_seconds(item: dict[str, Any]) -> float | None:
+    """Approximate scheduled->first-token time when vLLM exposes request metrics."""
+    ttft = item.get("ttft_seconds")
+    queue = item.get("queue_seconds")
+    if ttft is None or queue is None:
+        return None
+    try:
+        value = float(ttft) - float(queue)
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
+
+def _batch_size_runtime(batch_runtime: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[int, dict[str, Any]] = defaultdict(
+        lambda: {
+            "batch_size": 0,
+            "batch_count": 0,
+            "image_count": 0,
+            "prepare_seconds": 0.0,
+            "generation_seconds": 0.0,
+            "wall_seconds": 0.0,
+            "prompt_tokens": 0,
+            "output_tokens": 0,
+        }
+    )
+    for batch in batch_runtime:
+        size = int(batch.get("batch_size") or 0)
+        if size < 1:
+            continue
+        row = grouped[size]
+        row["batch_size"] = size
+        row["batch_count"] += 1
+        row["image_count"] += size
+        row["prepare_seconds"] += float(batch.get("prepare_seconds") or 0.0)
+        row["generation_seconds"] += float(batch.get("generation_seconds") or 0.0)
+        row["wall_seconds"] += float(batch.get("wall_seconds") or 0.0)
+        row["prompt_tokens"] += int(batch.get("prompt_tokens") or 0)
+        row["output_tokens"] += int(batch.get("output_tokens") or 0)
+
+    rows: list[dict[str, Any]] = []
+    for size in sorted(grouped):
+        row = grouped[size]
+        images = int(row["image_count"])
+        generation = float(row["generation_seconds"])
+        wall = float(row["wall_seconds"])
+        output_tokens = int(row["output_tokens"])
+        row["amortized_seconds_per_image"] = wall / images if images else 0.0
+        row["aggregate_output_tokens_per_second"] = (
+            output_tokens / generation if generation > 0 else 0.0
+        )
+        rows.append(dict(row))
+    return rows
 
 
 def _generate_vllm_batch(
@@ -91,12 +166,15 @@ def _generate_vllm_batch(
         perf = extract_v3._request_perf_fields(output, max_new_tokens)
         perf["image"] = image_path
         perf["prepare_seconds"] = prepared_seconds
+        perf["prefill_seconds_approx"] = _approx_prefill_seconds(perf)
         items.append(perf)
 
+    prompt_tokens = sum(int(item.get("prompt_tokens") or 0) for item in items)
     output_tokens = sum(int(item.get("output_tokens") or 0) for item in items)
     return items, {
         "prepare_seconds": prepare_total,
         "generation_seconds": generation_seconds,
+        "prompt_tokens": prompt_tokens,
         "output_tokens": output_tokens,
         "aggregate_output_tokens_per_second": output_tokens / generation_seconds if generation_seconds > 0 else 0.0,
     }
@@ -180,6 +258,7 @@ def main() -> int:
     generated: list[dict[str, Any]] = []
     batch_runtime: list[dict[str, Any]] = []
     loaded = None
+    model_load_seconds = 0.0
     if pending:
         print(f"Loading {model_id} for rich semantic captions ...")
         loaded = load_model(
@@ -191,6 +270,7 @@ def main() -> int:
             vllm_gpu_memory_utilization=args.vllm_gpu_memory_utilization,
             vllm_max_model_len=args.vllm_max_model_len,
         )
+        model_load_seconds = float(loaded.load_seconds)
         print(
             f"Loaded in {loaded.load_seconds:.2f}s. Captioning {len(pending)} image(s). "
             f"batch_size={args.batch_size} max_tokens={args.max_tokens}"
@@ -222,6 +302,7 @@ def main() -> int:
                         "finish_reason": item.get("finish_reason"),
                         "ttft_seconds": item.get("ttft_seconds"),
                         "queue_seconds": item.get("queue_seconds"),
+                        "prefill_seconds_approx": item.get("prefill_seconds_approx"),
                         "decode_seconds": item.get("decode_seconds"),
                         "decode_tokens_per_second": item.get("decode_tokens_per_second"),
                         "engine_e2e_seconds": item.get("engine_e2e_seconds"),
@@ -243,22 +324,45 @@ def main() -> int:
                     print(
                         "RICH_CAPTION_PERF "
                         f"image={image.name} batch={batch_index}/{total_batches} "
-                        f"tokens={item.get('output_tokens')}/{args.max_tokens} "
+                        f"prepare={_fmt_seconds(item.get('prepare_seconds'))} "
+                        f"batch_generate={generation_perf['generation_seconds']:.3f}s "
+                        f"prompt_tokens={item.get('prompt_tokens')} "
+                        f"output_tokens={item.get('output_tokens')}/{args.max_tokens} "
+                        f"queue={_fmt_seconds(item.get('queue_seconds'))} "
+                        f"ttft={_fmt_seconds(item.get('ttft_seconds'))} "
+                        f"prefill~={_fmt_seconds(item.get('prefill_seconds_approx'))} "
+                        f"decode={_fmt_seconds(item.get('decode_seconds'))} "
+                        f"decode_tok_s={_fmt_rate(item.get('decode_tokens_per_second'))} "
+                        f"engine_e2e={_fmt_seconds(item.get('engine_e2e_seconds'))} "
                         f"words={stats['words']} sentences={stats['sentences']} "
                         f"finish={item.get('finish_reason')}"
                     )
 
                 batch_wall = time.perf_counter() - batch_started
-                batch_runtime.append({
+                amortized = batch_wall / len(batch) if batch else 0.0
+                batch_record = {
                     "batch_index": batch_index,
                     "batch_size": len(batch),
                     "images": [item[1] for item in batch],
+                    "prepare_seconds": generation_perf["prepare_seconds"],
                     "generation_seconds": generation_perf["generation_seconds"],
                     "wall_seconds": batch_wall,
-                    "amortized_seconds_per_image": batch_wall / len(batch) if batch else 0.0,
+                    "amortized_seconds_per_image": amortized,
+                    "prompt_tokens": generation_perf["prompt_tokens"],
                     "output_tokens": generation_perf["output_tokens"],
                     "aggregate_output_tokens_per_second": generation_perf["aggregate_output_tokens_per_second"],
-                })
+                }
+                batch_runtime.append(batch_record)
+                print(
+                    "RICH_CAPTION_BATCH_PERF "
+                    f"batch={batch_index}/{total_batches} size={len(batch)} "
+                    f"prepare={generation_perf['prepare_seconds']:.3f}s "
+                    f"generate={generation_perf['generation_seconds']:.3f}s "
+                    f"wall={batch_wall:.3f}s amortized={amortized:.3f}s/image "
+                    f"prompt_tokens={generation_perf['prompt_tokens']} "
+                    f"output_tokens={generation_perf['output_tokens']} "
+                    f"aggregate_output_tok_s={generation_perf['aggregate_output_tokens_per_second']:.2f}"
+                )
         elif loaded is not None:
             for batch_index, (image, key, out_path) in enumerate(pending, start=1):
                 caption, inference_seconds = generate(
@@ -291,12 +395,39 @@ def main() -> int:
                 _write_json(out_path, payload)
                 generated.append(_record_summary(payload))
                 print(
-                    f"RICH_CAPTION_PERF image={image.name} words={stats['words']} "
-                    f"sentences={stats['sentences']} inference={inference_seconds:.3f}s"
+                    "RICH_CAPTION_PERF "
+                    f"image={image.name} batch={batch_index}/{len(pending)} size=1 "
+                    f"inference={inference_seconds:.3f}s words={stats['words']} "
+                    f"sentences={stats['sentences']}"
                 )
     finally:
         if loaded is not None:
             unload_model(loaded)
+
+    batch_size_runtime = _batch_size_runtime(batch_runtime)
+    if batch_runtime:
+        total_wall = sum(float(row.get("wall_seconds") or 0.0) for row in batch_runtime)
+        total_generation = sum(float(row.get("generation_seconds") or 0.0) for row in batch_runtime)
+        total_output_tokens = sum(int(row.get("output_tokens") or 0) for row in batch_runtime)
+        total_prompt_tokens = sum(int(row.get("prompt_tokens") or 0) for row in batch_runtime)
+        generated_images = sum(int(row.get("batch_size") or 0) for row in batch_runtime)
+        print(
+            "RICH_CAPTION_RUN_PERF "
+            f"model_load={model_load_seconds:.3f}s batches={len(batch_runtime)} images={generated_images} "
+            f"generation={total_generation:.3f}s wall={total_wall:.3f}s "
+            f"amortized={total_wall / generated_images if generated_images else 0.0:.3f}s/image "
+            f"prompt_tokens={total_prompt_tokens} output_tokens={total_output_tokens} "
+            f"aggregate_output_tok_s={total_output_tokens / total_generation if total_generation > 0 else 0.0:.2f}"
+        )
+        for row in batch_size_runtime:
+            print(
+                "RICH_CAPTION_BATCH_SIZE_PERF "
+                f"size={row['batch_size']} batches={row['batch_count']} images={row['image_count']} "
+                f"generation={row['generation_seconds']:.3f}s wall={row['wall_seconds']:.3f}s "
+                f"amortized={row['amortized_seconds_per_image']:.3f}s/image "
+                f"prompt_tokens={row['prompt_tokens']} output_tokens={row['output_tokens']} "
+                f"aggregate_output_tok_s={row['aggregate_output_tokens_per_second']:.2f}"
+            )
 
     records = sorted(reused + generated, key=lambda item: str(item.get("image_key") or ""))
     index = {
@@ -310,10 +441,12 @@ def main() -> int:
         "batch_size": args.batch_size,
         "max_tokens": args.max_tokens,
         "vllm_max_model_len": args.vllm_max_model_len,
+        "model_load_seconds": model_load_seconds,
         "record_count": len(records),
         "generated": len(generated),
         "reused": len(reused),
         "batch_runtime": batch_runtime,
+        "batch_size_runtime": batch_size_runtime,
         "records": records,
     }
     _write_json(output_dir / "rich_caption.index.json", index)
