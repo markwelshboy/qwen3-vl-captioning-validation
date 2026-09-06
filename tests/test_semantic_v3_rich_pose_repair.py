@@ -62,12 +62,21 @@ class RichPoseRepairTests(unittest.TestCase):
 
     def test_generic_identity_evasion_is_repair_candidate(self) -> None:
         pose = {"caption_ready_phrases": [], "components": {"relations": []}}
+        # Keep draft/output lengths comparable so this fixture isolates the semantic
+        # identity-evasion gate rather than also tripping the independent expansion gate.
         audit = quality_audit(
-            "A man has shoulder-length wavy hair.",
-            "A man has hair with a natural texture and length that falls to the upper back.",
+            (
+                "A man smiles toward the camera in a close portrait, with shoulder-length "
+                "wavy hair framing his face and a dark shirt visible below."
+            ),
+            (
+                "A man smiles toward the camera in a close portrait, with hair showing a "
+                "natural texture and length that falls to the upper back above a dark shirt."
+            ),
             pose,
         )
         self.assertIn("generic_identity_paraphrase", audit["warnings"])
+        self.assertNotIn("edited_caption_expanded_substantially", audit["warnings"])
         self.assertTrue(_repairable(audit))
         lines = _failure_lines(audit)
         self.assertTrue(any("natural texture" in line.lower() for line in lines))
