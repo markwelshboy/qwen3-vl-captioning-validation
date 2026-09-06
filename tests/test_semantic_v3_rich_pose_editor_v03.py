@@ -48,7 +48,7 @@ class RichPoseEditorV03Tests(unittest.TestCase):
         ]
         self.assertTrue(any("falls forward" in value and "obscuring her face" in value for value in values))
 
-    def test_bare_highlights_and_roots_fail_audit_when_still_in_hair_sentence(self) -> None:
+    def test_bare_highlights_and_roots_fail_audit_when_still_in_hair_dye_context(self) -> None:
         pose = {"components": {"relations": []}}
         audit = quality_audit(
             "He has hair with lighter highlights and darker roots.",
@@ -59,6 +59,15 @@ class RichPoseEditorV03Tests(unittest.TestCase):
         self.assertIn("roots", [value.lower() for value in audit["hair_dye_detail_leaks"]])
         self.assertIn("intrinsic_identity_leakage", audit["warnings"])
         self.assertFalse(audit["passes_basic_gate"])
+
+    def test_lighting_highlights_on_hair_are_allowed(self) -> None:
+        pose = {"components": {"relations": []}}
+        edited = (
+            "Soft window light casts gentle highlights on her hair and the side of her face."
+        )
+        audit = quality_audit(edited, edited, pose)
+        self.assertEqual(audit["hair_dye_detail_leaks"], [])
+        self.assertNotIn("intrinsic_identity_leakage", audit["warnings"])
 
     def test_nonhair_roots_do_not_fail_audit(self) -> None:
         pose = {"components": {"relations": []}}
