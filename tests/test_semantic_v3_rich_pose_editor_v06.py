@@ -97,7 +97,7 @@ class RichPoseEditorV06Tests(unittest.TestCase):
     def test_audit_allows_depicted_long_hair_but_rejects_subject_light_colored_hair(self) -> None:
         pose = {"caption_ready_phrases": [], "components": {"relations": []}}
         draft = (
-            "A man is seated outdoors wearing a black shirt. A portrait tattoo on his arm depicts a bearded "
+            "A man is seated outdoors wearing a black shirt. A portrait tattoo on his arm depicting a bearded "
             "figure with long hair. Green plants and a wooden bench fill the background."
         )
         tattoo_only = quality_audit(draft, draft, pose)
