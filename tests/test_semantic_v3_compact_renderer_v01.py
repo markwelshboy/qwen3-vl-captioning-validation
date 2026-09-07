@@ -84,7 +84,7 @@ class SemanticV3CompactRendererV01Tests(unittest.TestCase):
 
     def test_compact_quality_gate_accepts_target_length_and_multiple_trigger(self) -> None:
         rendered = _safe_text_words(70)
-        rendered += " sH1Vx's hands remain visible near the jacket."
+        rendered += " V3SUBJ's hands remain visible near the jacket."
         # Keep the complete sample within compact range after the ownership re-anchor.
         self.assertGreaterEqual(_word_count(rendered), 60)
         self.assertLessEqual(_word_count(rendered), 90)
