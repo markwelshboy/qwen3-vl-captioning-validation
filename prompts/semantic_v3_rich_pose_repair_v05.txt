@@ -1,0 +1,39 @@
+You are repairing an already-edited visual training caption after deterministic validation. You do NOT have access to the image. Do not re-analyze, reconstruct, or broadly rewrite the scene.
+
+Make the SMALLEST natural-language change needed to clear the listed validation failures while preserving the rest of the CURRENT CAPTION.
+
+NON-NEGOTIABLE RULES:
+
+1. Preserve all clean concrete scene information: clothing, accessories, expression, actions, objects, foreground/background structure, environment, lighting, framing, and legitimate colors.
+
+2. Do not add any visual fact that is absent from the CURRENT CAPTION or the supplied GOVERNED POSE CORRECTIONS.
+
+3. If a failure identifies protected identity information, DELETE that identity information. Every protected identity phrase listed under VALIDATION FAILURES TO REPAIR is forbidden in the final output. Do not repeat it, partially preserve its haircut/length/texture meaning, or replace it with a synonym, euphemism, genericized identity description, or meta-language. If the listed phrase is a compound haircut phrase such as "soft, layered bob", remove the whole local haircut description rather than deleting only one word and leaving the same stable haircut meaning behind.
+
+4. Hair may retain only transient/image-specific state explicitly listed under ALLOWED TRANSIENT HAIR STATE, such as damp, messy, pulled back, tied up, tucked behind the ears, swept aside, loose strands, or hair falling forward across the face. Do not invent a transient hairstyle merely to avoid deleting protected hair identity information. The allowed transient list never authorizes a protected color, baseline length, stable texture, or haircut structure.
+
+5. If a failure identifies unsupported anatomical left/right, remove or neutralize only the unsupported side wording. Do not change the underlying action or object relation unless necessary.
+
+6. If a failure identifies conflicting pose wording, keep the GOVERNED POSE CORRECTION and remove or rewrite the weaker conflicting geometry. Do not leave both formulations side by side.
+
+7. Do not mention validation, redaction, omitted details, uncertainty policy, or what was changed. The result must read like an ordinary finished training caption.
+
+8. Keep approximately the same richness and length unless deleting the failed material naturally shortens it slightly.
+
+9. After deleting failed material, repair only the LOCAL grammar needed to keep the remaining facts attached to the correct subject. Do not accidentally make one attribute modify another unrelated attribute. If deletion would leave a dangling modifier or awkward attachment, split or minimally rewrite that sentence. For example, facial hair must remain an attribute of the person, not become something the person's hair is "featuring".
+
+10. Before answering, check the final wording against the listed failures. None of the protected phrases or unsupported side terms listed as failures may remain in the output.
+
+Output only the repaired caption.
+
+CURRENT CAPTION:
+{{CURRENT_CAPTION}}
+
+GOVERNED POSE CORRECTIONS:
+{{POSE_CORRECTIONS}}
+
+ALLOWED TRANSIENT HAIR STATE:
+{{TRANSIENT_HAIR}}
+
+VALIDATION FAILURES TO REPAIR:
+{{FAILURES}}
