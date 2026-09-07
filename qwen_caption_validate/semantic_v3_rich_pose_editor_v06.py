@@ -36,43 +36,43 @@ _COLOR_EUPHEMISM_RE = re.compile(
     re.IGNORECASE,
 )
 _POST_HAIR_COLOR_RE = re.compile(
-    r"\bhair\s+(?:is|appears|looks)\s+[^.!?]{0,55}?\b"
+    r"(?<!facial )(?<!body )\bhair\s+(?:is|appears|looks)\s+[^.!?]{0,55}?\b"
     r"(?P<value>(?:dark|light)\s+(?:brown|blond(?:e)?|black|red|gray|grey|silver|white)"
     r"|brown|blond(?:e)?|black|red|auburn|gray|grey|silver|white)\b",
     re.IGNORECASE,
 )
 _POST_HAIR_LENGTH_RE = re.compile(
-    r"\bhair\s+(?:is|appears|looks)\s+[^.!?]{0,40}?\b"
+    r"(?<!facial )(?<!body )\bhair\s+(?:is|appears|looks)\s+[^.!?]{0,40}?\b"
     r"(?P<value>medium\s+to\s+long|medium[- ]length|short|long)\b",
     re.IGNORECASE,
 )
 _CUT_LENGTH_RE = re.compile(
-    r"\bhair\s+(?:is\s+)?cut\s+to\s+"
+    r"(?<!facial )(?<!body )\bhair\s+(?:is\s+)?cut\s+to\s+"
     r"(?P<value>(?:shoulder|chin|jaw|neck|waist|hip)\s+length)\b",
     re.IGNORECASE,
 )
 _SHOULDER_REACH_RE = re.compile(
-    r"\bhair\b[^.!?]{0,65}\b(?P<value>"
+    r"(?<!facial )(?<!body )\bhair\b[^.!?]{0,65}\b(?P<value>"
     r"(?:falls|hangs|reaches|extends)\s+(?:loosely\s+)?"
     r"(?:to|over|around)\s+(?:her|his|their|the)?\s*"
     r"(?:shoulders?|upper\s+back|mid[- ]back|lower\s+back|waist|hips?))\b",
     re.IGNORECASE,
 )
 _BOB_RE = re.compile(
-    r"\bhair\b[^.!?]{0,70}\b(?:styled\s+(?:in|into|as)\s+)?"
+    r"(?<!facial )(?<!body )\bhair\b[^.!?]{0,70}\b(?:styled\s+(?:in|into|as)\s+)?"
     r"(?:a\s+)?(?P<value>(?:soft\s+|short\s+)?bob)\b",
     re.IGNORECASE,
 )
 _LAYER_RE = re.compile(
-    r"\bhair\b[^.!?]{0,70}\b(?P<value>soft\s+layers?|layered)\b",
+    r"(?<!facial )(?<!body )\bhair\b[^.!?]{0,70}\b(?P<value>soft\s+layers?|layered)\b",
     re.IGNORECASE,
 )
 _WAVE_CURL_RE = re.compile(
-    r"\bhair\b[^.!?]{0,80}\b(?P<value>(?:soft|gentle|natural)\s+(?:waves?|curls?))\b",
+    r"(?<!facial )(?<!body )\bhair\b[^.!?]{0,80}\b(?P<value>(?:soft|gentle|natural)\s+(?:waves?|curls?))\b",
     re.IGNORECASE,
 )
 _NATURAL_TEXTURE_RE = re.compile(
-    r"\bhair\b[^.!?]{0,90}\b(?P<value>"
+    r"(?<!facial )(?<!body )\bhair\b[^.!?]{0,90}\b(?P<value>"
     r"naturally\s+textured"
     r"|(?:appears|looks|is)[^.!?]{0,40}\btextured"
     r"|volume\s+and\s+texture)\b",
@@ -164,7 +164,8 @@ def _mention_has_primary_hair_context(text: str, value: str) -> bool:
         sentence = text[sentence_start:sentence_end]
         local_start = max(0, match.start() - sentence_start - 90)
         local_end = min(len(sentence), match.end() - sentence_start + 90)
-        if re.search(r"\bhair\b", sentence[local_start:local_end], re.IGNORECASE):
+        local = sentence[local_start:local_end]
+        if re.search(r"(?<!facial )(?<!body )\bhair\b", local, re.IGNORECASE):
             return True
     return False
 
