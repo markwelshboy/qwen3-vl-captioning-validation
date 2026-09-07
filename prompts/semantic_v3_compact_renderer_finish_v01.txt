@@ -1,0 +1,57 @@
+You are making a FINAL, MINIMAL repair to a trigger-bound training caption that failed deterministic validation. You do NOT have access to the image. Do not re-analyze the scene and do not broadly rewrite a caption that is already close to correct.
+
+PRIMARY GOAL
+Produce one fluent final training caption inside the requested word range while clearing every listed HARD FAILURE.
+
+TARGET PROFILE: {{PROFILE}}
+FINAL ALLOWED RANGE: {{MIN_WORDS}}–{{MAX_WORDS}} words
+PREFERRED LANDING RANGE: {{PREFERRED_MIN_WORDS}}–{{PREFERRED_MAX_WORDS}} words
+
+For an overlength caption, DELETE lower-value detail until the caption lands inside the preferred range. Do not merely rephrase every existing fact more compactly. You are expected to remove facts.
+
+PRESERVE IN THIS ORDER
+1. Exact trigger binding and clear primary-subject/body-part ownership.
+2. Governed unusual pose/orientation facts.
+3. Important framing, crop, viewpoint, or foreshortening.
+4. Main clothing, main action/expression, and only salient accessories.
+5. At least one useful major scene/environment anchor when one is already present.
+6. Salient transient hair state already present, without converting it into stable identity.
+
+DELETE FIRST
+- Repeated pose/action wording.
+- Brands, logos, stitching, trim, minor color/material detail.
+- Secondary accessories and low-value object inventories.
+- Minor background objects and decorative scenery.
+- Fine lighting/surface detail after the main setting is clear.
+- Generic concluding commentary.
+- Negative inventory such as absent jewelry or accessories.
+
+TRIGGER / COREFERENCE
+- Exact trigger: {{TRIGGER}}
+- Begin directly with that trigger as the grammatical primary subject. Natural appositive phrasing such as "{{TRIGGER}}, in a close-up portrait, ..." is allowed.
+- Use the supplied pronouns naturally: {{SUBJECT_PRONOUN}} / {{OBJECT_PRONOUN}} / {{POSSESSIVE_PRONOUN}} / {{REFLEXIVE_PRONOUN}}.
+- The trigger may repeat when necessary to re-anchor body-part/clothing ownership or after another person/depicted figure. Do not repeat it mechanically.
+- Never bind the trigger to a secondary/background person or depicted figure.
+
+SEMANTIC SAFETY
+- Do not add facts absent from the CURRENT CAPTION or VALIDATED SEMANTIC SOURCE.
+- Do not add intrinsic identity traits or apparent-age cues.
+- If a failure names unsupported anatomical laterality, remove ONLY that side word and preserve the underlying action/relationship in neutral wording.
+- If a failure names protected hair identity, remove only the stable identity meaning while preserving legitimate transient state such as dampness, pulled-back styling, or loose strands.
+- Do not infer a side from "the other hand", frame position, nearby objects, clothing logos, or another body part.
+- Preserve secondary/background people only when useful; do not transfer their attributes to the trigger.
+- Output only the finished caption. No labels, explanations, analysis, or word-count commentary.
+
+GOVERNED POSE FACTS
+{{POSE_CORRECTIONS}}
+
+HARD FAILURES TO CLEAR
+{{FAILURES}}
+
+CURRENT CAPTION
+{{CURRENT_CAPTION}}
+
+VALIDATED SEMANTIC SOURCE — factual reference only; DO NOT re-expand toward this longer version
+{{SEMANTIC_CAPTION}}
+
+Output only the repaired final caption.
