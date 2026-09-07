@@ -36,7 +36,7 @@ _COMMA_CUT_LENGTH_RE = re.compile(
     re.IGNORECASE,
 )
 _COMPOUND_BOB_RE = re.compile(
-    r"\bhair\b[^.!?]{0,85}\b(?P<value>"
+    r"\bhair\b[^.!?]{0,85}?\b(?P<value>"
     r"(?:(?:soft|short)\s*,?\s*)?(?:layered\s+)?bob)\b",
     re.IGNORECASE,
 )
