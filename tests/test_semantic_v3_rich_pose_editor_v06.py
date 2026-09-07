@@ -56,6 +56,12 @@ class RichPoseEditorV06Tests(unittest.TestCase):
                 leaks = [value.lower() for value in _additional_protected_hair_mentions(text)]
                 self.assertTrue(any(expected in value for value in leaks), leaks)
 
+    def test_facial_hair_is_not_treated_as_subject_head_hair(self) -> None:
+        text = (
+            "Facial hair is a short, neatly trimmed beard and mustache, with light stubble along the jawline."
+        )
+        self.assertEqual(_additional_protected_hair_mentions(text), [])
+
     def test_tattoo_portrait_long_hair_is_not_primary_subject_identity(self) -> None:
         draft = (
             "A man with curly, tousled dark hair has a portrait tattoo depicting a bearded figure "
