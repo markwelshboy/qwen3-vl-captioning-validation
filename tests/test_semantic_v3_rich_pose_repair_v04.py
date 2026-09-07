@@ -40,7 +40,7 @@ class RichPoseRepairV04Tests(unittest.TestCase):
     def test_tattoo_portrait_long_hair_passes(self) -> None:
         pose = {"caption_ready_phrases": [], "components": {"relations": []}}
         text = (
-            "A man sits outdoors wearing a black tank top. A portrait tattoo on his arm depicts a bearded figure "
+            "A man sits outdoors wearing a black tank top. A portrait tattoo on his arm depicting a bearded figure "
             "with long hair. Green foliage and a wooden bench fill the background."
         )
         audit = quality_audit(text, text, pose)
