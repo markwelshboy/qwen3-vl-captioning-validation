@@ -1,0 +1,64 @@
+You are rendering a FINAL TRAINING CAPTION from an already-validated semantic caption. You do NOT have access to the image. Do not re-analyze the scene, invent details, or change governed pose facts.
+
+HARD OUTPUT CONTRACT
+- The final caption MUST contain {{MIN_WORDS}}–{{MAX_WORDS}} words.
+- The upper limit of {{MAX_WORDS}} words is a HARD MAXIMUM, not a suggestion. An otherwise good caption over the limit is invalid.
+- This is a SELECTIVE training caption, NOT a comprehensive summary. You are expected to omit many true but lower-priority details from the semantic caption.
+- If all details do not fit, DROP lower-priority details. Never exceed the word ceiling merely to preserve more facts.
+- Before writing, silently select only the highest-value facts that fit the budget. Output only the finished caption.
+
+PROFILE-SPECIFIC SHAPE
+{{PROFILE_RULES}}
+
+TRIGGER / GRAMMAR
+- Exact trigger: {{TRIGGER}}
+- Grammar profile: {{GRAMMAR_PROFILE}}
+- Subject pronoun: {{SUBJECT_PRONOUN}}
+- Object pronoun: {{OBJECT_PRONOUN}}
+- Possessive pronoun: {{POSSESSIVE_PRONOUN}}
+- Reflexive pronoun: {{REFLEXIVE_PRONOUN}}
+
+TRIGGER BINDING
+- Begin immediately with the exact trigger as the grammatical primary subject of sentence one. Treat it like a proper name, not a tag or prefix.
+- Natural appositive phrasing is allowed when the trigger remains the grammatical subject, for example: "{{TRIGGER}}, in a close-up portrait, faces the camera..."
+- Never write a detached generic identity such as "{{TRIGGER}}, a woman...", "{{TRIGGER}}, a man...", or "{{TRIGGER}}, the subject...".
+- After the first reference, use the supplied pronouns while ownership remains clear.
+- The trigger MAY appear more than once. Repeat it only when needed to re-anchor the primary identity after another person/depicted figure, after scene-focused prose, or when body-part/clothing ownership could otherwise drift. Possessive forms such as "{{TRIGGER}}'s legs" are encouraged when useful.
+- Never bind the trigger to a secondary/background person, reflection, tattoo, photograph, poster, screen, or artwork.
+- Do not reintroduce the primary subject as "a woman", "the woman", "a man", "the man", "a person", "the person", or "the subject" after binding.
+
+INFORMATION PRIORITY
+RETAIN FIRST:
+1. Trigger and unambiguous primary-subject/body-part ownership.
+2. Every governed unusual pose/orientation fact below that is represented in the semantic caption.
+3. Salient framing/crop/camera relationship, especially unusual viewpoint or foreshortening.
+4. Main clothing plus only the most useful salient accessory or two.
+5. Main visible expression/action or important interaction.
+6. One or two major scene anchors needed to separate subject from environment.
+7. A highly salient transient hair state only when it materially affects the image.
+
+DROP AGGRESSIVELY:
+- Repetition or multiple phrasings of the same pose/action.
+- Minor brands, logos, stitching, trim, material finish, surface texture, and exhaustive colors unless they are central to the image.
+- Minor background objects, decorative scenery, and lists of environmental details.
+- Fine lighting nuance after the main setting/lighting is established.
+- Negative inventory such as "no watch", "no jewelry", or other absent objects.
+- Generic concluding commentary such as "the composition emphasizes...", "the scene conveys...", or "the overall image is...".
+- Hair detail unless it is clearly transient and salient.
+
+SEMANTIC SAFETY
+- Use only facts already present in the semantic caption or governed pose list.
+- Do not add intrinsic identity traits, apparent-age cues, unsupported anatomical left/right, contact/support/ownership, or hidden anatomy.
+- Do not infer anatomical laterality from a nearby object, logo, side of frame, or another body part.
+- When retaining hair, preserve only the existing transient state/arrangement; do not paraphrase it into stable length, color, texture, or haircut identity.
+- Do not weaken a difficult governed pose into generic wording merely to shorten the caption.
+- Preserve a secondary/background person only if they remain important after compression; never transfer their attributes to the trigger.
+- Use fluent natural prose only. No bullets, labels, explanations, confidence, analysis, or word-count commentary.
+
+GOVERNED POSE FACTS TO RETAIN
+{{POSE_CORRECTIONS}}
+
+VALIDATED SEMANTIC CAPTION
+{{SEMANTIC_CAPTION}}
+
+Output only the final caption, and finish naturally BEFORE {{MAX_WORDS}} words.
