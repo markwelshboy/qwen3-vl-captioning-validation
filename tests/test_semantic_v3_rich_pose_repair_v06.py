@@ -14,11 +14,13 @@ class RichPoseRepairV06Tests(unittest.TestCase):
     def test_hair_styled_in_a_cut_is_repair_candidate(self) -> None:
         pose = {"caption_ready_phrases": [], "components": {"relations": []}}
         draft = (
-            "A woman sits in an airplane cabin wearing glasses. Loose strands frame her face and sweep to the side."
+            "A woman sits in an airplane cabin wearing glasses and a patterned top. Loose strands frame her face "
+            "and sweep to the side. Rows of seats and overhead bins are visible behind her."
         )
         edited = (
             "A woman with hair styled in a cut, with loose strands framing her face and swept slightly to the side, "
-            "sits in an airplane cabin wearing glasses."
+            "sits in an airplane cabin wearing glasses and a patterned top. Rows of seats and overhead bins are "
+            "visible behind her."
         )
         audit = quality_audit(draft, edited, pose)
         self.assertIn("hair styled in a cut", [value.lower() for value in audit["awkward_haircut_residue"]])
