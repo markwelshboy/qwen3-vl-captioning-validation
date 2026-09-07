@@ -44,17 +44,18 @@ class RichPoseEditorV06Tests(unittest.TestCase):
         self.assertTrue(any("texture" in value for value in leaks))
 
     def test_bob_waves_curls_and_explicit_length_are_protected(self) -> None:
-        samples = {
-            "Her hair is styled in a short bob, with loose wisps framing her face.": "short bob",
-            "Her hair is styled with a side part and soft waves, with strands tucked behind one ear.": "soft waves",
-            "His hair falls in soft curls around his face and shoulders.": "soft curls",
-            "Her hair is cut to shoulder length and swept back from her face.": "shoulder length",
-            "Her hair falls to her shoulders, partially covering her face.": "falls to her shoulders",
-        }
-        for text, expected in samples.items():
+        samples = [
+            ("Her hair is styled in a short bob, with loose wisps framing her face.", ("short", "bob")),
+            ("Her hair is styled with a side part and soft waves, with strands tucked behind one ear.", ("soft waves",)),
+            ("His hair falls in soft curls around his face and shoulders.", ("soft curls",)),
+            ("Her hair is cut to shoulder length and swept back from her face.", ("shoulder length",)),
+            ("Her hair falls to her shoulders, partially covering her face.", ("falls to her shoulders",)),
+        ]
+        for text, expected_parts in samples:
             with self.subTest(text=text):
                 leaks = [value.lower() for value in _additional_protected_hair_mentions(text)]
-                self.assertTrue(any(expected in value for value in leaks), leaks)
+                for expected in expected_parts:
+                    self.assertTrue(any(expected in value for value in leaks), leaks)
 
     def test_facial_hair_is_not_treated_as_subject_head_hair(self) -> None:
         text = (
