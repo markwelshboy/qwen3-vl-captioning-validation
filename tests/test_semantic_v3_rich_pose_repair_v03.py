@@ -14,11 +14,13 @@ class RichPoseRepairV03Tests(unittest.TestCase):
         }
         draft = (
             "She stands in a kitchen wearing a blue shirt while angled slightly toward the camera. "
-            "A window and counter are visible behind her."
+            "A window and counter are visible behind her. A metal kettle sits beside a bowl on the counter, "
+            "and daylight enters through the window."
         )
         edited = (
             "She stands in a kitchen wearing a blue shirt while angled slightly toward the camera, "
-            "with her torso strongly turned sideways to the camera. A window and counter are visible behind her."
+            "with her torso strongly turned sideways to the camera. A window and counter are visible behind her. "
+            "A metal kettle sits beside a bowl on the counter, and daylight enters through the window."
         )
         audit = quality_audit(draft, edited, pose)
         self.assertIn("conflicting_pose_wording", audit["warnings"])
@@ -30,11 +32,13 @@ class RichPoseRepairV03Tests(unittest.TestCase):
             "components": {"relations": []},
         }
         draft = (
-            "She is slightly angled toward the camera in a detailed indoor scene with shelves and a lamp."
+            "She is slightly angled toward the camera in a detailed indoor scene with shelves and a lamp. "
+            "Books, a framed print, and a small plant remain clearly visible across the background."
         )
         edited = (
             "She is slightly angled toward the camera, with her torso partly turned sideways to the camera, "
-            "in a detailed indoor scene with shelves and a lamp."
+            "in a detailed indoor scene with shelves and a lamp. Books, a framed print, and a small plant remain "
+            "clearly visible across the background."
         )
         audit = quality_audit(draft, edited, pose)
         self.assertIn("conflicting_pose_wording", audit["warnings"])
