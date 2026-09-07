@@ -1,0 +1,56 @@
+You are rendering a FINAL TRAINING CAPTION from an already-validated semantic caption. You do NOT have access to the image. Do not re-analyze the scene, invent details, or change governed pose facts.
+
+Your two jobs are:
+1. Compress the semantic caption to the requested training-caption length while preserving the most useful supervision.
+2. Bind the supplied TRIGGER naturally to the PRIMARY SUBJECT, maintaining clear ownership/coreference throughout the caption.
+
+TARGET LENGTH: {{MIN_WORDS}}–{{MAX_WORDS}} words. Aim near the middle of the range, but never sacrifice a governed unusual pose fact merely to be shorter.
+
+TRIGGER / GRAMMAR:
+- Exact trigger: {{TRIGGER}}
+- Grammar profile: {{GRAMMAR_PROFILE}}
+- Subject pronoun: {{SUBJECT_PRONOUN}}
+- Object pronoun: {{OBJECT_PRONOUN}}
+- Possessive pronoun: {{POSSESSIVE_PRONOUN}}
+- Reflexive pronoun: {{REFLEXIVE_PRONOUN}}
+
+TRIGGER BINDING RULES:
+- Begin directly with the exact trigger as the grammatical primary subject of the first sentence. Treat it like a proper name, not a tag or prefix.
+- Do not write constructions such as "{{TRIGGER}}, a woman...", "{{TRIGGER}}, a man...", or "{{TRIGGER}}, the subject...".
+- After the first reference, use the supplied pronouns naturally while ownership remains unambiguous.
+- The trigger MAY appear more than once. Repeat it when needed to re-anchor the primary identity after another person/depicted figure has been discussed, after a long scene-focused passage, or when explicit body-part/clothing ownership would otherwise be unclear. Natural possessive forms such as "{{TRIGGER}}'s legs" are encouraged when they remove ambiguity.
+- Do not mechanically repeat the trigger in every sentence. Use it as a discourse/ownership anchor.
+- Never bind the trigger to a secondary/background person, a person in a reflection, or a depicted figure in a tattoo, photograph, poster, screen, or artwork.
+- Do not refer to the primary subject as "a woman", "the woman", "a man", "the man", "a person", "the person", or "the subject" after binding. Generic person terms remain allowed for genuinely secondary people.
+
+COMPRESSION PRIORITY — RETAIN FIRST:
+1. Trigger and unambiguous primary-subject/body-part ownership.
+2. Every governed unusual pose/orientation fact listed below when it is represented in the semantic caption.
+3. Salient framing/crop/camera relationship, especially unusual viewpoint or foreshortening.
+4. Clothing and salient accessories.
+5. Visible expression/action and important interactions.
+6. Major scene anchors that define the composition or should not be absorbed into the learned identity.
+7. Salient transient hair state/arrangement already present in the semantic caption.
+
+DROP OR COMPRESS FIRST:
+- Repeated statements of the same fact.
+- Fine material/surface adjectives that do not identify a major object.
+- Minor lighting nuance once the main lighting/setting is clear.
+- Low-salience background objects.
+- Decorative prose, exhaustive color lists, and redundant spatial wording.
+- Minor scene minutiae that do not help distinguish subject from environment.
+
+NON-NEGOTIABLE SEMANTIC RULES:
+- Preserve only facts already present in the semantic caption or governed pose list.
+- Do not add intrinsic identity traits, apparent-age cues, unsupported anatomical left/right, contact/support/ownership, or hidden anatomy.
+- Do not weaken a difficult governed pose into generic wording such as only "standing", "sitting", or "looking at the camera".
+- Preserve clearly secondary/background people as scene content when they remain salient; do not transfer their attributes to the trigger.
+- Output fluent natural prose only. No bullets, labels, explanations, confidence, or analysis.
+
+GOVERNED POSE FACTS TO RETAIN:
+{{POSE_CORRECTIONS}}
+
+VALIDATED SEMANTIC CAPTION:
+{{SEMANTIC_CAPTION}}
+
+Output only the final trigger-bound training caption.
