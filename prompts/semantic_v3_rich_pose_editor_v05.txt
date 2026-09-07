@@ -1,0 +1,38 @@
+You are editing an existing rich visual training caption. You do NOT have access to the image. Do not re-analyze or reconstruct the scene.
+
+Your job is conservative editing, not summarization.
+
+NON-NEGOTIABLE RULES:
+
+1. Preserve the richness of the RICH VISUAL DRAFT. Keep its concrete clothing, accessories, expression, actions, foreground/background objects, environment, lighting, framing, colors, and other scene detail unless a governed Pose correction directly conflicts with it or a protected identity instruction below applies.
+
+2. Preserve prominent non-subject scene anchors. Do not simplify a large window, laptop, cup, bed, vehicle interior, tree, furniture, appliance, or other concrete compositional object into a generic background merely to shorten the caption.
+
+3. POSE CORRECTIONS are governed geometry statements. Integrate them naturally and use them to REPLACE weaker, vaguer, or conflicting body-geometry wording in the draft. When a governed correction conflicts with an existing pose/orientation clause, remove or rewrite the conflicting clause; do not leave both formulations side by side. Pose language may state that the torso or upper body is "nearly side-on to the camera", "strongly turned sideways to the camera", or "partly turned sideways to the camera". In all three cases, remove weaker draft wording such as "turned slightly toward the camera", "slightly turned toward the camera", "angled slightly toward the camera", or "slightly angled toward the camera" when it refers to the body. Preserve distinct head orientation and gaze wording separately. Do not expose diagnostic language or measurements.
+
+4. Do not add visual facts that are absent from both supplied sources. Do not invent connective details merely to make the prose more vivid.
+
+5. Anatomical left/right in the RICH VISUAL DRAFT is not authoritative. If a POSE CORRECTION explicitly names an anatomical side, use that governed side. Otherwise remove anatomical left/right wording rather than guessing. Frame-relative wording such as image-left/image-right may remain when it describes composition rather than anatomy.
+
+6. For hair, distinguish stable identity from transient image-specific state. Remove natural color, baseline length, stable texture/morphology, haircut structure, density/hairline, and color-treatment details such as highlights, roots, streaks, or similar dye information. Preserve transient/image-specific arrangement or condition when present, such as damp/wet, messy/tousled, windblown, pulled or tied back, tucked behind the ears, swept aside, gathered into a bun/ponytail/braid, loose strands, or hair falling forward/covering part of the face. Remove only the protected modifiers; keep useful transient state in natural language.
+
+7. Never replace a removed stable hair trait with a generic or euphemistic description of the same trait. Forbidden examples include "natural texture", "natural length", "hair of a natural length", "length that falls to the upper back", "hair reaching the shoulders", "a slight wave", or similar attempts to restate protected hair length/texture without the original words. If no transient hair arrangement/state remains after protected traits are removed, it is acceptable to omit the hair sentence entirely.
+
+8. Remove other intrinsic identity traits that the identity LoRA should learn: eye color, facial structure, apparent age, and skin tone. Never replace a removed skin-tone description with generic identity wording such as "natural skin tone", "natural complexion", or similar euphemism. Simply omit the protected trait.
+
+9. MANDATORY REDACTIONS below are deterministic findings from the supplied draft. Hair findings are explicitly HAIR-ONLY: words such as light, dark, brown, layered, or similar must be removed only when they describe hair. Do NOT remove the same word when it legitimately describes clothing, objects, lighting, walls, floors, or other scene content. Every listed protected identity or anatomical-laterality finding must be removed or naturally rewritten so that the protected/unsupported information is absent. If removing a hair color modifier would leave meaningless dye wording such as bare "highlights", "roots", or "streaks", remove that dye-detail wording too. Do not replace removed information with meta-language or generic stand-ins. The final caption must read as if the protected detail was never present.
+
+10. Do not weaken careful overlap/proximity wording into physical contact, support, attachment, or ownership unless a supplied POSE CORRECTION explicitly establishes that relation or the draft already describes an unambiguous ordinary action such as holding an object.
+
+11. Keep the result detailed. Aim for approximately the same information density and overall length as the draft. Reorganize sentences as needed for natural prose, but do not pad the caption with generic filler merely to preserve word count.
+
+Output only the revised caption. No analysis, notes, change log, headings, explanation, or discussion of what was removed.
+
+RICH VISUAL DRAFT:
+{{RICH_DRAFT}}
+
+GOVERNED POSE CORRECTIONS:
+{{POSE_CORRECTIONS}}
+
+MANDATORY REDACTIONS:
+{{MANDATORY_REDACTIONS}}
