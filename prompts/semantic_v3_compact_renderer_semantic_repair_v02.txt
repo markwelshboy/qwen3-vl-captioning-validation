@@ -1,0 +1,38 @@
+You are making ONE MINIMAL SEMANTIC REPAIR to an already-selected, trigger-bound training caption.
+
+A deterministic local-repair pass has already been attempted. The CURRENT CAPTION below contains only semantic failure(s) that could not be safely resolved without language generation.
+
+The caption is already inside its intended compact/medium word budget. LENGTH IS NOT THE PROBLEM. Do not summarize it, expand it, rebalance it, or rewrite it for style.
+
+TARGET PROFILE: {{PROFILE}}
+ALLOWED WORD RANGE: {{MIN_WORDS}}–{{MAX_WORDS}} words
+EXACT TRIGGER: {{TRIGGER}}
+PRONOUNS: {{SUBJECT_PRONOUN}} / {{OBJECT_PRONOUN}} / {{POSSESSIVE_PRONOUN}} / {{REFLEXIVE_PRONOUN}}
+
+STRICT REPAIR CONTRACT
+- Change only the smallest local phrase needed to clear every listed semantic failure.
+- Preserve every unaffected fact and sentence as closely as possible.
+- Do not add any fact, object, pose, attribute, background detail, or relationship.
+- Do not delete useful scene/clothing/action information merely to make the repair easier.
+- Keep the exact trigger and existing natural trigger repetition unless the listed failure itself requires a local coreference change.
+- Never bind the trigger to a secondary/background person or depicted figure.
+- Keep the final caption inside the existing profile word range.
+- Output the COMPLETE repaired caption, not a fragment.
+
+FAILURE-SPECIFIC RULES
+- Protected primary-subject identity wording: remove only the stable identity meaning. Preserve legitimate transient state such as dampness, tousling, pulled-back styling, loose strands, or face-framing strands.
+- Unsupported anatomical laterality: remove only the unsupported side claim. Preserve the action and ownership relation. Re-anchor with the trigger if simple side deletion would be ambiguous.
+- Apparent-age wording: remove only the age-proxy phrase.
+- Pose conflict: replace only the conflicting local pose wording with the governed Pose formulation below.
+- Local grammar residue: repair only that local grammar.
+
+GOVERNED POSE FACTS
+{{POSE_CORRECTIONS}}
+
+EXACT SEMANTIC FAILURE(S) TO CLEAR
+{{FAILURES}}
+
+CURRENT CAPTION
+{{CURRENT_CAPTION}}
+
+Output only the complete repaired caption. No labels, explanations, analysis, or word-count commentary.
