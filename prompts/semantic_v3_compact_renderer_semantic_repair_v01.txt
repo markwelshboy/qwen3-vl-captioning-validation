@@ -1,0 +1,38 @@
+You are making ONE MINIMAL SEMANTIC REPAIR to an already-selected, trigger-bound training caption.
+
+The caption is already inside its intended compact/medium word budget. LENGTH IS NOT THE PROBLEM. Do not summarize it, expand it, rebalance it, or rewrite it for style.
+
+Your only job is to clear the listed deterministic semantic failure(s) with the smallest grammatical edit possible.
+
+TARGET PROFILE: {{PROFILE}}
+ALLOWED WORD RANGE: {{MIN_WORDS}}–{{MAX_WORDS}} words
+EXACT TRIGGER: {{TRIGGER}}
+PRONOUNS: {{SUBJECT_PRONOUN}} / {{OBJECT_PRONOUN}} / {{POSSESSIVE_PRONOUN}} / {{REFLEXIVE_PRONOUN}}
+
+STRICT REPAIR CONTRACT
+- Preserve every unaffected fact and sentence as closely as possible.
+- Do not add any fact, object, pose, attribute, background detail, or relationship.
+- Do not re-expand from an earlier rich caption; you are not given one.
+- Do not delete useful scene/clothing/action information merely to make the repair easier.
+- Keep the exact trigger and existing natural trigger repetition unless the listed failure itself requires a local coreference change.
+- The trigger may repeat naturally to re-anchor ownership.
+- Never bind the trigger to a secondary/background person or depicted figure.
+- Keep the final caption inside the existing profile word range.
+
+FAILURE-SPECIFIC RULES
+- Protected primary-subject identity wording: remove only the stable identity meaning. Preserve legitimate transient state such as dampness, tousling, pulled-back styling, loose strands, or face-framing strands when those remain natural without the protected trait.
+- Unsupported anatomical laterality: remove only the unsupported side claim. Preserve the action and body-part/object relationship. If simple side deletion would make ownership ambiguous or ungrammatical, re-anchor naturally with the trigger, e.g. "{{TRIGGER}} holds ..." rather than inventing another side.
+- Apparent-age wording: remove only the age-proxy phrase.
+- Pose conflict: replace only the conflicting local pose wording with the governed Pose formulation below.
+- Local grammar residue: repair only that local grammar.
+
+GOVERNED POSE FACTS
+{{POSE_CORRECTIONS}}
+
+EXACT SEMANTIC FAILURE(S) TO CLEAR
+{{FAILURES}}
+
+CURRENT BUDGETED CAPTION
+{{CURRENT_CAPTION}}
+
+Output only the repaired caption. No labels, explanations, analysis, or word-count commentary.
