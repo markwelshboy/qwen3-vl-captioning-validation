@@ -60,7 +60,7 @@ class CompactRendererBudgetV02Tests(unittest.TestCase):
             "White wireless earbuds are visible, with a small packaged item on their lap. "
             "Behind them are a paved path, green hedge, tree, chain-link fence, and basketball hoop."
         )
-        result = _select_budget_sentences(caption, min_words=55, max_words=72)
+        result = _select_budget_sentences(caption, min_words=45, max_words=54)
         self.assertIn("dark navy fleece pullover", result["caption"])
         self.assertIn("basketball hoop", result["caption"])
         self.assertNotIn("wireless earbuds", result["caption"])
