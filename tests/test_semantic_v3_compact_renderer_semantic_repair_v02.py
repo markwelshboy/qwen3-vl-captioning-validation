@@ -23,7 +23,7 @@ class CompactRendererSemanticRepairV02Tests(unittest.TestCase):
         self.assertTrue(result["changed"])
         self.assertNotIn("around their shoulders", result["caption"])
         self.assertIn("Their tousled hair", result["caption"])
-        self.assertIn("strands partially framing their face", result["caption"])
+        self.assertIn("Their tousled hair partially frames their face", result["caption"])
         self.assertEqual(result["edits"][0]["kind"], "remove_hair_length_location")
 
     def test_unsupported_right_hand_is_neutralized_without_touching_left_fist(self) -> None:
