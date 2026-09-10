@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-  echo "usage: $0 RUN_DIR --pose-evidence-dir DIR --head-gaze-dir DIR [options...]" >&2
+  echo "usage: $0 RUN_DIR --base-evidence-dir DIR --head-gaze-dir DIR [--pose-candidate-dir DIR] [options...]" >&2
   exit 2
 fi
 
