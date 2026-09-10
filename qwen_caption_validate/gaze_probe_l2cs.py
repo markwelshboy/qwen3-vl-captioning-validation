@@ -13,7 +13,7 @@ import torch
 from .dwpose_compat import target_points_from_profile_record
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
-SCHEMA_VERSION = "gaze-probe-l2cs-0.1"
+SCHEMA_VERSION = "gaze-probe-l2cs-0.2"
 BODY18 = [
     "nose", "neck", "right_shoulder", "right_elbow", "right_wrist",
     "left_shoulder", "left_elbow", "left_wrist", "right_hip", "right_knee",
@@ -140,10 +140,12 @@ def _choose_face(candidates: list[dict[str, Any]], expected_head: list[float] | 
         raise ValueError("no candidates")
     if expected_head is not None:
         expected = np.asarray(expected_head, dtype=np.float64)
+
         def dist(i: int) -> float:
             b = candidates[i]["bbox"]
             center = np.array([(b[0] + b[2]) * 0.5, (b[1] + b[3]) * 0.5])
             return float(np.linalg.norm(center - expected))
+
         return min(range(len(candidates)), key=dist), "nearest_dwpose_head_center"
     return max(range(len(candidates)), key=lambda i: candidates[i]["score"]), "highest_retinaface_score"
 
@@ -170,16 +172,17 @@ def _annotate(image: np.ndarray, bbox: tuple[int, int, int, int], pitch: float, 
     out = image.copy()
     x0, y0, x1, y1 = bbox
     cv2.rectangle(out, (x0, y0), (x1, y1), (0, 255, 0), 2)
-    # Match upstream L2CS vis.py exactly: first returned axis controls x,
-    # second returned axis controls y.
     length = max(40, x1 - x0)
     cx, cy = int((x0 + x1) / 2), int((y0 + y1) / 2)
-    dx = -length * math.sin(pitch) * math.cos(yaw)
-    dy = -length * math.sin(yaw)
+    # Upstream L2CS vis.py expects the model's first returned quantity on the
+    # horizontal axis. model.py shows that quantity is actually yaw; the second
+    # is pitch. Keep the upstream arrow geometry but use corrected semantic names.
+    dx = -length * math.sin(yaw) * math.cos(pitch)
+    dy = -length * math.sin(pitch)
     end = (int(round(cx + dx)), int(round(cy + dy)))
     cv2.arrowedLine(out, (cx, cy), end, (0, 0, 255), 3, cv2.LINE_AA, tipLength=0.16)
     lines = [
-        f"L2CS raw pitch={math.degrees(pitch):+.1f} yaw={math.degrees(yaw):+.1f}",
+        f"L2CS gaze pitch={math.degrees(pitch):+.1f} yaw={math.degrees(yaw):+.1f}",
         f"face acquisition={acquisition}",
     ]
     y = 28
@@ -253,9 +256,13 @@ def _process_one(
     face = image[y0:y1, x0:x1]
     rgb = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
     rgb = cv2.resize(rgb, (224, 224))
-    pitch_arr, yaw_arr = pipeline.predict_gaze(np.stack([rgb]))
-    pitch = float(np.asarray(pitch_arr).reshape(-1)[0])
-    yaw = float(np.asarray(yaw_arr).reshape(-1)[0])
+
+    # L2CS-Net model.py returns (yaw_logits, pitch_logits), but the upstream
+    # Pipeline.predict_gaze() assigns those outputs to (pitch, yaw). Therefore
+    # its returned tuple is semantically (yaw, pitch). Correct that here.
+    upstream_first, upstream_second = pipeline.predict_gaze(np.stack([rgb]))
+    yaw = float(np.asarray(upstream_first).reshape(-1)[0])
+    pitch = float(np.asarray(upstream_second).reshape(-1)[0])
 
     overlay_path = output_dir / f"{image_path.stem}.l2cs.png"
     cv2.imwrite(overlay_path.as_posix(), _annotate(image, bbox, pitch, yaw, acquisition))
@@ -282,16 +289,17 @@ def _process_one(
             "retry_crop": geometry.get("retry_crop"),
         },
         "gaze": {
-            "pitch_rad_upstream": pitch,
-            "yaw_rad_upstream": yaw,
-            "pitch_deg_upstream": math.degrees(pitch),
-            "yaw_deg_upstream": math.degrees(yaw),
+            "pitch_rad": pitch,
+            "yaw_rad": yaw,
+            "pitch_deg": math.degrees(pitch),
+            "yaw_deg": math.degrees(yaw),
             "forward_deviation_deg": _forward_deviation_deg(pitch, yaw),
+            "upstream_pipeline_return_order": ["yaw", "pitch"],
         },
         "overlay": overlay_path.as_posix(),
         "notes": [
-            "Pitch/yaw names and signs are preserved exactly from the upstream L2CS API.",
-            "Overlay arrow uses the upstream L2CS vis.py formula.",
+            "Corrected known upstream L2CS Pipeline pitch/yaw label swap: model.py returns yaw logits then pitch logits.",
+            "Overlay keeps upstream L2CS arrow geometry with corrected semantic axis names.",
             "forward_deviation_deg is angular magnitude from L2CS zero direction; it is not a gaze-to-camera-lens measurement.",
             "DWPose is used only for target-face selection and optional detector retry, not for gaze inference.",
         ],
@@ -339,7 +347,7 @@ def main() -> int:
             gaze = record["gaze"]
             print(
                 f"{record['image_key']}: "
-                f"raw(p={gaze['pitch_deg_upstream']:+.1f}, y={gaze['yaw_deg_upstream']:+.1f}, "
+                f"gaze(p={gaze['pitch_deg']:+.1f}, y={gaze['yaw_deg']:+.1f}, "
                 f"forward={gaze['forward_deviation_deg']:.1f}) "
                 f"face={record['face_acquisition']['method']} score={record['selected_face_score']:.3f}"
             )
