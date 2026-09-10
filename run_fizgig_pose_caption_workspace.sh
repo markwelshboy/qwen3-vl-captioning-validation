@@ -18,4 +18,17 @@ if [[ ! -x "$PY" ]]; then
   exit 2
 fi
 
+# Some pod/runtime environments export HF_HUB_ENABLE_HF_TRANSFER=1 globally,
+# while this dedicated vLLM environment intentionally does not install the
+# optional hf_transfer package. Hugging Face then fails before model loading.
+# Keep fast transfer enabled when the package is actually available; otherwise
+# disable only this obsolete optional path and let huggingface_hub use its
+# normal downloader/cache.
+if [[ "${HF_HUB_ENABLE_HF_TRANSFER:-0}" == "1" ]]; then
+  if ! "$PY" -c 'import hf_transfer' >/dev/null 2>&1; then
+    echo "INFO: HF_HUB_ENABLE_HF_TRANSFER=1 but hf_transfer is unavailable; disabling hf_transfer for this run."
+    export HF_HUB_ENABLE_HF_TRANSFER=0
+  fi
+fi
+
 exec "$PY" -m qwen_caption_validate.fizgig_pose_caption "$IMAGES_DIR" "$@"
