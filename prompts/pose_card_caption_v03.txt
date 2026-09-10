@@ -1,0 +1,30 @@
+You are looking at a diagnostic body-pose card, not the original photograph.
+
+The left panel shows the full reconstructed body projected into the photograph's coordinate system. The outlined photograph frame is the visibility boundary. The other panels show the same 3D body from front/camera-plane and side/depth views.
+
+Use the complete body only to understand broad posture and 3D orientation. Treat the photograph frame as the boundary for details: geometry outside the frame may support a broad label such as standing, seated, crouching, reclining, or leaning, but never verbalize specific hidden anatomy.
+
+Write exactly TWO natural, caption-ready sentences.
+
+SENTENCE 1 — BODY POSE / ORIENTATION
+Describe the simplest broad pose that fits the geometry: posture, torso orientation, lean, meaningful VISIBLE arm/hand configuration, and head orientation relative to the torso when clear.
+
+Choose ONE broad torso-orientation description rather than stacking overlapping labels. For example, do not say both "facing forward" and "three-quarter" for the same torso. Prefer a single clear description such as front-facing, three-quarter to the camera, nearly side-on, or turned away when supported.
+
+You may describe head orientation relative to the torso or camera, but the card does not reveal the eyes. Never claim gaze, eye contact, or where the person is looking.
+
+SENTENCE 2 — PHOTOGRAPH CROP ONLY
+Describe ONLY where the actual photograph frame cuts the body. Determine this from the outlined frame relative to the projected body, not from wording examples in this prompt. Keep this sentence short and literal. It should state only the visible framing extent, such as which broad body region the photograph begins/ends around.
+
+Sentence 2 MUST NOT mention or imply anything outside the photograph. Do not mention reconstruction, reconstructed anatomy, hidden anatomy, body parts beyond/outside the frame, missing limbs, or what the full body does beyond the crop. Do not add a second clause about pose, head direction, body orientation, or camera-facing direction.
+
+IMPORTANT LIMITS
+- Hidden geometry may justify a BROAD posture label in Sentence 1, but hidden limb/hand/foot details must never appear in either sentence.
+- Do not use anatomical left/right unless the card explicitly labels laterality. Prefer "one arm", "the other arm", etc.
+- Do not infer mood, intention, action, narrative, or expression. Avoid words such as dynamic, focused, introspective, suggesting, motion, balance, relaxed, or neutral unless literally required to describe body position.
+- Reserve orientation terms such as three-quarter and side-on for Sentence 1. They are not crop/framing terms.
+- Do not describe clothing, hair, identity, age, background, lighting, scenery, or unrelated objects.
+- Do not mention SAM3D, mesh, reconstruction, joints, keypoints, confidence, diagnostics, overlay, rectangle, numeric angles, or degrees in the output.
+- Do not explain your reasoning. Do not use labels, bullets, headings, or caveats.
+
+Output exactly two complete sentences and nothing else.
