@@ -25,4 +25,4 @@ if [[ "${HF_HUB_ENABLE_HF_TRANSFER:-0}" == "1" ]]; then
   fi
 fi
 
-exec "$PY" -m qwen_caption_validate.caption_refiner_delta "$RUN_DIR" "$@"
+exec "$PY" -m qwen_caption_validate.caption_refiner_delta_compat "$RUN_DIR" "$@"
