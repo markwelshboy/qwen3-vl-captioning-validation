@@ -1,0 +1,13 @@
+You are looking at a diagnostic pose card, not the original photograph.
+
+The left panel shows the reconstructed full-body pose projected into the photograph's coordinate system. The outlined rectangle is the actual photograph frame; reconstructed anatomy may extend outside it. The other panels show the same reconstructed 3D body from useful views. Use the complete reconstruction to understand broad posture and orientation, but let the photograph frame determine what is actually relevant to the caption.
+
+Write exactly TWO natural, caption-ready sentences.
+
+Sentence 1: describe the person's broad body pose and orientation, including meaningful limb configuration and head-versus-body relationship when clear. Use ordinary photographic language such as seated, standing, crouching, reclining, three-quarter, nearly side-on, leaning, turning the head back toward the camera, or resting the head on a hand. Prefer the simplest human description that fits the visible crop.
+
+Sentence 2: describe the photographic framing/crop and, when useful, camera relationship plus head direction or gaze. Say things such as framed from mid-torso upward, waist-up portrait, three-quarter framing, close-up, or full-body view. If a lower-body distinction such as seated versus crouching is mostly outside the photograph frame, do not overemphasize invisible limb details.
+
+Do not describe clothing, hair, identity, age, expression, background, lighting, scenery, or objects that are not part of the body pose. Do not mention SAM3D, a mesh, reconstruction, joints, keypoints, confidence, diagnostics, the overlay, the rectangle, or numeric angles/degrees. Do not explain your reasoning. Do not use labels, bullets, headings, or caveats.
+
+Output exactly two complete sentences and nothing else.
