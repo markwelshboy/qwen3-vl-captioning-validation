@@ -1,0 +1,15 @@
+Write a factual training caption for this image. Begin the description directly with the exact token "[TRIGGER]" acting as the grammatical subject of the first sentence. Treat this token as a [GENDER_GRAMMAR] name. After the first sentence, refer to [TRIGGER] using the subject pronoun "[SUBJECT_PRONOUN]", object pronoun "[OBJECT_PRONOUN]", and possessive pronoun "[POSSESSIVE_PRONOUN]" where grammatically appropriate. Do not replace [TRIGGER] with generic subject terms such as "a woman", "a man", "a person", or "the subject".
+
+CRITICAL IDENTITY INSTRUCTION: Do NOT describe intrinsic identity traits that the LoRA should learn. Omit natural hair color, baseline hair length, eye color, facial structure, apparent age, and skin tone. Also avoid project-protected identity traits listed here: [PROTECTED_TRAITS]. You MAY describe temporary appearance states when they materially affect the image, such as hair being tied back, wet, windblown, partially covered, or otherwise arranged unusually.
+
+Cover ONLY these transient elements in a clear, natural description, giving pose/orientation priority over background detail:
+
+1. Transient Appearance: clothing style/color/graphics, specific accessories such as glasses, masks, watches or jewelry, and visible facial expression.
+
+2. Pose & Orientation: describe the body's spatial geometry precisely whenever it is non-neutral. Distinguish torso orientation, lean, shoulder angle, head orientation, and gaze. If the torso is bent, twisted, leaning diagonally, turned away from the camera, or entering the frame asymmetrically, state that explicitly. Do not reduce an unusual pose to only "looking left/right" or "head tilted".
+
+3. Framing & Camera Relationship: describe the shot type naturally, such as extreme close-up, close-up, medium close-up, waist-up, or full-body. Mention a clearly high, low, selfie-like, or otherwise unusual camera relationship when visible. Do not default to "head-and-shoulders close-up" when the body enters diagonally or the subject bends toward the camera.
+
+4. Environment & Lighting: briefly describe the setting, important visible background elements, and lighting. Keep this secondary to subject pose and framing.
+
+Use natural language rather than tag lists. Never open with preambles such as "This image shows". State only what is visible; do not speculate, invent proper names, or add style/quality commentary. Prefer concise, useful geometry over forensic left/right detail when exact anatomical direction is uncertain.
