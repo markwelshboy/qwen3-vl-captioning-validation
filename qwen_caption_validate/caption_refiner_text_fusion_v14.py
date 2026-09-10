@@ -232,7 +232,7 @@ def _head_gaze_path(directory: Path, key: str) -> Path | None:
     return matches[0] if matches else None
 
 
-def _pose_record_path(directory: Path, key: str) -> Path | None:
+def _delta_record_path(directory: Path, key: str) -> Path | None:
     direct = directory / f"{key}.delta_refiner.json"
     if direct.is_file():
         return direct
@@ -240,7 +240,7 @@ def _pose_record_path(directory: Path, key: str) -> Path | None:
     return matches[0] if matches else None
 
 
-def _load_pose_records(directory: Path) -> list[dict[str, Any]]:
+def _load_delta_records(directory: Path) -> list[dict[str, Any]]:
     index = _read_json(directory / "caption_refiner_delta.index.json")
     records = index.get("records") if isinstance(index, dict) else None
     if isinstance(records, list):
@@ -252,6 +252,20 @@ def _load_pose_records(directory: Path) -> list[dict[str, Any]]:
         if value:
             out.append(value)
     return out
+
+
+def _index_by_key(directory: Path | None) -> dict[str, dict[str, Any]]:
+    if directory is None:
+        return {}
+    result: dict[str, dict[str, Any]] = {}
+    for summary in _load_delta_records(directory):
+        key = str(summary.get("image_key") or "")
+        if not key:
+            continue
+        path = _delta_record_path(directory, key)
+        payload = _read_json(path) if path else {}
+        result[key] = payload or summary
+    return result
 
 
 def _matches_only(key: str, only: list[str]) -> bool:
@@ -277,8 +291,17 @@ def _generate_vllm_batch(loaded, prompts: list[str], max_tokens: int) -> tuple[l
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Text-only governed evidence fusion refiner v0.14")
     parser.add_argument("run_dir", type=Path)
-    parser.add_argument("--pose-evidence-dir", type=Path, required=True,
-                        help="v0.12 pose-only delta-refiner output; supplies current caption, laterality, and gated pose candidate")
+    parser.add_argument(
+        "--base-evidence-dir",
+        type=Path,
+        required=True,
+        help="Any delta-refiner output containing the canonical existing caption and laterality facts; v0.13 is suitable.",
+    )
+    parser.add_argument(
+        "--pose-candidate-dir",
+        type=Path,
+        help="Optional pose-only delta-refiner output (normally v0.12). Its pose_delta is gated before prompt exposure.",
+    )
     parser.add_argument("--head-gaze-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--prompt", type=Path, default=DEFAULT_PROMPT)
@@ -299,12 +322,16 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     run_dir = args.run_dir.expanduser().resolve()
-    pose_dir = args.pose_evidence_dir.expanduser().resolve()
+    base_dir = args.base_evidence_dir.expanduser().resolve()
+    pose_candidate_dir = args.pose_candidate_dir.expanduser().resolve() if args.pose_candidate_dir else None
     head_gaze_dir = args.head_gaze_dir.expanduser().resolve()
     output_dir = (args.output_dir or run_dir / "caption-refiner-text-fusion-v0.14").expanduser().resolve()
     prompt_path = args.prompt.expanduser().resolve()
 
-    for path, label in ((run_dir, "Run"), (pose_dir, "Pose evidence"), (head_gaze_dir, "Head/gaze evidence")):
+    checks = [(run_dir, "Run"), (base_dir, "Base evidence"), (head_gaze_dir, "Head/gaze evidence")]
+    if pose_candidate_dir is not None:
+        checks.append((pose_candidate_dir, "Pose candidate"))
+    for path, label in checks:
         if not path.is_dir():
             print(f"{label} directory not found: {path}", file=sys.stderr)
             return 2
@@ -317,31 +344,28 @@ def main() -> int:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     template = prompt_path.read_text(encoding="utf-8")
-    pose_records = [record for record in _load_pose_records(pose_dir)
-                    if _matches_only(str(record.get("image_key") or ""), args.only)]
+    base_records = _index_by_key(base_dir)
+    pose_candidates = _index_by_key(pose_candidate_dir)
 
     records: list[dict[str, Any]] = []
     pending: list[tuple[dict[str, Any], Path]] = []
     missing: list[dict[str, str]] = []
 
-    for summary in pose_records:
-        key = str(summary.get("image_key") or "")
-        if not key:
+    for key in sorted(base_records):
+        if not _matches_only(key, args.only):
             continue
-        source_path = _pose_record_path(pose_dir, key)
-        source = _read_json(source_path) if source_path else summary
-        if not source:
-            source = summary
-
-        caption = str(source.get("existing_caption") or summary.get("existing_caption") or "").strip()
+        base = base_records[key]
+        caption = str(base.get("existing_caption") or "").strip()
         if not caption:
             missing.append({"image_key": key, "reason": "missing_existing_caption"})
             continue
 
-        gate = govern_pose_candidate(source.get("pose_delta", summary.get("pose_delta")))
+        candidate_source = pose_candidates.get(key, {}) if pose_candidate_dir else {}
+        gate = govern_pose_candidate(candidate_source.get("pose_delta") if candidate_source else None)
         accepted_candidate = gate.get("accepted_text") if gate.get("status") == "accepted" else None
+
         laterality = caption_safe_laterality_facts(
-            source.get("laterality_facts", summary.get("laterality_facts")),
+            base.get("laterality_facts"),
             current_caption=caption,
             accepted_pose_candidate=accepted_candidate,
         )
@@ -361,11 +385,14 @@ def main() -> int:
 
         out_path = output_dir / f"{key}.text_refiner.json"
         existing = _read_json(out_path) if out_path.exists() and not args.overwrite else {}
+        base_source_path = _delta_record_path(base_dir, key)
+        pose_source_path = _delta_record_path(pose_candidate_dir, key) if pose_candidate_dir else None
         record = {
             "schema_version": ARTIFACT_VERSION,
             "image_key": key,
             "existing_caption": caption,
-            "pose_evidence_source": str(source_path) if source_path else None,
+            "base_evidence_source": str(base_source_path) if base_source_path else None,
+            "pose_candidate_source": str(pose_source_path) if pose_source_path else None,
             "pose_candidate_gate": gate,
             "laterality_facts_supplied": laterality,
             "laterality_text_supplied": laterality_text,
@@ -438,14 +465,14 @@ def main() -> int:
         if loaded is not None:
             runner.unload_model(loaded)
 
-    # Strip any transient prompt left by an interrupted/non-generating path.
     for record in records:
         record.pop("_prompt", None)
 
     index = {
         "schema_version": RUN_VERSION,
         "run_dir": str(run_dir),
-        "pose_evidence_dir": str(pose_dir),
+        "base_evidence_dir": str(base_dir),
+        "pose_candidate_dir": str(pose_candidate_dir) if pose_candidate_dir else None,
         "head_gaze_evidence_dir": str(head_gaze_dir),
         "prompt": str(prompt_path),
         "model_id": model_id,
