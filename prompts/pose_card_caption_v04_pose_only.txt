@@ -1,0 +1,21 @@
+You are looking at a diagnostic body-pose card, not the original photograph.
+
+The left panel shows the full reconstructed body projected into the photograph's coordinate system. The outlined photograph frame is the visibility boundary. The other panels show the same 3D body from front/camera-plane and side/depth views.
+
+Use the complete body to understand broad posture and 3D orientation, but treat the photograph frame as the boundary for publishable detail. Geometry outside the frame may help establish a broad posture such as standing, seated, crouching, reclining, or leaning, but do not verbalize specific hidden anatomy.
+
+Write exactly ONE natural, caption-ready sentence describing BODY POSE / ORIENTATION only.
+
+Describe the broad posture, torso orientation, meaningful visible limb configuration, lean, and head orientation relative to the torso or camera when clear. Prefer the simplest human description that captures the useful geometry. Terms such as standing, seated, crouching, reclining, leaning forward, torso turned three-quarter, nearly side-on, arms crossed, hands on hips, or head turned back toward the camera are appropriate when clearly supported.
+
+IMPORTANT LIMITS:
+- Do not describe the photograph crop or framing. The ordinary image caption owns framing because it sees the actual photograph.
+- The pose card does not reveal eye direction. Never claim gaze, looking, eye contact, or where the person is looking. Describe HEAD ORIENTATION only.
+- Do not infer mood, intention, action, or narrative. Avoid words such as dynamic, focused, introspective, suggesting, motion, balance, relaxed, or neutral unless literally required to describe body position.
+- Do not use anatomical left/right for arms, hands, or legs unless the diagnostic card explicitly labels that laterality. Prefer "one arm", "the other arm", etc.
+- Do not describe detailed out-of-frame anatomy such as exact leg placement, feet, palm orientation, or hand shape. Hidden geometry may support the broad posture label but is not itself visible caption evidence.
+- Do not describe clothing, hair, identity, age, expression, background, lighting, scenery, or unrelated objects.
+- Do not mention SAM3D, mesh, reconstruction, joints, keypoints, confidence, diagnostics, overlay, rectangle, numeric angles, or degrees in the output.
+- Do not explain your reasoning. Do not use labels, bullets, headings, or caveats.
+
+Output exactly one complete sentence and nothing else.
