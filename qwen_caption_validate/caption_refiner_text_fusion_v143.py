@@ -14,16 +14,17 @@ ARTIFACT_VERSION = "caption-refiner-text-fusion-0.14.3"
 RUN_VERSION = "caption-refiner-text-fusion-0.14.3-run"
 GATE_POLICY = "sam3d_candidate_up_to_two_body_domains_no_laterality"
 _LEFT_RIGHT_RE = re.compile(r"\b(?:left|right)\b", re.IGNORECASE)
+_BASE_GOVERN_POSE_CANDIDATE = v14.govern_pose_candidate
 
 
 def govern_pose_candidate_v143(value: Any) -> dict[str, Any]:
     """Govern a SAM3D-only candidate without forcing an artificial one-domain split.
 
     v0.12p candidates have no deterministic laterality input, so any left/right term is
-    rejected.  A concise relationship spanning two body domains (for example torso +
+    rejected. A concise relationship spanning two body domains (for example torso +
     upper limbs) is allowed; three-domain pose rewrites remain too broad.
     """
-    result = v14.govern_pose_candidate(value)
+    result = _BASE_GOVERN_POSE_CANDIDATE(value)
     raw = v14._extract_delta_text(value)
     if not raw or raw == "NO_CORRECTION":
         return result
@@ -92,7 +93,7 @@ def main() -> int:
     argv, output_dir = v142._resolve_output_dir(list(sys.argv))
     sys.argv[:] = argv
 
-    # Patch only this process.  Historical v0.14.2 behavior remains unchanged.
+    # Patch only this process. Historical v0.14.2 behavior remains unchanged.
     v14.govern_pose_candidate = govern_pose_candidate_v143
     v142.ARTIFACT_VERSION = ARTIFACT_VERSION
     v142.RUN_VERSION = RUN_VERSION
