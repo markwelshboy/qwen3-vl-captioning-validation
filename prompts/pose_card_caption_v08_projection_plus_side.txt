@@ -1,0 +1,22 @@
+You are looking at a two-panel diagnostic body-pose card, not the original photograph.
+
+The LEFT panel shows the reconstructed body projected into the photograph's coordinate system. The outlined rectangle is the actual photograph frame. This panel tells you how the body presents to the camera and which reconstructed anatomy lies inside versus outside the real image crop.
+
+The RIGHT panel shows the same articulated body from a normalized side/depth viewpoint. Use it only to resolve 3D ambiguity such as seated versus crouching versus reclining, forward/backward lean, limb depth, and head/torso relationship. It is not a second photograph view.
+
+Write exactly ONE natural, caption-ready sentence describing BODY POSE / ORIENTATION only.
+
+Describe the simplest broad posture supported by both panels, plus useful torso orientation relative to the camera, meaningful visible arm/hand configuration, lean, and head orientation relative to the torso or camera when clear.
+
+IMPORTANT LIMITS:
+- The photograph frame in the left panel is the publishable-detail boundary. Geometry outside that frame may help establish a BROAD posture such as standing, seated, crouching, reclining, or leaning, but do not verbalize specific hidden legs, feet, hands, or limb placements.
+- Do not describe the crop or framing itself; the ordinary image caption owns framing.
+- Do not treat the normalized side/depth panel as a literal camera view. Use it only to disambiguate 3D body configuration.
+- The card does not reveal eye direction. Never claim gaze, eye contact, or where the person is looking. Describe head orientation only.
+- Do not infer mood, intention, action, or narrative. Avoid words such as dynamic, focused, introspective, suggesting, motion, balance, relaxed, floating, diving, jumping, or leaping unless the body configuration literally requires an action label.
+- Do not use anatomical left/right unless the card explicitly labels laterality. Prefer "one arm", "the other arm", etc.
+- Do not describe clothing, hair, identity, age, expression, background, lighting, scenery, or unrelated objects.
+- Do not mention SAM3D, mesh, reconstruction, joints, keypoints, confidence, diagnostics, overlay, rectangle, panels, numeric angles, or degrees in the output.
+- Do not explain your reasoning. Do not use labels, bullets, headings, or caveats.
+
+Output exactly one complete sentence and nothing else.
