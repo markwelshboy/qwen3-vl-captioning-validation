@@ -11,7 +11,7 @@ from . import caption_refiner_pose_vlm as base
 from . import pose_atlas_v3 as atlas
 
 
-CARD_MODES = {"front-only", "crop-mesh-only"}
+CARD_MODES = {"front-only", "camera-only", "crop-mesh-only"}
 _ACTIVE_CARD_MODE = "front-only"
 
 
@@ -23,7 +23,7 @@ def _extract_card_mode(argv: list[str]) -> tuple[str, list[str]]:
         value = argv[index]
         if value == "--card-mode":
             if index + 1 >= len(argv):
-                raise SystemExit("--card-mode requires front-only or crop-mesh-only")
+                raise SystemExit("--card-mode requires front-only, camera-only, or crop-mesh-only")
             mode = argv[index + 1]
             index += 2
             continue
@@ -34,7 +34,7 @@ def _extract_card_mode(argv: list[str]) -> tuple[str, list[str]]:
         cleaned.append(value)
         index += 1
     if mode not in CARD_MODES:
-        raise SystemExit("--card-mode must be one of: front-only, crop-mesh-only")
+        raise SystemExit("--card-mode must be one of: front-only, camera-only, crop-mesh-only")
     return str(mode), cleaned
 
 
@@ -185,9 +185,17 @@ def make_pose_card_ablation(
     }
 
     if _ACTIVE_CARD_MODE == "front-only":
+        # Deliberately normalize away camera-relative body orientation. This is the
+        # earlier ablation retained for comparison with camera-only.
         vertices_body = atlas._body_frame_vertices(vertices_camera, arrays)
-        card = base._mesh_panel(vertices_body, (0, 1), "Full body — frontal mesh view")
-        metadata["visual_contract"] = "single_full_body_frontal_mesh_no_crop_no_side_view"
+        card = base._mesh_panel(vertices_body, (0, 1), "Full body — body-frame frontal mesh")
+        metadata["visual_contract"] = "single_full_body_body_frame_frontal_mesh_no_crop_no_side_view"
+    elif _ACTIVE_CARD_MODE == "camera-only":
+        # pred_vertices is written to OBJ exactly as returned by SAM3D. Do not apply
+        # _body_frame_vertices here: x/y therefore retain the pose orientation seen
+        # by the reconstruction camera. This is the clean single-view ablation.
+        card = base._mesh_panel(vertices_camera, (0, 1), "Full body — camera-space mesh view")
+        metadata["visual_contract"] = "single_full_body_camera_space_mesh_no_rotation_no_crop_no_side_view"
     elif _ACTIVE_CARD_MODE == "crop-mesh-only":
         projected_mesh, fit_meta = _fit_mesh_to_image(vertices_camera, arrays, width, height)
         card, crop_meta = _crop_mesh_panel(projected_mesh, width, height)
