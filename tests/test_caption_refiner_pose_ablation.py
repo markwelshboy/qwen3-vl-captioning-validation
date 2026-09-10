@@ -35,6 +35,19 @@ class CaptionRefinerPoseAblationTests(unittest.TestCase):
         self.assertNotIn("--card-mode", argv)
         self.assertEqual(argv[1:], ["run-dir", "--captions-dir", "captions"])
 
+    def test_extract_projection_plus_side_mode(self):
+        mode, argv = _extract_card_mode([
+            "tool",
+            "run-dir",
+            "--card-mode",
+            "projection-plus-side",
+            "--captions-dir",
+            "captions",
+        ])
+        self.assertEqual(mode, "projection-plus-side")
+        self.assertNotIn("--card-mode", argv)
+        self.assertEqual(argv[1:], ["run-dir", "--captions-dir", "captions"])
+
     def test_extract_crop_mesh_only_equals_form(self):
         mode, argv = _extract_card_mode([
             "tool",
