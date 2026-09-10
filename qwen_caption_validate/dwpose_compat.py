@@ -4,8 +4,6 @@ from typing import Any
 
 import numpy as np
 
-from . import dwpose_profile as impl
-
 
 _EMPTY = np.empty((0, 18, 2), dtype=np.float64)
 
@@ -131,6 +129,10 @@ def target_points_from_profile_record(record: dict[str, Any], width: int, height
 
 
 def main() -> int:
+    # Import the full profiler only for the profiler CLI. Consumers such as the
+    # gaze probe need only the lightweight array compatibility helpers above.
+    from . import dwpose_profile as impl
+
     # dwpose_profile's analysis helpers resolve _candidate_array from that
     # module's globals at runtime, so replace only the adapter while retaining
     # the profiler/reporting implementation in one place.
