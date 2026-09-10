@@ -101,7 +101,7 @@ def _render_prompt(template: str, *, trigger: str, grammar: str, protected_trait
 
 
 def validate_caption(caption: str, trigger: str) -> dict[str, Any]:
-    """Mirror fizgig-web Custom 1 STRICT_BINDING validation."""
+    """Mirror fizgig-web CaptionMethodologyStore.validate_custom for Custom 1."""
     text = " ".join(str(caption or "").strip().split())
     trigger = trigger.strip()
     errors: list[str] = []
@@ -117,8 +117,6 @@ def validate_caption(caption: str, trigger: str) -> dict[str, Any]:
         errors.append(f'Exact trigger "{trigger}" is missing or changed case')
     if not text.startswith(trigger):
         errors.append(f'Caption must begin directly with "{trigger}"')
-    elif len(text) > len(trigger) and text[len(trigger)].isalnum():
-        errors.append("Trigger is not a standalone first token")
     if ci_count != 1:
         errors.append(f"Trigger must occur exactly once (found {ci_count})")
     if re.search(rf"[,;:]\s*{re.escape(trigger)}[.!?]?\s*$", text, re.IGNORECASE):
