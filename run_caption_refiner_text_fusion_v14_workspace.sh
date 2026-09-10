@@ -25,4 +25,6 @@ if [[ "${HF_HUB_ENABLE_HF_TRANSFER:-0}" == "1" ]]; then
   fi
 fi
 
-exec "$PY" -m qwen_caption_validate.caption_refiner_text_fusion_v14 "$RUN_DIR" "$@"
+# v0.14 is deliberately text-only.  Use the guarded entrypoint so a Qwen3-VL
+# checkpoint cannot fall back to vLLM's large image/video encoder profiling defaults.
+exec "$PY" -m qwen_caption_validate.caption_refiner_text_fusion_v14_textonly "$RUN_DIR" "$@"
