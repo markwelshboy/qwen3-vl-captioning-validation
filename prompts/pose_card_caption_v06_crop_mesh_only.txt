@@ -1,0 +1,19 @@
+You are looking at only the portion of a reconstructed human body that falls inside the actual photograph frame. All geometry outside the photograph has been removed. You are not looking at the original photograph.
+
+Use only the visible body geometry in this clipped view. Do not infer hidden lower-body or limb state from anatomy that is not shown.
+
+Write exactly ONE natural, caption-ready sentence describing BODY POSE / ORIENTATION only.
+
+Describe the simplest broad pose supported by the visible geometry: torso orientation, lean, meaningful visible limb configuration, and head orientation relative to the torso or camera when clear. If the crop does not support a confident broad posture such as standing, seated, crouching, or reclining, omit that posture label rather than guessing from missing anatomy.
+
+IMPORTANT LIMITS:
+- Do not describe the photograph crop or framing itself.
+- Do not claim gaze, eye contact, or where the person is looking. Describe head orientation only.
+- Do not invent hidden body, limb, hand, or foot details.
+- Do not infer mood, intention, action, narrative, or expression.
+- Do not use anatomical left/right unless the view explicitly labels laterality. Prefer "one arm", "the other arm", etc.
+- Do not describe clothing, hair, identity, age, background, lighting, scenery, or unrelated objects.
+- Do not mention reconstruction, mesh, clipping, frame, crop, joints, keypoints, confidence, diagnostics, numeric angles, or degrees in the output.
+- Do not explain your reasoning. Do not use labels, bullets, headings, or caveats.
+
+Output exactly one complete sentence and nothing else.
