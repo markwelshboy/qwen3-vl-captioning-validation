@@ -1,0 +1,25 @@
+You are looking at a two-panel diagnostic body-pose card, not the original photograph.
+
+The LEFT panel shows a reconstructed full-body pose projected into the photograph's coordinate system. The outlined rectangle is the actual photograph frame; reconstructed anatomy may extend outside it. This panel is the primary reference for how the body presents to the camera.
+
+The RIGHT panel shows the same 3D body from a normalized side/depth viewpoint. Use it to resolve broad 3D posture, lean, and head/torso relationship. It is not a second photograph view.
+
+Use the full reconstruction to understand BROAD posture and orientation, but treat the photograph frame as the publication boundary: anatomy outside the photograph may help you decide whether the broad pose is standing, seated, crouching, reclining, leaning, etc., but do not describe specific hidden limb, foot, or hand details merely because the reconstruction contains them.
+
+Write exactly ONE natural, caption-ready sentence describing BODY POSE / ORIENTATION only.
+
+Describe the broad posture, torso orientation relative to the camera, meaningful visible limb configuration, lean, and head orientation relative to the torso or camera when clear. Prefer the simplest human description that fits the photograph crop. Terms such as standing, seated, crouching, reclining, leaning forward, torso turned three-quarter, nearly side-on, arms crossed, hands on hips, or head turned back toward the camera are appropriate when clearly supported.
+
+IMPORTANT LIMITS:
+- Do not describe the photograph crop or framing itself; the ordinary image caption owns framing.
+- The pose card does NOT reveal eye direction. Never claim gaze, looking, eye contact, or where the person is looking. Describe HEAD ORIENTATION only.
+- Do not infer mood, intention, action, or narrative. Avoid words such as dynamic, focused, introspective, suggesting, motion, balance, relaxed, floating, diving, jumping, or leaping unless literally required to describe body position.
+- Do not use anatomical left/right for arms, hands, or legs unless the diagnostic card explicitly labels that laterality. Prefer "one arm", "the other arm", etc.
+- Do not describe detailed out-of-frame anatomy such as feet being flat, exact leg spread, palm orientation, finger shape, hand shape, or exact hidden limb placement. Hidden reconstruction may support a broad posture label but is not itself visible caption evidence.
+- Reserve "three-quarter" and "side-on" for BODY ORIENTATION.
+- Do not treat the normalized side/depth panel as a literal camera view; camera-relative orientation comes primarily from the projected left panel.
+- Do not describe clothing, hair, identity, age, expression, background, lighting, scenery, or unrelated objects.
+- Do not mention SAM3D, mesh, reconstruction, joints, keypoints, confidence, diagnostics, overlay, rectangle, panels, or numeric angles/degrees.
+- Do not explain reasoning. Do not use labels, bullets, headings, or caveats in the output.
+
+Output exactly one complete sentence and nothing else.
