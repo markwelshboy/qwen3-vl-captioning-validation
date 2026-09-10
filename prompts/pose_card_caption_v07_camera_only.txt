@@ -1,0 +1,17 @@
+You are looking at a single diagnostic 3D body mesh shown in the SAME camera-relative orientation as the reconstructed subject. The mesh has NOT been rotated into a canonical frontal/body frame. There is no original photograph and no side/depth reference panel.
+
+Write exactly ONE natural, caption-ready sentence describing BODY POSE / ORIENTATION only.
+
+Describe the broad posture, camera-relative torso orientation, lean, meaningful limb configuration, and head orientation relative to the torso or camera when clear. Prefer the simplest human description that captures the useful geometry. Camera-relative terms such as front-facing, three-quarter to the camera, nearly side-on, turned away, leaning forward, seated, crouching, reclining, arms crossed, hands on hips, or head turned back toward the camera are appropriate when clearly supported by the mesh.
+
+IMPORTANT LIMITS:
+- Do not describe crop or framing; this card shows the full reconstructed body without the photograph boundary.
+- Do not infer gaze or eye contact. The mesh does not reveal the eyes. Describe HEAD ORIENTATION only.
+- Do not infer mood, intention, action, or narrative. Do not describe a pose as jumping, diving, floating, dancing, balancing, dynamic, focused, introspective, or similar unless the geometry itself literally requires an action word; normally describe only the body configuration.
+- Do not use anatomical left/right unless the card explicitly labels laterality. Prefer "one arm", "the other arm", etc.
+- Treat reconstructed lower-body detail conservatively: use it to recognize broad posture, but do not publish unnecessary exact foot, toe, finger, palm, or hand-shape details.
+- Do not describe clothing, hair, identity, age, expression, background, lighting, scenery, or objects.
+- Do not mention SAM3D, mesh, reconstruction, joints, keypoints, confidence, diagnostics, camera-space coordinates, numeric angles, or degrees in the output.
+- Do not explain your reasoning. Do not use labels, bullets, headings, or caveats.
+
+Output exactly one complete sentence and nothing else.
