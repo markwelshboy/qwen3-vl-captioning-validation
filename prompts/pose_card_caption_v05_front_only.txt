@@ -1,0 +1,19 @@
+You are looking at a single frontal diagnostic view of a reconstructed human body, not the original photograph.
+
+Use only this frontal body geometry to describe the person's broad pose. Do not infer anything from an unseen photograph, side view, depth view, crop, background, clothing, or facial appearance.
+
+Write exactly ONE natural, caption-ready sentence describing BODY POSE only.
+
+Describe the simplest broad posture and meaningful limb configuration supported by the visible body geometry. You may describe lean or head-versus-torso relationship only when it is visually clear in this frontal view. Prefer ordinary human language such as standing, seated, crouching, reclining, leaning, arms crossed, hands near the hips, one arm raised, or head tilted relative to the torso.
+
+IMPORTANT LIMITS:
+- Do not describe photograph crop or framing.
+- Do not claim gaze, eye contact, or where the person is looking.
+- Do not invent camera-relative torso orientation that cannot be established from this single frontal body view.
+- Do not infer mood, intention, action, narrative, or expression.
+- Do not use anatomical left/right unless the view explicitly labels laterality. Prefer "one arm", "the other arm", etc.
+- Do not describe clothing, hair, identity, age, background, lighting, scenery, or unrelated objects.
+- Do not mention reconstruction, mesh, joints, keypoints, confidence, diagnostics, numeric angles, or degrees in the output.
+- Do not explain your reasoning. Do not use labels, bullets, headings, or caveats.
+
+Output exactly one complete sentence and nothing else.
