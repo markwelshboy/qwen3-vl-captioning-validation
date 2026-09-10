@@ -11,7 +11,7 @@ import numpy as np
 from omegaconf import OmegaConf
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
-SCHEMA_VERSION = "gaze-probe-ptgaze-0.1"
+SCHEMA_VERSION = "gaze-probe-ptgaze-0.2"
 
 
 def _write_json(path: Path, value: Any) -> None:
@@ -39,17 +39,35 @@ def _bbox_area(bbox: np.ndarray) -> float:
     return max(0.0, float(box[2] - box[0])) * max(0.0, float(box[3] - box[1]))
 
 
-def _angle_from_camera_deg(gaze_vector: np.ndarray) -> float | None:
-    vector = np.asarray(gaze_vector, dtype=np.float64).reshape(-1)
-    if vector.size != 3 or not np.isfinite(vector).all():
+def _angle_between_deg(a: np.ndarray, b: np.ndarray) -> float | None:
+    va = np.asarray(a, dtype=np.float64).reshape(-1)
+    vb = np.asarray(b, dtype=np.float64).reshape(-1)
+    if va.size != 3 or vb.size != 3 or not np.isfinite(va).all() or not np.isfinite(vb).all():
         return None
-    norm = float(np.linalg.norm(vector))
-    if norm <= 1e-9:
+    na = float(np.linalg.norm(va))
+    nb = float(np.linalg.norm(vb))
+    if na <= 1e-9 or nb <= 1e-9:
         return None
-    unit = vector / norm
-    # ptgaze's zero pitch/yaw gaze vector is [0, 0, -1], i.e. toward the camera.
-    dot = float(np.clip(np.dot(unit, np.array([0.0, 0.0, -1.0])), -1.0, 1.0))
+    dot = float(np.clip(np.dot(va / na, vb / nb), -1.0, 1.0))
     return float(np.degrees(np.arccos(dot)))
+
+
+def _angle_from_optical_axis_deg(gaze_vector: np.ndarray) -> float | None:
+    # ptgaze's zero pitch/yaw gaze vector is [0, 0, -1]. This measures
+    # deviation from the optical axis, NOT whether the subject is looking
+    # at the camera lens when the face is off-axis in the image.
+    return _angle_between_deg(gaze_vector, np.array([0.0, 0.0, -1.0]))
+
+
+def _angle_to_camera_origin_deg(gaze_vector: np.ndarray, face_center: np.ndarray | None) -> float | None:
+    if face_center is None:
+        return None
+    center = np.asarray(face_center, dtype=np.float64).reshape(-1)
+    if center.size != 3 or not np.isfinite(center).all():
+        return None
+    # ptgaze coordinates place the camera at the origin. The ray from the
+    # reconstructed face center back to the lens is therefore -face_center.
+    return _angle_between_deg(gaze_vector, -center)
 
 
 def _make_config(image_path: Path, device: str):
@@ -85,7 +103,15 @@ def _make_config(image_path: Path, device: str):
     return config
 
 
-def _annotate(image: np.ndarray, estimator, face, *, head_angles: np.ndarray, gaze_angles: np.ndarray):
+def _annotate(
+    image: np.ndarray,
+    estimator,
+    face,
+    *,
+    head_angles: np.ndarray,
+    gaze_angles: np.ndarray,
+    camera_origin_angle: float | None,
+):
     from ptgaze.common import Visualizer
     from ptgaze.utils import get_3d_face_model
 
@@ -103,6 +129,7 @@ def _annotate(image: np.ndarray, estimator, face, *, head_angles: np.ndarray, ga
     lines = [
         f"head pitch={hp:+.1f} yaw={hy:+.1f} roll={hr:+.1f}",
         f"gaze pitch={gp:+.1f} yaw={gy:+.1f}",
+        f"gaze-to-lens={camera_origin_angle:.1f} deg" if camera_origin_angle is not None else "gaze-to-lens=n/a",
     ]
     y = 28
     for text in lines:
@@ -147,9 +174,19 @@ def _process_one(image_path: Path, output_dir: Path, device: str) -> dict[str, A
         head_angles = np.asarray(face.change_coordinate_system(euler), dtype=np.float64)
         gaze_angles = np.rad2deg(face.vector_to_angle(face.gaze_vector)).astype(np.float64)
         gaze_vector = np.asarray(face.gaze_vector, dtype=np.float64)
+        face_center = np.asarray(face.center, dtype=np.float64) if face.center is not None else None
+        optical_axis_angle = _angle_from_optical_axis_deg(gaze_vector)
+        camera_origin_angle = _angle_to_camera_origin_deg(gaze_vector, face_center)
 
         overlay_path = output_dir / f"{image_path.stem}.gaze.png"
-        annotated = _annotate(image, estimator, face, head_angles=head_angles, gaze_angles=gaze_angles)
+        annotated = _annotate(
+            image,
+            estimator,
+            face,
+            head_angles=head_angles,
+            gaze_angles=gaze_angles,
+            camera_origin_angle=camera_origin_angle,
+        )
         cv2.imwrite(overlay_path.as_posix(), annotated)
 
         bbox = np.asarray(face.bbox, dtype=np.float64).reshape(-1)
@@ -163,6 +200,7 @@ def _process_one(image_path: Path, output_dir: Path, device: str) -> dict[str, A
             "face_count": len(faces),
             "selected_face_index": int(selected_index),
             "selected_face_bbox_xyxy": [float(x) for x in bbox[:4]],
+            "face_center_camera": [float(x) for x in face_center] if face_center is not None else None,
             "head_pose": {
                 "pitch_deg": float(head_angles[0]),
                 "yaw_deg": float(head_angles[1]),
@@ -173,12 +211,18 @@ def _process_one(image_path: Path, output_dir: Path, device: str) -> dict[str, A
                 "pitch_deg": float(gaze_angles[0]),
                 "yaw_deg": float(gaze_angles[1]),
                 "vector_camera": [float(x) for x in gaze_vector],
-                "angle_from_camera_deg": _angle_from_camera_deg(gaze_vector),
+                "angle_from_optical_axis_deg": optical_axis_angle,
+                "angle_to_camera_origin_deg": camera_origin_angle,
+                # Backward-compatible field name; from v0.2 onward this means
+                # gaze error relative to the lens/camera origin, not optical axis.
+                "angle_from_camera_deg": camera_origin_angle,
             },
             "overlay": overlay_path.as_posix(),
             "status": "ok",
             "notes": [
                 "Angles are raw ptgaze outputs; no caption-language thresholds are applied.",
+                "angle_from_optical_axis_deg is not equivalent to looking at the camera when the face is off-axis.",
+                "angle_to_camera_origin_deg compares gaze with the ray from the reconstructed face center to the camera origin/lens.",
                 "Camera intrinsics are ptgaze dummy parameters derived from image dimensions because source-camera calibration is unavailable.",
             ],
         }
@@ -214,10 +258,15 @@ def main() -> int:
         if record.get("status") == "ok":
             head = record["head_pose"]
             gaze = record["gaze"]
+            lens = gaze.get("angle_to_camera_origin_deg")
+            lens_text = f"{lens:.1f}" if lens is not None else "n/a"
+            optical = gaze.get("angle_from_optical_axis_deg")
+            optical_text = f"{optical:.1f}" if optical is not None else "n/a"
             print(
                 f"{record['image_key']}: "
                 f"head(p={head['pitch_deg']:+.1f}, y={head['yaw_deg']:+.1f}, r={head['roll_deg']:+.1f}) "
-                f"gaze(p={gaze['pitch_deg']:+.1f}, y={gaze['yaw_deg']:+.1f}, camera={gaze['angle_from_camera_deg']:.1f})"
+                f"gaze(p={gaze['pitch_deg']:+.1f}, y={gaze['yaw_deg']:+.1f}, "
+                f"lens={lens_text}, optical={optical_text})"
             )
         else:
             print(f"{record['image_key']}: {record.get('status')}")
