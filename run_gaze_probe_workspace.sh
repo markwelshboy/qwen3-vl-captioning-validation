@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-  echo "usage: $0 IMAGE_OR_DIR --output-dir DIR [--only KEY ...] [--device cpu|cuda]" >&2
+  echo "usage: $0 IMAGE_OR_DIR --output-dir DIR [--only KEY ...] [--device cpu|cuda] [--dwpose-dir DIR]" >&2
   exit 2
 fi
 
@@ -15,4 +15,4 @@ if [[ ! -x "$PY" ]]; then
   exit 2
 fi
 
-exec "$PY" -m qwen_caption_validate.gaze_probe_ptgaze "$@"
+exec "$PY" -m qwen_caption_validate.gaze_probe_ptgaze_compat "$@"
