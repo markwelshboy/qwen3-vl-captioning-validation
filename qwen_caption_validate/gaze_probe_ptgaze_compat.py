@@ -10,6 +10,7 @@ from .dwpose_compat import target_points_from_profile_record
 
 
 _FACE_NAMES = ("nose", "right_eye", "left_eye", "right_ear", "left_ear")
+_EXPECTED_HEAD_CENTER: np.ndarray | None = None
 
 
 def _discover_unique_images(path: Path) -> list[Path]:
@@ -106,12 +107,66 @@ def _tight_dwpose_head_crop(record: dict, width: int, height: int):
     }
 
 
+def _dwpose_expected_head_center(image_path: Path, dwpose_dir: Path | None) -> np.ndarray | None:
+    """Return the expected full-image head center from cached DWPose evidence."""
+    if dwpose_dir is None:
+        return None
+    dwpose_path = impl._find_for_key(dwpose_dir, image_path.stem)
+    if dwpose_path is None:
+        return None
+    image = cv2.imread(image_path.as_posix())
+    if image is None:
+        return None
+    record = impl._read_json(dwpose_path)
+    crop = _tight_dwpose_head_crop(record, image.shape[1], image.shape[0])
+    if not crop:
+        return None
+    center = np.asarray(crop.get("center_xy", []), dtype=np.float64).reshape(-1)
+    if center.size < 2 or not np.isfinite(center[:2]).all():
+        return None
+    return center[:2].copy()
+
+
+def _bbox_score(bbox: np.ndarray) -> float:
+    """Prefer the detected face nearest DWPose's head center when available.
+
+    The base probe historically selected the largest MediaPipe face box. A rare
+    false-positive can therefore beat the real face (for example a torso region).
+    DWPose already tells us where the subject's head is, so use proximity when we
+    have that evidence; otherwise preserve the original area-based behaviour.
+    """
+    if _EXPECTED_HEAD_CENTER is None:
+        return impl._bbox_area_original(bbox)
+
+    box = np.asarray(bbox, dtype=np.float64).reshape(-1)
+    if box.size < 4 or not np.isfinite(box[:4]).all():
+        return float("-inf")
+    center = np.array([(box[0] + box[2]) * 0.5, (box[1] + box[3]) * 0.5], dtype=np.float64)
+    distance_sq = float(np.sum((center - _EXPECTED_HEAD_CENTER) ** 2))
+    # Max() chooses the largest score. Area is only a tiny deterministic tie-break.
+    return -distance_sq + impl._bbox_area_original(bbox) * 1e-6
+
+
 def _process_one_with_failed_crop_artifact(image_path: Path, output_dir: Path, device: str, dwpose_dir: Path | None):
-    record = impl._process_one_original(image_path, output_dir, device, dwpose_dir)
+    global _EXPECTED_HEAD_CENTER
+
+    expected = _dwpose_expected_head_center(image_path, dwpose_dir)
+    _EXPECTED_HEAD_CENTER = expected
+    try:
+        record = impl._process_one_original(image_path, output_dir, device, dwpose_dir)
+    finally:
+        _EXPECTED_HEAD_CENTER = None
+
+    acquisition = record.get("face_acquisition") or {}
+    if expected is not None and int(acquisition.get("full_image_face_count") or 0) > 1:
+        acquisition["selection_strategy"] = "nearest_dwpose_head_center"
+        acquisition["expected_head_center_xy"] = [float(expected[0]), float(expected[1])]
+        record["face_acquisition"] = acquisition
+        impl._write_json(output_dir / f"{image_path.stem}.gaze.json", record)
+
     if record.get("status") != "no_face":
         return record
 
-    acquisition = record.get("face_acquisition") or {}
     retry_crop = acquisition.get("retry_crop") or {}
     bbox = retry_crop.get("bbox_xyxy")
     if not isinstance(bbox, list) or len(bbox) != 4:
@@ -152,6 +207,12 @@ def main() -> int:
     if not hasattr(impl, "_dwpose_head_crop_original"):
         impl._dwpose_head_crop_original = impl._dwpose_head_crop
     impl._dwpose_head_crop = _tight_dwpose_head_crop
+
+    # Preserve the base area scorer so multi-face selection can use DWPose head
+    # proximity without changing behaviour when DWPose evidence is unavailable.
+    if not hasattr(impl, "_bbox_area_original"):
+        impl._bbox_area_original = impl._bbox_area
+    impl._bbox_area = _bbox_score
 
     # The base probe keys artifacts by image stem. Deduplicate the recursive
     # discovery result before --only filtering so duplicate basenames cannot
