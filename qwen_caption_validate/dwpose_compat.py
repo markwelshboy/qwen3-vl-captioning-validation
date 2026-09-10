@@ -17,6 +17,9 @@ def _candidate_array(pose_data: dict[str, Any]) -> np.ndarray:
       bodies: flattened ndarray shaped [people * 18, 2]
       body_scores: ndarray shaped [people, 18], where -1 means not visible
 
+    Historical Fizgig caches may store a single BODY18 person directly as:
+      bodies: [[x, y], ...]  # 18 rows
+
     Other DWPose/OpenPose wrappers may instead return:
       bodies: {candidate: ...}
 
@@ -44,9 +47,7 @@ def _candidate_array(pose_data: dict[str, Any]) -> np.ndarray:
             return _EMPTY.copy()
         return candidate[:, :18, :2]
 
-    # easy-dwpose 1.0.x format. Its _format_pose() flattens the first 18
-    # whole-body candidates into [people*18, xy] and stores visibility/index
-    # information separately in body_scores.
+    # easy-dwpose / historical direct-array format.
     bodies = np.asarray(bodies_raw, dtype=np.float64)
     if bodies.size == 0:
         return _EMPTY.copy()
@@ -59,8 +60,9 @@ def _candidate_array(pose_data: dict[str, Any]) -> np.ndarray:
 
     scores_raw = pose_data.get("body_scores")
     if scores_raw is None:
-        # Last-resort compatibility path. Without scores we cannot distinguish
-        # low-confidence joints, but can still recover person grouping.
+        # Historical single-person BODY18 and last-resort compatibility path.
+        # Without scores we cannot distinguish low-confidence joints, but can
+        # still recover person grouping. Existing negative sentinels are kept.
         if bodies.shape[0] % 18 != 0:
             return _EMPTY.copy()
         return bodies[:, :2].reshape(-1, 18, 2)
@@ -82,6 +84,50 @@ def _candidate_array(pose_data: dict[str, Any]) -> np.ndarray:
     visible = scores[:people, :18] >= 0
     candidate[~visible] = -1.0
     return candidate
+
+
+def _points_to_pixels(points: np.ndarray, width: int, height: int) -> np.ndarray:
+    """Convert normalized DWPose points without letting -1 sentinels mimic NDC.
+
+    DWPose coordinates are [0,1]-ish when normalized. Missing joints in historical
+    caches are commonly negative. Range detection therefore considers only finite,
+    non-negative joints and leaves missing sentinels untouched.
+    """
+    arr = np.asarray(points, dtype=np.float64)[..., :2].copy()
+    if arr.size == 0:
+        return arr
+
+    valid = (
+        np.isfinite(arr).all(axis=-1)
+        & (arr[..., 0] >= 0.0)
+        & (arr[..., 1] >= 0.0)
+    )
+    if not np.any(valid):
+        return arr
+
+    observed = arr[valid]
+    if float(np.nanmax(observed)) <= 1.25 and float(np.nanmin(observed)) >= -0.05:
+        arr[valid, 0] *= float(width)
+        arr[valid, 1] *= float(height)
+    return arr
+
+
+def target_points_from_profile_record(record: dict[str, Any], width: int, height: int) -> np.ndarray:
+    """Return the selected BODY18 person from a cached profiler record in pixels."""
+    raw = record.get("raw_pose") if isinstance(record.get("raw_pose"), dict) else {}
+    candidate = _candidate_array(raw)
+    if candidate.size == 0:
+        return np.empty((0, 2), dtype=np.float64)
+
+    derived = record.get("derived") if isinstance(record.get("derived"), dict) else {}
+    try:
+        target_index = int(derived.get("target_person_index") or 0)
+    except (TypeError, ValueError):
+        target_index = 0
+    if target_index < 0 or target_index >= candidate.shape[0]:
+        target_index = 0
+
+    return _points_to_pixels(candidate[target_index, :18, :2], width, height)
 
 
 def main() -> int:
