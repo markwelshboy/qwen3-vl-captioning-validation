@@ -44,6 +44,7 @@ bent forward at waist
 rounded/slouched forward
 both elbows bent
 one elbow bent
+both arms at sides
 arms crossed over chest
 forearms across torso
 forearms resting on knees
@@ -59,6 +60,7 @@ hands on hips
 hands behind back
 both knees bent
 one knee bent
+one knee raised
 knees raised
 legs crossed
 both feet visible
@@ -73,6 +75,7 @@ Rules:
 - Do not infer hidden or cropped arms, hands, legs, knees, feet, or support surfaces.
 - Do not infer a phone, camera, chair, bed, wall, or other object merely because the pose or composition would make one plausible. Name an object only when it is visibly present.
 - Do not infer contact. Use resting on / against / supported by only when the contact relationship is visibly established.
+- Use "both arms at sides" only when enough of both arms is visibly present to establish that relationship.
 - Do not infer gaze from head direction. In this probe, omit gaze entirely.
 - Do not report head orientation, anatomical left/right, image-left/image-right, camera angle, framing/body coverage, subject scale, clothing, accessories, background, lighting, expression, identity, age, ethnicity, or aesthetics.
 - Do not explain your reasoning.
