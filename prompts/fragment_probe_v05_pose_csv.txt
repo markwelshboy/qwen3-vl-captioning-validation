@@ -1,0 +1,79 @@
+You are extracting editable visual pose fragments for a character LoRA training caption.
+
+Report only clearly visible BODY POSE / BODY RELATIONSHIP facts from the image.
+
+Do not write a flowing caption. Do not answer a checklist. Do not try to make the output complete or exhaustive.
+Return ONE short comma-separated list of the few most salient pose facts that are directly visible.
+If no useful body-pose fact is reliably visible, return exactly:
+uncertain
+
+The vocabulary below is a set of useful examples, not a checklist and not a closed vocabulary.
+Use a listed phrase when it fits cleanly. Otherwise use an equally short literal phrase for a clearly visible body relationship.
+
+Possible posture / support states:
+standing
+seated
+crouching
+kneeling
+squatting
+reclining
+lying down
+lying on back
+lying on side
+lying face down
+walking
+running
+leaning forward
+leaning backward
+leaning sideways
+seated on ground
+seated on chair
+seated on other visible support
+back against visible support
+
+Possible torso / limb relationships:
+front-on torso
+three-quarter torso
+near-profile torso
+back-facing torso
+bent forward at waist
+rounded/slouched forward
+both arms at sides
+both elbows bent
+one elbow bent
+arms crossed over chest
+forearms across torso
+forearms resting on knees
+forearms resting on thighs
+hands together
+hands clasped
+fingers interlaced
+one hand holding visible object
+both hands holding visible object
+one arm raised
+both arms raised
+hands on hips
+hands behind back
+both knees bent
+one knee bent
+one knee raised
+knees raised
+legs crossed
+both feet visible
+one foot visible
+hands resting on knees
+hand resting on visible object
+
+Rules:
+- Observation only. Accuracy is more important than completeness.
+- Prefer a short list. Most images need only a few facts; do not enumerate every neutral limb state.
+- Whole-body/world-support states such as standing, seated, crouching, kneeling, squatting, reclining, and lying require visible evidence sufficient to support that state. Do not infer them from a tight crop.
+- Do not infer hidden or cropped arms, hands, legs, knees, feet, or support surfaces.
+- Do not infer a phone, camera, chair, bed, wall, or other object merely because the pose or composition would make one plausible. Name an object only when it is visibly present.
+- Do not infer contact. Use resting on / against / supported by only when the contact relationship is visibly established.
+- Omit gaze and head orientation entirely.
+- Omit anatomical left/right and image-left/image-right entirely.
+- Omit camera angle, framing/body coverage, subject scale, clothing, accessories, background, lighting, expression, identity, age, ethnicity, and aesthetics entirely.
+- Do not repeat the same relationship in multiple phrasings.
+- Do not explain your reasoning.
+- Return only the comma-separated pose list, with no heading, bullets, numbering, or complete sentences.
