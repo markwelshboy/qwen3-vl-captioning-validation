@@ -1,0 +1,197 @@
+You are observing ONE image for a portrait-caption dataset.
+
+Your task is to write a SMALL SET of typed pose fragments describing the subject's body state and visible body relationships.
+
+The output is an editable fact sheet for later expert normalization.
+It is NOT the final caption.
+
+Begin with a single coarse POSE STATE when a useful overall body-state premise is apparent. This is the subject's basic physical existence in the scene: for example standing, seated, crouching, reclining, lying on back, or lying on side.
+
+POSE STATE is deliberately holistic and permissive. It may include a directly apparent support/context when that forms one natural pose concept, for example:
+- seated on sofa
+- sitting on ground
+- reclining against sofa
+- lying on back on bed
+
+A coarse POSE STATE may still be useful when the crop does not expose every body part needed to prove the hidden lower-body mechanics. Do not manufacture unseen anatomy or objects to justify the premise. For example, a tight upper-body crop may reasonably suggest "seated", but that does NOT justify inventing a chair, bent knees, planted feet, or other hidden details.
+
+After POSE STATE, use only these additional section headings when you have a useful VISIBLE fact for that section:
+
+TORSO
+ARMS / HANDS
+LEGS
+SUPPORT / CONTACT
+
+These detail sections are optional.
+Omit an entire detail section when there is no useful directly visible fact to report.
+Do NOT write "uncertain" merely to fill a section.
+
+Important distinction:
+- POSE STATE is a coarse semantic grounding premise.
+- TORSO, ARMS / HANDS, LEGS, and SUPPORT / CONTACT are detailed visible observations.
+- Do not invent detailed geometry merely because it would normally accompany the POSE STATE.
+
+Visibility rules for DETAIL sections:
+- Treat the crop as the truth boundary for detailed anatomy and contact.
+- Do not infer hidden limbs or body parts merely because they normally exist.
+- Do not invent a phone, camera, chair, floor contact, knee contact, or other unseen object/support relationship.
+- "both feet visible" requires two visible feet.
+- "feet planted" requires visible foot-to-ground/support contact.
+- "hands resting on knees" requires visible hands/forearms and visible knees in the relationship.
+- "hand resting on visible object" requires the object and contact to be directly visible.
+- "one hand holding visible object" requires both the hand and object to be visible.
+- If the lower body is cropped away, omit LEGS unless a useful leg fact is actually visible.
+- If arm evidence is weak or cropped, omit ARMS / HANDS rather than completing a plausible arm pose.
+- Do not restate support/contact that is already adequately expressed by POSE STATE unless there is an additional visible relationship worth preserving.
+
+Do NOT describe:
+- head orientation
+- gaze
+- facial expression
+- body coverage / framing
+- shot scale
+- camera angle
+- anatomical left/right
+- clothing
+- hair
+- accessories
+- tattoos
+- background or environment except a support/context that is integral to POSE STATE, such as "on bed" or "against sofa"
+- image quality or style
+
+Useful vocabulary is suggestive, not mandatory:
+
+POSE STATE
+standing
+seated
+seated on sofa
+seated on chair
+sitting on ground
+kneeling
+crouching
+squatting
+reclining
+reclining against visible support
+lying down
+lying on back
+lying on back on bed
+lying on side
+lying face down
+leaning
+
+TORSO
+front-on torso
+three-quarter torso
+side-on torso
+twisted torso
+leaning forward
+leaning backward
+leaning sideways
+bent forward at waist
+arched backward
+rounded / slouched forward
+
+ARMS / HANDS
+both arms at sides
+one arm raised
+both arms raised
+arms crossed
+elbows bent
+one elbow bent
+both elbows bent
+hands together
+hands clasped
+hands at sides
+one hand holding visible object
+both hands holding visible object
+hand resting on visible object
+hands resting on visible object
+forearms resting on knees
+hands resting on knees
+hands on hips
+hands behind back
+hands behind head
+reaching upward
+pointing
+waving
+
+LEGS
+both knees bent
+one knee bent
+one knee raised
+kneeling
+squatting
+legs crossed
+one leg crossed over other
+one leg forward
+one leg back
+both feet visible
+one foot visible
+feet planted
+one foot planted
+
+SUPPORT / CONTACT
+back against visible support
+shoulder against visible support
+torso against visible support
+forearm resting on knee
+forearms resting on knees
+hand resting on knee
+hands resting on knees
+hand resting on visible object
+hands resting on visible object
+one foot on visible support
+both feet on visible support
+
+Formatting:
+- Use the section headings exactly as written above.
+- POSE STATE should contain one short bullet fragment only.
+- Under each included detail heading, write one or more short bullet fragments beginning with "- ".
+- Keep each detail fragment atomic and human-readable.
+- Prefer a few useful visible relationships over a complete body inventory.
+- Do not repeat the same fact in multiple detail sections unless the contact itself is important enough to preserve under SUPPORT / CONTACT.
+- If no useful coarse pose premise can be stated, omit POSE STATE and report only directly visible detail sections.
+- If no reliable pose or body relationship can be stated at all, output exactly:
+  NO RELIABLE POSE FACTS
+
+Example with broad visible pose:
+
+POSE STATE
+- seated on ground
+
+TORSO
+- three-quarter torso
+- rounded / slouched forward
+
+ARMS / HANDS
+- hands clasped
+- forearms resting on knees
+
+LEGS
+- both knees bent
+
+SUPPORT / CONTACT
+- forearms resting on knees
+
+Example with a tight crop where hidden body state is only a coarse premise:
+
+POSE STATE
+- seated
+
+TORSO
+- three-quarter torso
+
+Do not add hidden knees, feet, chair contact, or other mechanics merely to explain "seated".
+
+Example of a holistic support premise:
+
+POSE STATE
+- lying on back on bed
+
+ARMS / HANDS
+- one elbow bent
+- hand resting on torso
+
+Do not add leg or bed-contact details unless they are directly visible and useful.
+
+Return only the fact sheet.
