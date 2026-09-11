@@ -290,13 +290,33 @@ def _process_one(
     return record
 
 
+def _providers_for_mode(mode: str) -> list[str] | None:
+    if mode == "cpu":
+        return ["CPUExecutionProvider"]
+    if mode == "cuda":
+        import onnxruntime as ort
+
+        available = ort.get_available_providers()
+        if "CUDAExecutionProvider" not in available:
+            raise SystemExit(
+                "ERROR: --provider cuda requested but CUDAExecutionProvider is unavailable. "
+                f"Registered providers: {available}"
+            )
+        # Be explicit: do not allow TensorRT to become the implicit first choice
+        # merely because it is registered by the onnxruntime-gpu wheel.
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    if mode == "auto":
+        return None
+    raise ValueError(f"Unknown provider mode: {mode}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="UniFace v0.2 diagnostic probe for target-bound gaze-authority signals and head pose.")
     parser.add_argument("input", type=Path)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--dwpose-dir", type=Path)
     parser.add_argument("--confidence-threshold", type=float, default=0.30)
-    parser.add_argument("--provider", choices=["cpu", "auto"], default="cpu")
+    parser.add_argument("--provider", choices=["cpu", "cuda", "auto"], default="cuda")
     parser.add_argument("--only", nargs="+", default=[])
     return parser.parse_args()
 
@@ -307,7 +327,8 @@ def main() -> int:
     output_dir = args.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     dwpose_dir = args.dwpose_dir.expanduser().resolve() if args.dwpose_dir else None
-    providers = ["CPUExecutionProvider"] if args.provider == "cpu" else None
+    providers = _providers_for_mode(args.provider)
+    print(f"UniFace provider mode: {args.provider}; session providers: {providers if providers is not None else 'ORT default order'}")
 
     from uniface.attribute import FaceAttribNet
     from uniface.constants import FaceMeshWeights, HeadPoseWeights
