@@ -1,0 +1,147 @@
+You are extracting editable visual fragments for a character LoRA training caption.
+
+Do NOT write a flowing caption. Do NOT try to sound elegant. Classify what is visibly present so a human can review and toggle the fragments later.
+
+Use the exact section headings below. Under each heading, write one fragment per line beginning with "- ". Select every clearly applicable item. More than one item may apply. If nothing is reliable for a section, write "- uncertain".
+
+POSTURE
+Preferred vocabulary:
+standing
+seated
+crouching
+kneeling
+squatting
+reclining
+lying
+walking
+running
+leaning forward
+leaning backward
+leaning sideways
+
+TORSO ORIENTATION
+Preferred vocabulary:
+front-on to camera
+three-quarter to camera
+near-profile to camera
+back-facing
+upright
+leaning forward
+leaning backward
+bent forward at waist
+rounded/slouched forward
+arched backward
+
+ARMS / HANDS
+Preferred vocabulary:
+arms relaxed at sides
+both elbows bent
+one elbow bent
+arms crossed over chest
+forearms across torso
+forearms resting on knees
+forearms resting on thighs
+hands together
+hands clasped
+fingers interlaced
+one hand holding object
+both hands holding object
+one arm raised
+both arms raised
+hands on hips
+hands behind back
+
+LEGS
+Preferred vocabulary:
+both knees bent
+one knee bent
+knees raised
+legs crossed
+legs extended
+feet planted
+both feet visible
+one foot visible
+
+SUPPORT / CONTACT
+Preferred vocabulary:
+seated on ground
+seated on chair
+seated on other visible support
+back against support
+torso against support
+forearms resting on knees
+forearms resting on thighs
+hands resting on knees
+hand resting on object
+
+HEAD ORIENTATION
+Use photograph-frame coordinates, never anatomical left/right for head direction.
+Preferred vocabulary:
+head upright
+head tilted upward
+head tilted downward
+head tilted sideways
+head turned toward image-left
+head turned toward image-right
+head approximately centered
+
+GAZE
+Use photograph-frame coordinates.
+Preferred vocabulary:
+looking toward camera
+looking off-camera
+looking image-left
+looking image-right
+looking upward
+looking downward
+looking approximately center
+eyes closed
+
+BODY COVERAGE
+This means which parts of the subject are actually visible inside the photograph, not how large the subject appears.
+Choose one:
+head only
+head and shoulders
+upper body
+half body
+three-quarter body
+full body
+uncertain
+
+SHOT SCALE
+Choose the closest useful description:
+extreme close-up
+close-up
+medium close-up
+medium
+medium-wide
+wide/environmental
+uncertain
+
+CAMERA ANGLE
+Preferred vocabulary:
+eye-level
+low-angle
+high-angle
+overhead
+ground-level upward
+uncertain
+
+ANATOMICAL LATERALITY
+Only include a left/right body-part fragment when you are genuinely confident of the person's anatomical side. Always spell the namespace explicitly as "subject-left" or "subject-right". Never use a bare "left hand", "right arm", etc. Do not use frame position here.
+Examples:
+subject-left hand holding object
+subject-right arm raised
+If uncertain, write "- uncertain".
+
+OTHER POSE RELATIONSHIPS
+Use short literal fragments only for clearly visible pose relationships not captured above. These may mention body-to-body or body-to-scene contact such as "hands together in front of torso" or "forearms supported across raised knees". Do not infer intention, emotion, story, or hidden anatomy.
+
+GENERAL RULES
+- Observation only. Do not explain your reasoning.
+- Do not infer personality, mood, narrative, or purpose.
+- Do not invent hidden or cropped anatomy.
+- Keep anatomical left/right distinct from image-left/image-right.
+- Prefer the supplied vocabulary when it fits, but a short literal fragment is allowed in OTHER POSE RELATIONSHIPS when needed.
+- Do not add clothing, background, lighting, identity, age, ethnicity, or aesthetic description in this probe.
+- Return only the sectioned fragment sheet.
