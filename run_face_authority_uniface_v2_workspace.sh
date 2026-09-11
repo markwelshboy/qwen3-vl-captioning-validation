@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-  echo "usage: $0 IMAGE_OR_DIR --output-dir DIR [--only KEY ...] [--provider cpu|auto] [--dwpose-dir DIR]" >&2
+  echo "usage: $0 IMAGE_OR_DIR --output-dir DIR [--only KEY ...] [--provider cuda|cpu|auto] [--dwpose-dir DIR]" >&2
   exit 2
 fi
 
@@ -15,9 +15,9 @@ if [[ ! -x "$PY" ]]; then
   exit 2
 fi
 
-# The Python probe historically defaulted to CPU.  For the rebuilt captioning
-# workstation, prefer ORT's registered provider order (CUDA first when the GPU
-# bootstrap has been used) unless the caller explicitly chooses a provider.
+# Prefer an explicit CUDA -> CPU fallback provider list so TensorRT does not
+# become the implicit first choice merely because ORT registered it.  Callers
+# can still request --provider cpu or --provider auto deliberately.
 args=("$@")
 has_provider=0
 for ((i=0; i<${#args[@]}; i++)); do
@@ -28,7 +28,7 @@ for ((i=0; i<${#args[@]}; i++)); do
 done
 
 if (( ! has_provider )); then
-  args+=(--provider auto)
+  args+=(--provider cuda)
 fi
 
 echo "=== UniFace runtime ==="
@@ -47,6 +47,7 @@ providers = ort.get_available_providers()
 print("onnxruntime:", ort.__version__)
 print("device:", ort.get_device())
 print("registered providers:", providers)
+print("default UniFace mode: cuda -> [CUDAExecutionProvider, CPUExecutionProvider]")
 PY
 
 echo
