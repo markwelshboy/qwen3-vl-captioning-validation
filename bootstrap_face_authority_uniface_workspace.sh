@@ -53,7 +53,10 @@ fi
 echo
 echo "=== UniFace ONNX Runtime preflight ==="
 UNIFACE_RUNTIME="$UNIFACE_RUNTIME" "$PY" - <<'PY'
+import ctypes
 import os
+from pathlib import Path
+
 import onnxruntime as ort
 
 runtime = os.environ["UNIFACE_RUNTIME"]
@@ -62,9 +65,9 @@ runtime = os.environ["UNIFACE_RUNTIME"]
 # This is especially useful in an isolated venv that does not install torch.
 if runtime == "cuda" and hasattr(ort, "preload_dlls"):
     try:
-        ort.preload_dlls(directory="")
+        ort.preload_dlls(cuda=True, cudnn=True, msvc=False, directory="")
     except TypeError:
-        # Older CUDA-12 ORT versions expose preload_dlls without directory.
+        # Older CUDA-12 ORT versions expose a simpler preload_dlls signature.
         ort.preload_dlls()
 
 providers = ort.get_available_providers()
@@ -72,11 +75,29 @@ print("onnxruntime:", ort.__version__)
 print("ORT device:", ort.get_device())
 print("ORT providers:", providers)
 
-if runtime == "cuda" and "CUDAExecutionProvider" not in providers:
-    raise SystemExit(
-        "ERROR: CUDAExecutionProvider is unavailable in the UniFace venv; "
-        "refusing to accept a GPU build that would silently run on CPU."
-    )
+if runtime == "cuda":
+    if "CUDAExecutionProvider" not in providers:
+        raise SystemExit(
+            "ERROR: CUDAExecutionProvider is unavailable in the UniFace venv; "
+            "refusing to accept a GPU build that would silently run on CPU."
+        )
+
+    # Provider registration alone is not enough: ORT can advertise CUDA while
+    # libonnxruntime_providers_cuda.so still fails at session creation because
+    # CUDA/cuDNN shared libraries are not actually loadable.  Load the provider
+    # library now so configure-pod catches that failure immediately.
+    provider_lib = Path(ort.__file__).resolve().parent / "capi" / "libonnxruntime_providers_cuda.so"
+    if not provider_lib.exists():
+        raise SystemExit(f"ERROR: CUDA provider library not found: {provider_lib}")
+    try:
+        ctypes.CDLL(str(provider_lib), mode=ctypes.RTLD_GLOBAL)
+    except OSError as exc:
+        if hasattr(ort, "print_debug_info"):
+            ort.print_debug_info()
+        raise SystemExit(
+            f"ERROR: CUDA provider is registered but its shared library cannot load: {exc}"
+        ) from exc
+    print("CUDA provider shared-library load: OK")
 
 if runtime == "cpu" and "CPUExecutionProvider" not in providers:
     raise SystemExit("ERROR: CPUExecutionProvider is unavailable in the UniFace venv.")
