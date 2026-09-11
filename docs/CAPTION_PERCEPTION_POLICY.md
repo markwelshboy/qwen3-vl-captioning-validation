@@ -45,9 +45,9 @@ RUN_DIR=/workspace/qwen3/qwen3-vl-captioning-validation/runs/<RUN>
 bash ./run_caption_perception_policy_workspace.sh "$RUN_DIR" \
   --only imageblind-01_00021 \
   --only imageblind-01_00049 \
-  --only <TREE_IMAGE_KEY> \
-  --only <ORDINARY_BROAD_POSE_KEY> \
-  --only <TIGHT_AIRCRAFT_OR_FACE_KEY> \
+  --only imageblind-01_00001 \
+  --only imageblind-01_00014 \
+  --only imageblind-01_00023 \
   --overwrite
 ```
 
@@ -62,8 +62,8 @@ Expected semantic targets for the first gate:
 
 - `imageblind-01_00021` → `framing_only`
 - `imageblind-01_00049` → `configuration`
-- tree / non-routine full-body example → `pose_guided`
-- ordinary broad-pose control → `pose_allowed`
-- extremely tight aircraft/face example → `framing_only`
+- `imageblind-01_00001` (tree / non-routine full-body control) → `pose_guided`
+- `imageblind-01_00014` (ordinary visible standing control) → `pose_allowed`
+- `imageblind-01_00023` (head/shoulder crop control) → `framing_only`
 
 Do not tune Phase 2 prompts until these routes are defensible on the actual cached data.
