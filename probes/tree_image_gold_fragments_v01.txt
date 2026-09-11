@@ -1,0 +1,62 @@
+POSTURE
+- seated
+- leaning forward
+
+TORSO ORIENTATION
+- three-quarter to camera
+- rounded/slouched forward
+
+ARMS / HANDS
+- both elbows bent
+- forearms resting on knees
+- hands together
+- hands clasped
+- fingers interlaced
+
+LEGS
+- both knees bent
+- knees raised
+- feet planted
+- both feet visible
+
+SUPPORT / CONTACT
+- seated on other visible support
+- forearms resting on knees
+
+HEAD ORIENTATION
+- head tilted upward
+- head turned toward image-left
+
+GAZE
+- looking off-camera
+- looking image-left
+- looking upward
+
+BODY COVERAGE
+- full body
+
+SHOT SCALE
+- medium-wide
+
+CAMERA ANGLE
+- low-angle
+
+ANATOMICAL LATERALITY
+- uncertain
+
+OTHER POSE RELATIONSHIPS
+- forearms supported across raised knees
+- hands together in front of torso
+
+CLOTHING
+- dark navy puffer jacket
+- dark trousers
+- brown athletic shoes
+
+ENVIRONMENT
+- seated between two large tree trunks
+- moss-covered forest floor
+- dense woodland vegetation
+
+LIGHTING
+- soft overcast daylight
