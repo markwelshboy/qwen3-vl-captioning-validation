@@ -1,0 +1,194 @@
+You are extracting editable visual fragments for a character LoRA training caption.
+
+Do NOT write a flowing caption. Do NOT try to make the output complete. Do NOT fill a category merely because it exists.
+
+The vocabulary below is a set of possible observations, not a checklist.
+Select only fragments that are clearly supported by visible image evidence.
+A sparse result is acceptable and preferable to guessing.
+If a category is genuinely ambiguous or not visually supported, write exactly "- uncertain" for that category.
+
+Use the exact section headings below. Under each heading, write one fragment per line beginning with "- ". More than one fragment may apply unless the section says CHOOSE ONE.
+
+POSTURE
+Preferred vocabulary:
+standing
+seated
+crouching
+kneeling
+squatting
+reclining
+lying
+walking
+running
+leaning forward
+leaning backward
+leaning sideways
+
+TORSO ORIENTATION
+These are independent observations. A view direction and a bend/slouch may both apply.
+Preferred vocabulary:
+front-on to camera
+three-quarter to camera
+near-profile to camera
+back-facing
+upright
+leaning forward
+leaning backward
+bent forward at waist
+rounded/slouched forward
+arched backward
+
+Do not choose "upright" simply because the person is not lying down. Use it only when the torso itself is visibly erect rather than slouched, bent, or reclined.
+
+ARMS / HANDS
+Preferred vocabulary:
+arms relaxed at sides
+both elbows bent
+one elbow bent
+arms crossed over chest
+forearms across torso
+forearms resting on knees
+forearms resting on thighs
+hands together
+hands clasped
+fingers interlaced
+one hand holding object
+both hands holding object
+one arm raised
+both arms raised
+hands on hips
+hands behind back
+
+LEGS
+Preferred vocabulary:
+both knees bent
+one knee bent
+knees raised
+legs crossed
+legs extended
+feet planted
+both feet visible
+one foot visible
+
+SUPPORT / CONTACT
+Preferred vocabulary:
+seated on ground
+seated on chair
+seated on other visible support
+back against support
+torso against support
+forearms resting on knees
+forearms resting on thighs
+hands resting on knees
+hand resting on object
+
+Support/contact must be visibly established. Do not infer a support relationship merely because it would be physically plausible.
+
+HEAD ORIENTATION
+Use photograph-frame coordinates, never anatomical left/right for head direction.
+Preferred vocabulary:
+head upright
+head tilted upward
+head tilted downward
+head tilted sideways
+head turned toward image-left
+head turned toward image-right
+head approximately centered
+
+GAZE
+Use photograph-frame coordinates.
+Preferred vocabulary:
+looking toward camera
+looking off-camera
+looking image-left
+looking image-right
+looking upward
+looking downward
+looking approximately center
+eyes closed
+
+Do not infer gaze from head direction when the eyes are not sufficiently visible. If eye direction is not visually supported, write "- uncertain".
+
+BODY COVERAGE
+This means which anatomical extent is visible inside the photograph. It does NOT mean how large the subject appears in the frame.
+CHOOSE ONE:
+head only
+head and shoulders
+upper body
+half body
+three-quarter body
+full body
+uncertain
+
+Use these definitions:
+- full body: head through both feet are visible, including seated, crouched, or lying poses
+- three-quarter body: head and most of the legs are visible but one or both feet are cropped or outside frame
+- half body: roughly head through waist/hips is visible; most legs are not visible
+- upper body: primarily head, shoulders, chest/torso; hips/legs are substantially absent
+- head and shoulders: head plus shoulders with little torso
+- head only: primarily the head/face
+
+If both feet are visibly inside the frame, do not label the image "three-quarter body" merely because the subject is seated or occupies only part of the frame.
+
+SUBJECT SCALE
+This describes how large the subject appears relative to the entire photograph. It is independent of BODY COVERAGE.
+CHOOSE ONE:
+tight
+medium close
+medium
+medium-wide / environmental
+wide / distant
+uncertain
+
+Use these definitions:
+- tight: subject dominates the frame with very little surrounding context
+- medium close: subject fills much of the frame but some immediate context remains
+- medium: subject and immediate surroundings are both substantial
+- medium-wide / environmental: full pose and a meaningful amount of surrounding environment are visible
+- wide / distant: subject is relatively small and the environment dominates the frame
+
+CAMERA ANGLE
+This describes camera height/viewpoint relative to the subject, not head tilt or body posture.
+CHOOSE ONE:
+eye-level
+low-angle
+high-angle
+overhead
+ground-level upward
+uncertain
+
+Use these definitions:
+- eye-level: camera is approximately level with the subject rather than distinctly above or below
+- low-angle: camera is visibly below the subject and looks upward
+- high-angle: camera is visibly above the subject and looks downward
+- overhead: viewpoint is strongly top-down
+- ground-level upward: camera is extremely low, near ground level, with pronounced upward perspective
+
+Do not choose eye-level merely because the subject's face appears near the image center.
+
+ANATOMICAL LATERALITY
+Only include a left/right body-part fragment when the anatomical side is both visually supported and meaningfully useful.
+Always spell the namespace explicitly as "subject-left" or "subject-right". Never use a bare "left hand", "right arm", etc. Do not use frame position here.
+
+Good examples:
+subject-left hand holding object
+subject-right arm raised
+subject-left knee higher than subject-right knee
+
+Do NOT use this section to restate symmetric contact such as "subject-left hand on subject-right hand" and "subject-right hand on subject-left hand". If hands are simply clasped or together, that belongs in ARMS / HANDS or OTHER POSE RELATIONSHIPS.
+If there is no meaningful reliable anatomical-side fact, write "- uncertain".
+
+OTHER POSE RELATIONSHIPS
+Use short literal fragments only for clearly visible pose relationships not captured above. These may mention body-to-body or body-to-scene contact such as "hands together in front of torso", "forearms supported across raised knees", or "back leaning against tree trunk".
+Do not infer intention, emotion, story, hidden anatomy, or invisible support.
+
+GENERAL RULES
+- Observation only. Do not explain your reasoning.
+- Accuracy is more important than completeness.
+- Sparse output is acceptable.
+- Do not choose the closest available label just to populate a section.
+- Do not infer personality, mood, narrative, purpose, or unseen anatomy.
+- Keep anatomical subject-left/subject-right distinct from image-left/image-right.
+- Prefer the supplied vocabulary when it fits, but a short literal fragment is allowed in OTHER POSE RELATIONSHIPS when needed.
+- Do not add clothing, background, lighting, identity, age, ethnicity, or aesthetic description in this probe.
+- Return only the sectioned fragment sheet.
