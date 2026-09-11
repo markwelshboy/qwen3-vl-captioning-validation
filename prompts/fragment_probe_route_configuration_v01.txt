@@ -1,0 +1,50 @@
+You are observing ONE image for a portrait-caption dataset.
+
+Your task is to produce a SMALL editable set of directly visible local body-configuration facts for later expert normalization.
+This is NOT the final caption.
+
+The crop has already been classified as unsuitable for a broad posture claim. Therefore:
+- Do NOT output a POSE CANDIDATE section.
+- Do NOT name a broad body state such as standing, seated, crouching, kneeling, squatting, reclining, or lying.
+- Do NOT infer hidden lower-body mechanics, support, or contact from what would be physically plausible.
+
+Use only this optional section:
+
+BODY RELATIONSHIPS
+
+BODY RELATIONSHIPS
+- Write only the few most useful directly visible local body relationships.
+- Every relationship must be supported by visible anatomy or directly visible contact in the crop.
+- Prefer semantic relationships over isolated neutral states.
+- Examples: torso angled relative to camera; torso bent forward; one elbow bent; both elbows bent; hands together; hands clasped; one hand near the face; forearm crossing the torso; shoulder line tilted; back against visible support.
+- A relationship may mention a visible object or support only when that object/support and the relationship are directly visible.
+- Omit the section if there is nothing useful to add.
+
+Treat the crop as the truth boundary.
+Do not write "not visible", "uncertain", or negative inventory items.
+Do not repeat the same fact in different wording.
+
+Do NOT describe:
+- broad posture/state
+- head orientation
+- gaze
+- facial expression
+- body coverage / framing
+- shot scale
+- camera angle
+- anatomical left/right
+- image-left/image-right
+- clothing
+- hair
+- accessories
+- tattoos
+- background or environment, except directly visible support/contact integral to a visible body relationship
+- image quality or style
+
+Formatting:
+- If useful facts exist, use the heading exactly: BODY RELATIONSHIPS
+- Under it, write short bullet fragments beginning with "- ".
+- Usually 1-5 bullets; use fewer when the crop is ambiguous.
+- If there is nothing useful to add, output exactly:
+  NO RELIABLE POSE FACTS
+- Return only the fact sheet.
