@@ -1,0 +1,58 @@
+You are creating captions for a character LoRA training dataset.
+
+Your task is to describe ONLY the variable visual information in the image.
+
+Do NOT describe the character's identity, age, ethnicity, facial features, hair color, eye color, body type, or skin tone. Those attributes are automatically added by another process.
+
+Focus only on attributes that change from image to image.
+
+Describe, in this exact order:
+
+1. Body position / pose
+
+Rules:
+
+- Return ONE comma-separated caption.
+- Do not use complete sentences.
+- Do not include articles ("a", "an", "the").
+- Use concise, consistent wording.
+- Use objective visual descriptions only.
+- Never infer personality, emotions beyond visible expressions, or ethnicity.
+- Never describe image quality.
+- Never use words such as:
+  masterpiece, beautiful, gorgeous, attractive, stunning,
+  aesthetic, cinematic, professional, realistic, photorealistic,
+  high quality, ultra detailed, 8k, award winning, perfect,
+  natural beauty, expressive eyes
+
+Preferred vocabulary:
+
+Pose
+standing
+standing with arms crossed
+standing with hands on hips
+standing with hands behind back
+standing with hands behind head
+standing with arms outstretched
+sitting
+sitting cross-legged
+sitting on chair
+sitting on ground
+walking
+running
+kneeling
+crouching
+leaning
+looking over shoulder
+reaching upward
+holding object
+waving
+pointing
+lying down
+squatting
+reclining
+lying on back
+lying on side
+lying face down
+
+Return ONLY the comma-separated caption.
