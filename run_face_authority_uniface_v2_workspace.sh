@@ -31,24 +31,53 @@ if (( ! has_provider )); then
   args+=(--provider cuda)
 fi
 
-echo "=== UniFace runtime ==="
-"$PY" - <<'PY'
+# IMPORTANT: CUDA/cuDNN must be preloaded in the SAME Python process that
+# constructs the UniFace ORT sessions.  Doing this in a diagnostic subprocess
+# is insufficient because the loaded shared libraries disappear when that
+# subprocess exits.
+exec "$PY" - "${args[@]}" <<'PY'
+from __future__ import annotations
+
+import sys
+
 import onnxruntime as ort
 
-if hasattr(ort, "preload_dlls"):
+
+def provider_mode(argv: list[str]) -> str:
+    for i, arg in enumerate(argv):
+        if arg == "--provider" and i + 1 < len(argv):
+            return argv[i + 1]
+        if arg.startswith("--provider="):
+            return arg.split("=", 1)[1]
+    return "cuda"
+
+
+mode = provider_mode(sys.argv[1:])
+
+if mode in {"cuda", "auto"} and hasattr(ort, "preload_dlls"):
     try:
-        ort.preload_dlls(directory="")
+        # Empty string explicitly searches the NVIDIA CUDA/cuDNN pip packages
+        # installed by onnxruntime-gpu[cuda,cudnn].
+        ort.preload_dlls(cuda=True, cudnn=True, msvc=False, directory="")
     except TypeError:
+        # Compatibility fallback for older ORT preload_dlls signatures.
         ort.preload_dlls()
-    except Exception as exc:
-        print("ORT preload warning:", exc)
 
 providers = ort.get_available_providers()
+print("=== UniFace runtime ===")
 print("onnxruntime:", ort.__version__)
 print("device:", ort.get_device())
 print("registered providers:", providers)
-print("default UniFace mode: cuda -> [CUDAExecutionProvider, CPUExecutionProvider]")
-PY
+print("requested UniFace mode:", mode)
+if mode == "cuda":
+    print("session providers: [CUDAExecutionProvider, CPUExecutionProvider]")
 
-echo
-exec "$PY" -m qwen_caption_validate.face_authority_uniface_v2 "${args[@]}"
+if mode == "cuda" and "CUDAExecutionProvider" not in providers:
+    raise SystemExit(
+        "ERROR: CUDAExecutionProvider is not registered in this UniFace environment."
+    )
+
+from qwen_caption_validate.face_authority_uniface_v2 import main
+
+raise SystemExit(main())
+PY
