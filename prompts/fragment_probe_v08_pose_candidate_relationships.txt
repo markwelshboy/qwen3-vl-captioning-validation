@@ -1,0 +1,94 @@
+You are observing ONE image for a portrait-caption dataset.
+
+Your task is to produce a SMALL editable set of body-pose candidate facts for later expert normalization.
+This is NOT the final caption.
+
+Use only these two optional sections:
+
+POSE CANDIDATE
+BODY RELATIONSHIPS
+
+POSE CANDIDATE
+- If a useful coarse overall body-state hypothesis is apparent, write ONE short bullet only.
+- Examples: standing; seated; crouching; kneeling; squatting; reclining; lying on back; lying on side; lying face down; standing with one leg raised; lying on back on bed.
+- This is a semantic candidate, not proof. A crop may leave the hidden lower-body mechanics unverified.
+- Do NOT invent unseen anatomy, objects, support, or contact to justify the candidate.
+- If no useful coarse pose candidate is apparent, omit this section.
+
+BODY RELATIONSHIPS
+- This is ONE optional list of the few most useful directly visible body relationships.
+- Do not inventory every body part.
+- Every relationship in this section must be supported by visible anatomy or directly visible contact in the crop.
+- Prefer semantic relationships over isolated neutral states.
+- Examples: torso bent forward; three-quarter torso; rounded/slouched forward; hands clasped; forearms resting on knees; one elbow bent; both hands holding visible fabric; one knee raised; one foot planted; back against visible support.
+- A relationship may mention a visible object or support only when that object/support and the relationship are directly visible.
+- Omit BODY RELATIONSHIPS entirely if there is nothing useful to add.
+
+CRITICAL RULE:
+The POSE CANDIDATE must NOT be used to complete BODY RELATIONSHIPS.
+For example:
+- "seated" does not justify bent knees, planted feet, a chair, or hands on thighs when those are not visible.
+- "lying on back" does not justify bent knees, flat feet, arms at sides, or bed contact when those are not visible.
+- "standing" does not justify straight legs, feet planted, arms at sides, or floor contact when those are not visible.
+
+Treat the crop as the truth boundary for BODY RELATIONSHIPS.
+Do not infer hidden limbs or hidden contact merely because they would be physically plausible.
+Do not write "not visible", "uncertain", or negative inventory items.
+Do not repeat the same fact in different wording.
+
+Do NOT describe:
+- head orientation
+- gaze
+- facial expression
+- body coverage / framing
+- shot scale
+- camera angle
+- anatomical left/right
+- image-left/image-right
+- clothing
+- hair
+- accessories
+- tattoos
+- background or environment, except a directly visible support/context when it is integral to the POSE CANDIDATE or a visible body relationship
+- image quality or style
+
+Formatting:
+- Use the headings exactly as written.
+- Under each included heading, write short bullet fragments beginning with "- ".
+- POSE CANDIDATE: at most one bullet.
+- BODY RELATIONSHIPS: usually 1-5 bullets; use fewer when the crop is ambiguous.
+- If neither section has a useful fact, output exactly:
+  NO RELIABLE POSE FACTS
+- Return only the fact sheet.
+
+Example — broad body evidence:
+
+POSE CANDIDATE
+- standing with one leg raised
+
+BODY RELATIONSHIPS
+- torso bent forward
+- both hands holding visible fabric
+- one knee raised
+- one foot planted
+
+Example — tight crop with a coarse premise but little visible geometry:
+
+POSE CANDIDATE
+- seated
+
+BODY RELATIONSHIPS
+- three-quarter torso
+
+Do not add hidden knees, feet, chair contact, or other mechanics.
+
+Example — lying pose:
+
+POSE CANDIDATE
+- lying on back on bed
+
+BODY RELATIONSHIPS
+- one elbow bent
+- hand resting on torso
+
+Do not add leg configuration or support/contact details unless they are actually visible.
