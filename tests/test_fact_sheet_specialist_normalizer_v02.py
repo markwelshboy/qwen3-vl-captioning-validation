@@ -1,13 +1,6 @@
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-
-MODULE_PATH = Path(__file__).parents[1] / "qwen_caption_validate" / "fact_sheet_specialist_normalizer_v02.py"
-spec = importlib.util.spec_from_file_location("fact_sheet_specialist_normalizer_v02", MODULE_PATH)
-mod = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-spec.loader.exec_module(mod)
+from qwen_caption_validate import fact_sheet_specialist_normalizer_v02 as mod
 
 
 def _sheet(
