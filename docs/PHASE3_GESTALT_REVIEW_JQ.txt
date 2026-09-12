@@ -1,0 +1,23 @@
+OUT="$RUN_DIR/semantic-v3/routed-gestalt-v0.1/routed_gestalt.index.json"
+
+jq -r '
+  .records[] |
+  [
+    .image_key,
+    .policy_mode,
+    .status,
+    (.acquisition.gestalt // "-"),
+    ((.acquisition.appearance // []) | join("; ")),
+    ((.acquisition.expression_action // []) | join("; ")),
+    ((.acquisition.objects // []) | join("; ")),
+    ((.acquisition.scene // []) | join("; ")),
+    ((.acquisition.secondary_people // []) | join("; ")),
+    ((.parse.unexpected_keys // []) | join(","))
+  ] | @tsv
+' "$OUT"
+
+jq -r '
+  .records[] |
+  "\n===== \(.image_key) | \(.policy_mode) | \(.status) =====\n" +
+  (.raw_response // "[NO RESPONSE]")
+' "$OUT"
