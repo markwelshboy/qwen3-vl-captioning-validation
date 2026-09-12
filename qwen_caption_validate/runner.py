@@ -144,6 +144,13 @@ def _load_transformers(
     )
 
 
+def _env_truthy(name: str, *, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _load_vllm(
     model_id: str,
     *,
@@ -177,10 +184,12 @@ def _load_vllm(
             "Install the optional stack described in README.md."
         ) from exc
 
+    text_only_profile = _env_truthy("QWEN_VLLM_TEXT_ONLY_PROFILE")
     print(
         "vLLM runtime: "
         f"worker_method={os.environ.get('VLLM_WORKER_MULTIPROC_METHOD')} "
-        f"flashinfer_sampler={os.environ.get('VLLM_USE_FLASHINFER_SAMPLER')}"
+        f"flashinfer_sampler={os.environ.get('VLLM_USE_FLASHINFER_SAMPLER')} "
+        f"text_only_profile={int(text_only_profile)}"
     )
 
     started = time.perf_counter()
@@ -198,6 +207,19 @@ def _load_vllm(
         "seed": 0,
         "max_model_len": max_model_len,
     }
+    if text_only_profile:
+        # The Phase-5 composer never supplies images or video.  Avoid the
+        # multimodal dummy-input/profile path entirely and skip CUDA graph
+        # capture so the 32B FP8 checkpoint has the lowest practical startup
+        # memory peak.  This profile is opt-in so image-captioning callers keep
+        # their existing multimodal behavior.
+        llm_kwargs["limit_mm_per_prompt"] = {"image": 0, "video": 0}
+        llm_kwargs["skip_mm_profiling"] = True
+        llm_kwargs["enforce_eager"] = True
+        print(
+            "vLLM text-only profile: image=0 video=0 "
+            "skip_mm_profiling=1 enforce_eager=1"
+        )
     if cache_dir:
         llm_kwargs["download_dir"] = str(cache_dir)
 
