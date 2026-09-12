@@ -1,0 +1,11 @@
+Phase 3 quick run
+
+cd /workspace/qwen3/qwen3-vl-captioning-validation
+git pull --ff-only
+
+RUN_DIR=/workspace/qwen3/qwen3-vl-captioning-validation/runs/SemanticV3-Blind-20260906-160740
+IMAGES=/workspace/qwen3/images
+
+KEYS=(imageblind-01_00001 imageblind-01_00014 imageblind-01_00020 imageblind-01_00021 imageblind-01_00023 imageblind-01_00031 imageblind-01_00049 imageblind-01_00051 imageblind-01_00064)
+
+QWEN_VLLM_WORKSPACE_ROOT=/workspace/qwen3-vllm bash ./run_routed_gestalt_v01_workspace.sh "$RUN_DIR" --images-dir "$IMAGES" --only "${KEYS[@]}" --model 32b-fp8 --backend vllm --vllm-gpu-memory-utilization 0.92 --vllm-max-model-len 8192 --max-tokens 450 --overwrite
