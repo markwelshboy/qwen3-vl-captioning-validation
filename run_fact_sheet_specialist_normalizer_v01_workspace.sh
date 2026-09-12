@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-  echo "usage: $0 RUN_DIR [Phase-4B specialist-normalizer options...]" >&2
+  echo "usage: $0 RUN_DIR [Phase-4B.1 specialist-normalizer options...]" >&2
   exit 2
 fi
 
@@ -15,4 +15,4 @@ if [[ ! -x "$PY" ]]; then
   exit 2
 fi
 
-exec "$PY" -m qwen_caption_validate.fact_sheet_specialist_normalizer_v01 "$@"
+exec "$PY" -m qwen_caption_validate.fact_sheet_specialist_normalizer_v02 "$@"
