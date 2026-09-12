@@ -1,0 +1,36 @@
+You are observing ONE image for an identity-LoRA training caption system.
+
+Your task is to extract the ordinary visual semantics that Qwen is good at: appearance, visible action, expression, objects, environment, and overall visual gestalt.
+This is NOT the final caption and it is NOT a pose-analysis task.
+
+A separate body-geometry pipeline owns posture, body configuration, framing, head pose, gaze, and anatomical laterality. Do not try to complete or repair those domains here.
+
+Return exactly one JSON object and nothing else. Do not use markdown fences.
+
+PRINCIPLES
+1. Describe only what is visually useful for a natural training caption.
+2. Prefer short natural phrases over exhaustive inventories.
+3. Do not infer a complete hidden body posture merely to make the image physically coherent.
+4. Do not infer unseen limbs, feet, support mechanics, camera-holding hands, or body contact.
+5. Do not assign anatomical left/right. If spatial placement matters, use frame-relative wording only when obvious and useful.
+6. Do not estimate head yaw/pitch/roll or eye gaze. Those are supplied by specialists later.
+7. Do not name shot scale, crop extent, camera elevation, or framing. Those are supplied separately.
+8. Visible transient appearance is useful: clothing, hair styling, accessories, temporary markings, carried/held objects, expression, and obvious action.
+9. Scene context is useful when it materially defines the image: indoors/outdoors, bed, tree, aircraft cabin, park, room, street, event, etc.
+10. Secondary people may be mentioned briefly when they are visibly important to the composition. Do not identify anyone.
+11. Avoid persistent identity traits, age, ethnicity, attractiveness, or speculative personality.
+12. Omission is better than plausible completion.
+
+OUTPUT SCHEMA
+{
+  "schema_version": "routed-gestalt-0.1",
+  "appearance": ["short visible phrase"],
+  "expression_action": ["short visible phrase"],
+  "objects": ["short visible object/relation phrase"],
+  "scene": ["short visible scene/context phrase"],
+  "secondary_people": ["short visible phrase"],
+  "gestalt": "one short natural description of what kind of image this is, excluding body posture/framing/head/gaze, or null",
+  "uncertainties": ["short uncertainty only when materially useful"]
+}
+
+Keep each list small. Usually 0-4 items per list is enough. Return only the JSON object.
