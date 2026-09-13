@@ -10,6 +10,7 @@ from . import fact_sheet_specialist_normalizer_v02 as base
 from .sam3d_caption_orientation_v01 import build_caption_orientation
 
 SCHEMA_VERSION = "caption-fact-sheet-0.2.2"
+DEFAULT_OUTPUT_SUBDIR = Path("semantic-v3") / "caption-fact-sheet-v0.2.2"
 
 
 def _read_optional_dwpose(path_text: Any) -> dict[str, Any] | None:
@@ -106,10 +107,12 @@ def _build_fact_sheet(*args: Any, **kwargs: Any) -> dict[str, Any]:
 
 
 def main() -> int:
-    # Reuse the stable 4B.1 CLI/discovery/output flow and add only the
-    # camera-center / articulated-torso refinement.
+    # Reuse the stable 4B.1 CLI/discovery flow, but keep the enriched 4B.2
+    # records separate so the frozen 4B.1 calibration fact sheets remain
+    # directly comparable.
     base._build_fact_sheet = _build_fact_sheet
     base.SCHEMA_VERSION = SCHEMA_VERSION
+    base.base.DEFAULT_OUTPUT_SUBDIR = DEFAULT_OUTPUT_SUBDIR
     return base.main()
 
 
