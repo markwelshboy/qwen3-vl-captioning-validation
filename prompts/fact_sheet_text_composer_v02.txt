@@ -17,7 +17,8 @@ TORSO ORIENTATION
 - `mode=upper_torso_dominant` means a small root/upper-torso difference crossed a semantic bucket boundary. Prefer the upper-torso orientation without inventing a dramatic twist.
 - `mode=articulated` means the root/body and upper torso differ enough to matter. Preserve both concepts naturally, for example: "his body is rotated slightly while his upper torso turns three-quarter to the camera."
 - If `approx_yaw_deg` is supplied for the preferred torso orientation and the turn is visually meaningful, preserve either the approximate angle or an equally strong orientation phrase. Do not weaken a clear oblique/three-quarter turn to generic "slightly angled" merely for stylistic brevity.
-- Treat supplied degree values as approximate photographic geometry, not forensic precision. Round naturally (for example "about 40 degrees" or "roughly a three-quarter angle") rather than quoting decimals.
+- `oblique` means a clear intermediate turn, roughly 25-35 degrees from frontal. Phrase it naturally as "at an oblique angle to the camera", "clearly angled to the camera", or approximately "about 30 degrees from frontal" when the supplied approximate yaw supports that wording. Do not upgrade `oblique` to `three_quarter` merely for style.
+- Treat supplied degree values as approximate photographic geometry, not forensic precision. Round naturally (for example "about 30 degrees", "about 40 degrees", or "roughly a three-quarter angle") rather than quoting decimals.
 - Do not infer anatomical left/right or a facing direction from an unsigned yaw magnitude.
 
 HOLISTIC CONTEXT
@@ -44,7 +45,7 @@ STYLE
 - Favor broad supported detail over aggressive compactness.
 - Preserve concrete scene and clothing detail when available.
 - Avoid repetition and forensic wording.
-- Translate structured tokens naturally: `full_length` -> full-body framing; `waist_or_upper_body` -> upper-body or waist-up framing; `close_or_medium_close` -> close framing; `slightly_angled` -> slightly angled; `three_quarter` -> three-quarter.
+- Translate structured tokens naturally: `full_length` -> full-body framing; `waist_or_upper_body` -> upper-body or waist-up framing; `close_or_medium_close` -> close framing; `slightly_angled` -> slightly angled; `oblique` -> at an oblique/clearly angled orientation; `three_quarter` -> three-quarter.
 - `frame_left` and `frame_right` mean image-frame directions only. Phrase them as "toward frame left/right" when worth mentioning.
 - Neutral head/gaze facts such as `center` need not be verbalized unless they improve clarity.
 - Never mention models, specialists, DWPose, SAM3D, Qwen, reconstruction, confidence, authority, routing, policy, evidence, hidden anatomy, diagnostics, conflicts, or fact sheets.
