@@ -4,6 +4,7 @@ import numpy as np
 
 from qwen_caption_validate.sam3d_caption_orientation_v01 import (
     _caption_summary,
+    _orientation_band,
     build_caption_orientation,
 )
 
@@ -26,12 +27,23 @@ def _arrays(*, cam_x: float = 0.0, shoulder_yaw_45: bool = False) -> dict[str, n
     }
 
 
+def test_caption_orientation_bands_include_oblique_without_relabeling_three_quarter():
+    assert _orientation_band(14.9) == "frontal"
+    assert _orientation_band(22.5) == "slightly_angled"
+    assert _orientation_band(29.1) == "oblique"
+    assert _orientation_band(35.0) == "oblique"
+    assert _orientation_band(49.5) == "three_quarter"
+    assert _orientation_band(81.0) == "side_on"
+
+
 def test_camera_center_reference_differs_from_optical_axis_for_off_axis_subject():
     out = build_caption_orientation(_arrays(cam_x=1.0))
     root = out["body_root_orientation"]
     assert root["optical_axis_yaw_deg"] == 0.0
     assert 18.0 < root["yaw_magnitude_deg"] < 19.0
+    assert root["orientation_band"] == "slightly_angled"
     assert out["policy"]["caption_reference_is_physical_camera_center"] is True
+    assert out["policy"]["caption_orientation_has_intermediate_oblique_band"] is True
 
 
 def test_upper_torso_plane_can_preserve_twist_separate_from_root():
@@ -47,7 +59,7 @@ def test_upper_torso_plane_can_preserve_twist_separate_from_root():
 
 
 def test_small_bucket_boundary_difference_does_not_invent_articulation():
-    root = {"orientation_band": "slightly_angled", "yaw_deg": 34.0, "approx_yaw_deg": 35}
+    root = {"orientation_band": "oblique", "yaw_deg": 34.0, "approx_yaw_deg": 35}
     upper = {"orientation_band": "three_quarter", "yaw_deg": 36.0, "approx_yaw_deg": 35}
     summary = _caption_summary(root, upper)
     assert summary["mode"] == "upper_torso_dominant"
