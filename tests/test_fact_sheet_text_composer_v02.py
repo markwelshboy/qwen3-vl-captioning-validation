@@ -40,14 +40,40 @@ def test_combined_torso_projection_keeps_caption_facing_angle():
     assert fact["preferred"]["approx_yaw_deg"] == 45
 
 
+def test_combined_oblique_projection_survives_to_composer():
+    fact = mod._torso_fact(_body({
+        "available": True,
+        "composer_eligible": True,
+        "body_root_orientation": {
+            "orientation_band": "slightly_angled",
+            "yaw_magnitude_deg": 22.5,
+            "approx_yaw_deg": 25,
+        },
+        "upper_torso_orientation": {
+            "orientation_band": "oblique",
+            "yaw_magnitude_deg": 29.1,
+            "approx_yaw_deg": 30,
+        },
+        "caption_orientation": {
+            "mode": "upper_torso_dominant",
+            "relative_twist_magnitude_deg": 6.6,
+        },
+    }))
+    assert fact is not None
+    assert fact["mode"] == "upper_torso_dominant"
+    assert fact["preferred"]["camera_orientation"] == "oblique"
+    assert fact["preferred"]["yaw_magnitude_deg"] == 29.1
+    assert fact["preferred"]["approx_yaw_deg"] == 30
+
+
 def test_articulated_torso_projection_preserves_root_and_upper_torso():
     fact = mod._torso_fact(_body({
         "available": True,
         "composer_eligible": True,
         "body_root_orientation": {
             "orientation_band": "slightly_angled",
-            "yaw_magnitude_deg": 26.0,
-            "approx_yaw_deg": 25,
+            "yaw_magnitude_deg": 22.0,
+            "approx_yaw_deg": 20,
         },
         "upper_torso_orientation": {
             "orientation_band": "three_quarter",
@@ -56,7 +82,7 @@ def test_articulated_torso_projection_preserves_root_and_upper_torso():
         },
         "caption_orientation": {
             "mode": "articulated",
-            "relative_twist_magnitude_deg": 18.0,
+            "relative_twist_magnitude_deg": 22.0,
         },
     }))
     assert fact is not None
@@ -64,7 +90,7 @@ def test_articulated_torso_projection_preserves_root_and_upper_torso():
     assert fact["body_root"]["camera_orientation"] == "slightly_angled"
     assert fact["upper_torso"]["camera_orientation"] == "three_quarter"
     assert fact["preferred"]["approx_yaw_deg"] == 45
-    assert fact["relative_twist_magnitude_deg"] == 18.0
+    assert fact["relative_twist_magnitude_deg"] == 22.0
 
 
 def test_diagnostic_only_torso_remains_unavailable_to_composer():
