@@ -35,9 +35,9 @@ def _unit_xz(value: np.ndarray) -> np.ndarray | None:
 def _signed_yaw_between_deg(forward_xyz: np.ndarray, toward_camera_xyz: np.ndarray) -> float | None:
     """Signed yaw from a body-forward vector to the actual subject->camera ray.
 
-    Both vectors are projected into camera X/Z.  Zero means the body segment
+    Both vectors are projected into camera X/Z. Zero means the body segment
     faces the physical camera center, regardless of where the subject sits in
-    the image.  This intentionally differs from yaw against the camera optical
+    the image. This intentionally differs from yaw against the camera optical
     axis when the subject is off-axis.
     """
     a = _unit_xz(forward_xyz)
@@ -54,14 +54,22 @@ def _wrap_deg(value: float) -> float:
 
 
 def _orientation_band(yaw_deg: float | None) -> str | None:
-    """Keep the calibrated v0.2 semantic bands; fix the reference frame instead."""
+    """Map caption-facing yaw to semantic bands without changing legacy diagnostics.
+
+    The legacy SAM3D diagnostic deliberately keeps its calibrated v0.2 bands.
+    Caption-facing orientation uses an additional ``oblique`` band so a clear
+    ~25-35 degree turn is not weakened to the phrase ``slightly angled`` while
+    still remaining distinct from a genuine three-quarter ~35-65 degree turn.
+    """
     if yaw_deg is None:
         return None
     a = abs(float(yaw_deg))
-    if a <= 20.0:
+    if a <= 15.0:
         return "frontal"
-    if a <= 35.0:
+    if a <= 25.0:
         return "slightly_angled"
+    if a <= 35.0:
+        return "oblique"
     if a <= 65.0:
         return "three_quarter"
     if a <= 115.0:
@@ -114,9 +122,9 @@ def _caption_summary(root: dict[str, Any], upper: dict[str, Any]) -> dict[str, A
         mode = "articulated"
         preferred = upper_band
     else:
-        # A small numerical difference can straddle a bucket boundary.  Do not
-        # manufacture torso twist prose merely because 34.9 and 35.1 classify
-        # differently; prefer the caption-relevant upper torso.
+        # A small numerical difference can straddle a bucket boundary. Do not
+        # manufacture torso twist prose merely because adjacent semantic bands
+        # differ; prefer the caption-relevant upper torso.
         mode = "upper_torso_dominant"
         preferred = upper_band
 
@@ -141,9 +149,9 @@ def build_caption_orientation(
     """Build caption-facing root and upper-torso camera orientation.
 
     The older diagnostic measured global/root yaw against the camera optical
-    axis.  That is useful diagnostically but is not exactly "angle to camera"
-    for an off-axis subject.  Here the reference is the ray from each body
-    segment to the physical camera center.  Upper-torso orientation is derived
+    axis. That is useful diagnostically but is not exactly "angle to camera"
+    for an off-axis subject. Here the reference is the ray from each body
+    segment to the physical camera center. Upper-torso orientation is derived
     from the reconstructed shoulder/hip plane and kept separate from body/root
     orientation so seated/twisted poses are not collapsed prematurely.
     """
@@ -220,6 +228,16 @@ def build_caption_orientation(
             "caption_reference_is_physical_camera_center": True,
             "upper_torso_is_default_caption_orientation": True,
             "root_and_upper_torso_remain_separate_when_meaningfully_twisted": True,
-            "orientation_thresholds_unchanged_from_v0_2": True,
+            "legacy_diagnostic_orientation_thresholds_unchanged": True,
+            "caption_orientation_has_intermediate_oblique_band": True,
+            "caption_orientation_bands": {
+                "frontal": "abs(yaw)<=15",
+                "slightly_angled": "15<abs(yaw)<=25",
+                "oblique": "25<abs(yaw)<=35",
+                "three_quarter": "35<abs(yaw)<=65",
+                "side_on": "65<abs(yaw)<=115",
+                "rear_three_quarter": "115<abs(yaw)<=160",
+                "rear": "abs(yaw)>160",
+            },
         },
     }
