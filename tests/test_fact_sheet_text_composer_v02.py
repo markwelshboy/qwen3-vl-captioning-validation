@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from qwen_caption_validate import fact_sheet_text_composer_v02 as mod
 
 
 def _body(torso: dict) -> dict:
     return {"torso_geometry": torso}
+
+
+def test_phase51_defaults_to_enriched_phase4b2_fact_sheets():
+    assert mod.DEFAULT_INPUT_SUBDIR == Path("semantic-v3") / "caption-fact-sheet-v0.2.2"
+    assert mod.DEFAULT_OUTPUT_SUBDIR == Path("semantic-v3") / "text-composer-v0.2"
+    assert mod.EXPECTED_FACT_SHEET_SCHEMA == "caption-fact-sheet-0.2.2"
 
 
 def test_combined_torso_projection_keeps_caption_facing_angle():
