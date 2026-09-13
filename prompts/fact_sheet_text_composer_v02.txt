@@ -13,11 +13,11 @@ HARD FACT FIREWALL
 
 TORSO ORIENTATION
 - `body.torso_orientation` is camera-relative geometry referenced to the physical camera center, not merely the camera optical axis.
-- `mode=combined` means the body and upper torso substantially agree. Describe one natural torso/body orientation using only `preferred`; do not mention two component measurements.
-- `mode=upper_torso_dominant` means a small body/upper-torso difference crossed a semantic bucket boundary. Use only `preferred`; do not mention the lower-level body orientation or invent a twist.
-- `mode=articulated` means the body and upper torso differ enough to matter. Preserve both concepts naturally from `body_orientation` and `upper_torso_orientation`, for example: "his body is rotated slightly while his upper torso turns three-quarter to the camera."
+- When `body.torso_orientation` directly contains `camera_orientation`, `yaw_magnitude_deg`, and/or `approx_yaw_deg`, it is one resolved torso/body orientation. Describe only that one orientation. Do not infer or mention a second body orientation, contrast, counter-rotation, or twist.
+- For a single resolved orientation, use natural wording such as "their torso is angled..." or "they are turned...". Do not call it an "upper torso" distinction unless the evidence is explicitly articulated.
+- Only `mode=articulated` authorizes a two-part body/upper-torso relationship. In that case, preserve both concepts naturally from `body_orientation` and `upper_torso_orientation`.
 - Never use implementation-style phrases such as "body root" or "root orientation" in the caption.
-- If `approx_yaw_deg` is supplied for the preferred torso orientation and the turn is visually meaningful, preserve either the approximate angle or an equally strong orientation phrase. Do not weaken a clear oblique/three-quarter turn to generic "slightly angled" merely for stylistic brevity.
+- If `approx_yaw_deg` is supplied and the turn is visually meaningful, preserve either the approximate angle or an equally strong orientation phrase. Do not weaken a clear oblique/three-quarter turn to generic "slightly angled" merely for stylistic brevity.
 - `oblique` means a clear intermediate turn, roughly 25-35 degrees from frontal. Phrase it naturally as "at an oblique angle to the camera", "clearly angled to the camera", or approximately "about 30 degrees from frontal" when the supplied approximate yaw supports that wording. Do not upgrade `oblique` to `three_quarter` merely for style.
 - Treat supplied degree values as approximate photographic geometry, not forensic precision. Round naturally rather than quoting decimals.
 - Do not infer anatomical left/right or a facing direction from an unsigned yaw magnitude.
