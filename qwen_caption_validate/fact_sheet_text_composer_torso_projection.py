@@ -30,26 +30,25 @@ def torso_fact(body: dict[str, Any], clean: Callable[[Any], str | None]) -> dict
     mode = clean(summary.get("mode"))
 
     if upper_orientation:
-        preferred = dict(upper_orientation)
         if mode == "articulated" and body_orientation:
             out: dict[str, Any] = {
                 "mode": "articulated",
                 "body_orientation": body_orientation,
                 "upper_torso_orientation": upper_orientation,
-                "preferred": preferred,
+                "preferred": dict(upper_orientation),
             }
             twist = summary.get("relative_twist_magnitude_deg")
             if isinstance(twist, (int, float)):
                 out["relative_twist_magnitude_deg"] = round(float(twist), 1)
             return out
-        return {"mode": mode or "combined", "preferred": preferred}
+        return dict(upper_orientation)
 
     orientation = clean(torso.get("torso_camera_orientation"))
     if not orientation:
         return None
-    out = {"mode": "legacy", "preferred": {"camera_orientation": orientation}}
+    out: dict[str, Any] = {"camera_orientation": orientation}
     yaw = torso.get("torso_yaw_magnitude_deg")
     if isinstance(yaw, (int, float)):
-        out["preferred"]["yaw_magnitude_deg"] = round(abs(float(yaw)), 1)
-        out["preferred"]["approx_yaw_deg"] = int(5 * round(abs(float(yaw)) / 5.0))
+        out["yaw_magnitude_deg"] = round(abs(float(yaw)), 1)
+        out["approx_yaw_deg"] = int(5 * round(abs(float(yaw)) / 5.0))
     return out
