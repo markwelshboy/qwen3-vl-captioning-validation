@@ -22,11 +22,38 @@ def _torso_fact(body: dict[str, Any]) -> dict[str, Any] | None:
     return torso_fact(body, base._clean)
 
 
+def _gaze_fact(facts: dict[str, Any]) -> dict[str, Any] | None:
+    raw = facts.get("gaze") if isinstance(facts.get("gaze"), dict) else {}
+    semantics = raw.get("caption_semantics") if isinstance(raw.get("caption_semantics"), dict) else {}
+    if not semantics.get("publishable"):
+        return None
+
+    out: dict[str, Any] = {}
+    horizontal = semantics.get("horizontal") if isinstance(semantics.get("horizontal"), dict) else {}
+    vertical = semantics.get("vertical") if isinstance(semantics.get("vertical"), dict) else {}
+    camera = semantics.get("camera_relationship") if isinstance(semantics.get("camera_relationship"), dict) else {}
+
+    if horizontal.get("publishable"):
+        value = base._clean(horizontal.get("composer_value"))
+        if value:
+            out["horizontal"] = value
+    if vertical.get("publishable"):
+        value = base._clean(vertical.get("composer_value"))
+        if value:
+            out["vertical"] = value
+    if camera.get("publishable"):
+        value = base._clean(camera.get("composer_value"))
+        if value:
+            out["camera_relationship"] = value
+    return out or None
+
+
 def main() -> int:
-    # Phase 5.2 intentionally changes only the governed input contract and
-    # output namespace. Composition behavior remains the frozen Phase-5.1
-    # behavior so differences isolate the Phase-4C character identity policy.
+    # Phase 5.2 consumes the governed identity-policy fact sheet. Torso and gaze
+    # are projected through their caption-facing semantic layers so diagnostic
+    # measurements cannot leak directly into prose.
     base._torso_fact = _torso_fact
+    base._gaze_fact = _gaze_fact
     base.DEFAULT_INPUT_SUBDIR = DEFAULT_INPUT_SUBDIR
     base.DEFAULT_PROMPT = DEFAULT_PROMPT
     base.DEFAULT_OUTPUT_SUBDIR = DEFAULT_OUTPUT_SUBDIR
