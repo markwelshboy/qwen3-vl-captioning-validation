@@ -6,6 +6,7 @@ from typing import Any
 from . import fact_sheet_text_composer_v01 as base
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_INPUT_SUBDIR = Path("semantic-v3") / "caption-fact-sheet-v0.2.2"
 DEFAULT_PROMPT = PACKAGE_ROOT / "prompts" / "fact_sheet_text_composer_v02.txt"
 DEFAULT_OUTPUT_SUBDIR = Path("semantic-v3") / "text-composer-v0.2"
 SCHEMA_VERSION = "fact-sheet-text-composer-0.2"
@@ -63,7 +64,8 @@ def _torso_fact(body: dict[str, Any]) -> dict[str, Any] | None:
             "upper_torso": upper,
         }
 
-    # Compatibility fallback for fact sheets without the 4B.2 enrichment.
+    # Compatibility fallback for explicitly supplied older fact sheets. The
+    # default Phase-5.1 path is caption-fact-sheet-v0.2.2 above.
     orientation = base._clean(torso.get("torso_camera_orientation"))
     if not orientation:
         return None
@@ -77,8 +79,9 @@ def _torso_fact(body: dict[str, Any]) -> dict[str, Any] | None:
 
 def main() -> int:
     # Reuse the v0.1 generation/audit CLI, changing only the fact-sheet
-    # contract, torso evidence projection, prompt, and output namespace.
+    # contract, torso evidence projection, prompt, and input/output namespaces.
     base._torso_fact = _torso_fact
+    base.DEFAULT_INPUT_SUBDIR = DEFAULT_INPUT_SUBDIR
     base.DEFAULT_PROMPT = DEFAULT_PROMPT
     base.DEFAULT_OUTPUT_SUBDIR = DEFAULT_OUTPUT_SUBDIR
     base.SCHEMA_VERSION = SCHEMA_VERSION
