@@ -75,7 +75,8 @@ def _enrich_torso_orientation(sheet: dict[str, Any]) -> tuple[dict[str, Any], li
     torso["orientation_reference"] = "upper_torso_to_physical_camera_center"
     torso["note_phase4b2"] = (
         "Caption-facing torso orientation uses the reconstructed shoulder/hip plane relative to the physical "
-        "camera center. Body/root orientation is retained separately so meaningful torso twist can survive."
+        "camera center. Body/root orientation is retained separately so meaningful torso twist can survive. "
+        "Caption-facing semantic bands include an intermediate oblique class for approximately 25-35 degree turns."
     )
     return out, warnings
 
@@ -91,7 +92,8 @@ def _apply_phase4b2(sheet: dict[str, Any]) -> dict[str, Any]:
         root_orientation_and_upper_torso_orientation_are_separate=True,
         torso_caption_reference_is_physical_camera_center=True,
         optical_axis_root_yaw_is_diagnostic_not_caption_default=True,
-        orientation_bands_are_not_globally_rethresholded=True,
+        legacy_diagnostic_orientation_bands_remain_unchanged=True,
+        caption_orientation_has_intermediate_oblique_band=True,
     )
     audit["invariants"] = invariants
     out["audit"] = audit
