@@ -21,3 +21,5 @@ def test_phase4b2_marks_audit_and_preserves_invariants_without_torso():
     assert out["audit"]["phase"] == "4B.2"
     assert out["audit"]["invariants"]["root_orientation_and_upper_torso_orientation_are_separate"] is True
     assert out["audit"]["invariants"]["torso_caption_reference_is_physical_camera_center"] is True
+    assert out["audit"]["invariants"]["legacy_diagnostic_orientation_bands_remain_unchanged"] is True
+    assert out["audit"]["invariants"]["caption_orientation_has_intermediate_oblique_band"] is True
