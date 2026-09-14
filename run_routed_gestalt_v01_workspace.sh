@@ -15,6 +15,11 @@ if [[ ! -x "$PY" ]]; then
   exit 2
 fi
 
+# This is an image-conditioned VLM stage.  A shell that previously ran the
+# text-only composer may still export QWEN_VLLM_TEXT_ONLY_PROFILE=1; force the
+# multimodal profile here so vLLM is allowed one image and no video.
+export QWEN_VLLM_TEXT_ONLY_PROFILE=0
+
 if [[ "${HF_HUB_ENABLE_HF_TRANSFER:-0}" == "1" ]]; then
   if ! "$PY" -c 'import hf_transfer' >/dev/null 2>&1; then
     echo "INFO: HF_HUB_ENABLE_HF_TRANSFER=1 but hf_transfer is unavailable; disabling hf_transfer for this run."
