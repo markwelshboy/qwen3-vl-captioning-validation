@@ -15,5 +15,18 @@ if [[ ! -x "$PY" ]]; then
   exit 2
 fi
 
+if [[ "${HF_HUB_ENABLE_HF_TRANSFER:-0}" == "1" ]]; then
+  if ! "$PY" -c 'import hf_transfer' >/dev/null 2>&1; then
+    echo "INFO: HF_HUB_ENABLE_HF_TRANSFER=1 but hf_transfer is unavailable; disabling hf_transfer for this run." >&2
+    export HF_HUB_ENABLE_HF_TRANSFER=0
+  fi
+fi
+
+# Phase-5 is text-only.  This must remain enabled for every composer wrapper;
+# otherwise Qwen3-VL/vLLM profiles maximum multimodal inputs (including video),
+# reserves encoder-cache memory, and can OOM before the first text prompt.
+export QWEN_VLLM_TEXT_ONLY_PROFILE="${QWEN_VLLM_TEXT_ONLY_PROFILE:-1}"
+
 echo "Phase-5.3 Python: $PY" >&2
+echo "Phase-5.3 vLLM text-only profile: $QWEN_VLLM_TEXT_ONLY_PROFILE" >&2
 exec "$PY" -m qwen_caption_validate.fact_sheet_text_composer_v04 "$@"
