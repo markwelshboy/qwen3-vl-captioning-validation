@@ -16,7 +16,7 @@ DEFAULT_OUTPUT_SUBDIR = Path("semantic-v3") / "caption-fact-sheet-v0.2.7"
 # straight leg; values below this cutoff are treated as deeply flexed.
 DEEP_SUPPORT_KNEE_ANGLE_DEG = 120.0
 
-_ABSTAIN_MODES = {"framing_only", "configuration"}
+_ADJUDICABLE_MODES = {"pose_allowed", "pose_guided"}
 _SEATED_RE = re.compile(r"\b(?:seated|sitting)\b", re.I)
 _STANDISH_RE = re.compile(r"\b(?:stand|standing|stands|upright)\b", re.I)
 _CROUCH_COMPATIBLE_RE = re.compile(r"\b(?:crouch|crouched|crouching|squat|squatting)\b", re.I)
@@ -146,7 +146,7 @@ def _apply_shadow_adjudication(
     """Attach bounded support/pose adjudication without changing v07 facts.
 
     Authority is deliberately narrow:
-      * crop-policy modes framing_only/configuration always abstain;
+      * only pose_allowed/pose_guided crops are adjudicable;
       * explicit seated interpretations are protected;
       * only an existing v07 mostly-upright support claim can be challenged;
       * only the already-bound support-side knee is measured;
@@ -170,8 +170,9 @@ def _apply_shadow_adjudication(
     support_axis = support.get("support_axis_angle_from_vertical_deg")
     support_axis = float(support_axis) if isinstance(support_axis, (int, float)) else None
 
-    if mode in _ABSTAIN_MODES:
-        reason = f"crop_policy_{mode}_disallows_broad_pose_adjudication"
+    if mode not in _ADJUDICABLE_MODES:
+        mode_label = mode or "unknown"
+        reason = f"crop_policy_{mode_label}_disallows_broad_pose_adjudication"
         body["support_shape_adjudication"] = _support_record(
             status="abstain",
             original_shape=original_shape,
