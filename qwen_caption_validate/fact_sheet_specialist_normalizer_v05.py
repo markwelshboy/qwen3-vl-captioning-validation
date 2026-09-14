@@ -19,10 +19,11 @@ HAND_HIP_RE = re.compile(
     r"(?:\b(?:one\s+)?hand\b.{0,28}\b(?:hip|waist)\b|\b(?:hip|waist)\b.{0,28}\b(?:one\s+)?hand\b)",
     re.I,
 )
-OTHER_RELAXED_ARM_RE = re.compile(
-    r"\bother\s+arm\b.{0,32}\b(?:relaxed|hang(?:s|ing)?|at\s+(?:the\s+)?side)\b",
+RELAXED_ARM_RE = re.compile(
+    r"\b(?:(?:left|right|other|one)\s+)?arm\b.{0,32}\b(?:relaxed|hang(?:s|ing)?|at\s+(?:the\s+)?side)\b",
     re.I,
 )
+BOTH_ARMS_RE = re.compile(r"\b(?:both|two)\s+arms?\b", re.I)
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -177,6 +178,11 @@ def _side_arm_observed(points: dict[str, tuple[float, float] | None], side: str)
     return sum(points.get(f"{side}_{joint}") is not None for joint in ("shoulder", "elbow", "wrist")) >= 2
 
 
+def _source_arm_side(text: str) -> str | None:
+    match = re.search(r"\b(left|right)\s+arm\b", text, re.I)
+    return match.group(1).lower() if match else None
+
+
 def _bind_configuration_laterality(
     configuration: list[dict[str, Any]],
     points: dict[str, tuple[float, float] | None],
@@ -213,31 +219,49 @@ def _bind_configuration_laterality(
         **binding,
         "semantic_relation": "hand_on_hip" if target == "hip" else "hand_at_waist",
         "source_text": source_text,
+        "source_side_label_trusted": False,
     }
     bindings.append(copy.deepcopy(hip_item["laterality_binding"]))
 
+    # A paired asymmetric description often arrives as e.g. "right hand on hip"
+    # plus "left arm relaxed at side". Qwen's left/right token is not authority:
+    # once geometry has bound the hip hand, the distinct relaxed-arm relation can
+    # be assigned to the opposite anatomical chain when that chain is observed.
+    relaxed_items = [
+        item for item in out
+        if isinstance(item, dict)
+        and item is not hip_item
+        and isinstance(item.get("text"), str)
+        and RELAXED_ARM_RE.search(str(item.get("text")))
+        and not BOTH_ARMS_RE.search(str(item.get("text")))
+    ]
+    if len(relaxed_items) > 1:
+        warnings.append("relaxed_arm_laterality_unresolved_multiple_relations")
+        return out, bindings, warnings
+    if not relaxed_items:
+        return out, bindings, warnings
+
     other_side = _opposite(side)
-    for item in out:
-        if not isinstance(item, dict):
-            continue
-        text = str(item.get("text") or "")
-        if not OTHER_RELAXED_ARM_RE.search(text):
-            continue
-        if not _side_arm_observed(points, other_side):
-            warnings.append("other_relaxed_arm_laterality_unresolved_missing_dwpose_chain")
-            continue
-        arm_text = f"{other_side} arm relaxed at side"
-        item["composer_text"] = arm_text
-        item["normalized_text"] = arm_text
-        item["promotion_status"] = "accepted_specialist_lateralized_candidate"
-        item["specialist_owner"] = "dwpose_anatomical_relation_binding"
-        item["laterality_binding"] = {
-            "anatomical_side": other_side,
-            "authority": "opposite_of_dwpose_bound_hand_on_hip_with_observed_arm_chain",
-            "semantic_relation": "other_arm_relaxed_at_side",
-            "source_text": text,
-        }
-        bindings.append(copy.deepcopy(item["laterality_binding"]))
+    item = relaxed_items[0]
+    text = str(item.get("text") or "")
+    if not _side_arm_observed(points, other_side):
+        warnings.append("relaxed_arm_laterality_unresolved_missing_opposite_dwpose_chain")
+        return out, bindings, warnings
+
+    arm_text = f"{other_side} arm relaxed at side"
+    item["composer_text"] = arm_text
+    item["normalized_text"] = arm_text
+    item["promotion_status"] = "accepted_specialist_lateralized_candidate"
+    item["specialist_owner"] = "dwpose_anatomical_relation_binding"
+    item["laterality_binding"] = {
+        "anatomical_side": other_side,
+        "authority": "opposite_of_dwpose_bound_hand_on_hip_with_observed_arm_chain",
+        "semantic_relation": "arm_relaxed_at_side",
+        "source_text": text,
+        "source_side_label": _source_arm_side(text),
+        "source_side_label_trusted": False,
+    }
+    bindings.append(copy.deepcopy(item["laterality_binding"]))
 
     return out, bindings, warnings
 
@@ -305,6 +329,7 @@ def _apply_phase4b4(sheet: dict[str, Any]) -> dict[str, Any]:
         signed_sam3d_yaw_can_publish_frame_turn_direction=True,
         near_frontal_torso_does_not_publish_turn_direction=True,
         qwen_never_owns_anatomical_side_assignment=True,
+        qwen_source_side_labels_are_ignored_during_relation_rebinding=True,
         dwpose_named_joints_can_bind_supported_semantic_relations_to_anatomical_side=True,
         unresolved_relation_laterality_remains_unlateralized=True,
     )
