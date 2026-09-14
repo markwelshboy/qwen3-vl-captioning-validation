@@ -9,6 +9,7 @@ def compact_orientation(value: Any, clean: Callable[[Any], str | None]) -> dict[
     band = clean(value.get("orientation_band"))
     yaw = value.get("yaw_magnitude_deg")
     approx = value.get("approx_yaw_deg")
+    direction = clean(value.get("turn_direction")) if value.get("turn_direction_publishable", True) else None
     out: dict[str, Any] = {}
     if band:
         out["camera_orientation"] = band
@@ -16,6 +17,8 @@ def compact_orientation(value: Any, clean: Callable[[Any], str | None]) -> dict[
         out["yaw_magnitude_deg"] = round(float(yaw), 1)
     if isinstance(approx, (int, float)):
         out["approx_yaw_deg"] = int(approx)
+    if direction:
+        out["turn_direction"] = direction
     return out or None
 
 
@@ -51,4 +54,7 @@ def torso_fact(body: dict[str, Any], clean: Callable[[Any], str | None]) -> dict
     if isinstance(yaw, (int, float)):
         out["yaw_magnitude_deg"] = round(abs(float(yaw)), 1)
         out["approx_yaw_deg"] = int(5 * round(abs(float(yaw)) / 5.0))
+    direction = clean(summary.get("preferred_turn_direction")) if summary.get("turn_direction_publishable") else None
+    if direction:
+        out["turn_direction"] = direction
     return out
