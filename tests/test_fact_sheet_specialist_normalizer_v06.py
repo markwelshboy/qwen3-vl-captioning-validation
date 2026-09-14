@@ -34,6 +34,31 @@ def test_raised_knee_and_opposite_planted_foot_bind_anatomical_sides():
     assert [x["anatomical_side"] for x in bindings] == ["right", "left"]
 
 
+def test_raised_knee_uses_thigh_angle_when_vertical_drop_margin_is_modest():
+    points = {
+        "left_shoulder": (20.0, 0.0),
+        "right_shoulder": (80.0, 0.0),
+        "left_hip": (30.0, 100.0),
+        "right_hip": (70.0, 100.0),
+        "left_knee": (30.0, 150.0),
+        "right_knee": (100.0, 140.0),
+        "left_ankle": (30.0, 205.0),
+        "right_ankle": (110.0, 170.0),
+    }
+    configuration = [
+        {"text": "one knee raised", "composer_text": "one knee raised"},
+        {"text": "one foot planted", "composer_text": "one foot planted"},
+    ]
+    out, bindings, warnings = mod._bind_leg_laterality(configuration, points)
+    assert warnings == []
+    assert out[0]["composer_text"] == "right knee raised"
+    assert out[0]["laterality_binding"]["authority"] == "dwpose_bilateral_thigh_angle_from_vertical"
+    assert out[0]["laterality_binding"]["score_margin"] < mod.KNEE_RELATIVE_HEIGHT_MIN_MARGIN
+    assert out[0]["laterality_binding"]["thigh_angle_margin_deg"] >= mod.KNEE_THIGH_ANGLE_MIN_MARGIN_DEG
+    assert out[1]["composer_text"] == "left foot planted"
+    assert [x["anatomical_side"] for x in bindings] == ["right", "left"]
+
+
 def test_planted_and_lifted_feet_bind_from_bilateral_ankle_height():
     points = {
         "left_shoulder": (20.0, 0.0),
