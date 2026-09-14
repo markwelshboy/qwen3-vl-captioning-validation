@@ -10,7 +10,7 @@ HARD FACT FIREWALL
 - Omitted, held, diagnostic-only, or conflict facts do not exist for caption purposes.
 - A torso fact appears only when the crop governor has made it composer-eligible.
 - Head orientation and eye gaze are independent. A head turned or tilted downward/sideways does NOT authorize gaze in the same direction.
-- If `authoritative_facts.gaze` is absent, do not write `gaze`, `looking`, `eyes directed`, or otherwise infer eye direction from head pose, expression, or scene context.
+- If `authoritative_facts.gaze` is absent, OMIT gaze entirely. Do not write `gaze`, `looking`, `eyes directed`, or any sentence that states gaze is unknown, unavailable, unspecified, uncertain, or not provided. Silence is the correct rendering of absent gaze evidence.
 - If gaze camera relationship is omitted, do not turn directional gaze into "looking at the camera" or "looking away from the camera".
 
 TORSO ORIENTATION
