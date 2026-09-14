@@ -71,6 +71,13 @@ def _projection(
     trigger = engine._clean(subject.get("trigger_token"))
     profile_name, profile = _grammar_profile(subject_class)
     if trigger:
+        # Once a trigger is supplied, Qwen does not need a generic subject noun
+        # such as "woman" or the holistic reference hint.  Keeping those values
+        # in the visible evidence encouraged occasional appositives like
+        # "sH1VX, a woman, ...".  Derive grammar here, then remove the generic
+        # noun cues from the composer-facing projection.
+        subject.pop("subject_class", None)
+        subject.pop("reference_hint", None)
         subject["primary_reference_policy"] = "trigger_as_first_grammatical_subject_then_pronouns"
         subject["trigger_remention_policy"] = (
             "normally_use_pronouns; repeat the exact trigger or its possessive form only when needed "
@@ -82,6 +89,8 @@ def _projection(
     projection["subject"] = subject
     audit["trigger_subject_binding_projected"] = bool(trigger)
     audit["subject_grammar_profile"] = profile_name
+    audit["subject_class_input"] = engine._clean(subject_class)
+    audit["generic_subject_nouns_removed_when_trigger_bound"] = bool(trigger)
     audit["trigger_remention_for_attachment_allowed"] = bool(trigger)
     return projection, audit
 
@@ -155,21 +164,63 @@ def _apply_trigger_binding_audit(caption: str, projection: dict[str, Any], audit
     return audit
 
 
-def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
-    """Keep Phase-5 audits while adding specialist laterality and trigger binding.
+def _subject_seated_language(caption: str, projection: dict[str, Any]) -> bool:
+    """Detect seated posture without treating object-language `sit` as posture.
 
-    Earlier composer versions correctly rejected every anatomical left/right
-    phrase because Qwen did not own laterality.  Phase 4B.4 now projects only
-    DWPose-bound laterality into body.configuration.  Permit only the exact
-    side/body-part pairs already present there; any new side label remains a
-    hard violation.
-
-    Trigger binding follows the useful part of Fizgig Custom 1: the exact
-    trigger must open the caption as the grammatical subject.  Unlike the old
-    single-trigger rule, later exact/possessive rementions are allowed when
-    they help keep body parts or possessions attached to the primary subject.
+    The legacy broad-pose regex includes bare `sit`, so wording such as
+    "sunglasses sit on her face" falsely became `unauthorized_broad_pose:seated`.
+    Explicit `seated`/`sitting` remains posture language.  Bare `sits` counts
+    only when its grammatical subject is the trigger, configured pronoun, or a
+    generic human subject phrase.
     """
+    if re.search(r"\b(?:seated|sitting)\b", caption, re.I):
+        return True
+
+    subject = projection.get("subject") if isinstance(projection.get("subject"), dict) else {}
+    refs: list[str] = []
+    trigger = engine._clean(subject.get("trigger_token"))
+    pronoun = engine._clean(subject.get("subject_pronoun"))
+    if trigger:
+        refs.append(re.escape(trigger))
+    if pronoun:
+        refs.append(re.escape(pronoun))
+    refs.extend([
+        r"a\s+woman", r"a\s+man", r"a\s+person",
+        r"the\s+woman", r"the\s+man", r"the\s+person", r"the\s+subject",
+    ])
+    if not refs:
+        return False
+    ref_pattern = "(?:" + "|".join(refs) + ")"
+    return bool(re.search(rf"(?<!\w){ref_pattern}\s+sits\b", caption, re.I))
+
+
+def _remove_false_seated_violation(caption: str, projection: dict[str, Any], audit: dict[str, Any]) -> dict[str, Any]:
+    if _subject_seated_language(caption, projection):
+        return audit
+
+    rewritten: list[str] = []
+    changed = False
+    for violation in list(audit.get("violations") or []):
+        if not str(violation).startswith("unauthorized_broad_pose:"):
+            rewritten.append(str(violation))
+            continue
+        prefix, _, suffix = str(violation).partition(":")
+        groups = [part.strip() for part in suffix.split(",") if part.strip()]
+        if "seated" in groups:
+            groups = [group for group in groups if group != "seated"]
+            changed = True
+        if groups:
+            rewritten.append(prefix + ":" + ",".join(groups))
+    if changed:
+        audit["violations"] = sorted(set(rewritten))
+        audit["seated_pose_false_positive_removed"] = True
+    return audit
+
+
+def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
+    """Keep Phase-5 audits while adding specialist laterality and trigger binding."""
     audit = _BASE_CAPTION_AUDIT(caption, projection)
+    audit = _remove_false_seated_violation(caption, projection, audit)
     violations = list(audit.get("violations") or [])
 
     if "unauthorized_anatomical_laterality" in violations:
