@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ FOOT_LIFTED_RE = re.compile(
 BOTH_LEGS_RE = re.compile(r"\b(?:both|two)\s+(?:knees?|legs?|feet)\b", re.I)
 
 KNEE_RELATIVE_HEIGHT_MIN_MARGIN = 0.20
+KNEE_THIGH_ANGLE_MIN_MARGIN_DEG = 15.0
 FOOT_RELATIVE_HEIGHT_MIN_MARGIN = 0.15
 
 
@@ -50,6 +52,31 @@ def _relative_drop(
     return float(distal[1] - hip[1])
 
 
+def _thigh_angle_from_down_vertical(
+    points: dict[str, tuple[float, float] | None],
+    side: str,
+) -> float | None:
+    """Return hip->knee angle away from straight-down image vertical.
+
+    A normally supporting thigh points mostly down (near 0 degrees).  A knee
+    raised toward the torso makes the thigh more horizontal and therefore has
+    a larger angle.  This is useful when two hip->knee vertical drops differ
+    only modestly because of perspective, but the full 2D joint geometry still
+    clearly identifies which thigh is lifted.
+    """
+    hip = points.get(f"{side}_hip")
+    knee = points.get(f"{side}_knee")
+    if hip is None or knee is None:
+        return None
+    dx = float(knee[0] - hip[0])
+    dy = float(knee[1] - hip[1])
+    length = math.hypot(dx, dy)
+    if length <= 1e-8:
+        return None
+    cosine = max(-1.0, min(1.0, dy / length))
+    return math.degrees(math.acos(cosine))
+
+
 def _raised_knee_binding(points: dict[str, tuple[float, float] | None]) -> dict[str, Any] | None:
     scale = _leg_scale(points)
     if scale is None:
@@ -59,19 +86,53 @@ def _raised_knee_binding(points: dict[str, tuple[float, float] | None]) -> dict[
     if left is None or right is None:
         return None
 
-    # Image y increases downward.  Relative hip->knee drop is smaller for the
-    # knee that is raised toward the torso.  Comparing each knee to its own hip
-    # is more robust than comparing absolute frame y under torso tilt.
-    margin = abs(left - right) / scale
-    if margin < KNEE_RELATIVE_HEIGHT_MIN_MARGIN:
+    left_angle = _thigh_angle_from_down_vertical(points, "left")
+    right_angle = _thigh_angle_from_down_vertical(points, "right")
+
+    # Signal 1: image y increases downward.  Relative hip->knee drop is smaller
+    # for a knee raised toward the torso.  Comparing each knee to its own hip
+    # avoids much of the error from a tilted pelvis.
+    drop_margin = abs(left - right) / scale
+    drop_side = None
+    if drop_margin >= KNEE_RELATIVE_HEIGHT_MIN_MARGIN:
+        drop_side = "left" if left < right else "right"
+
+    # Signal 2: in a full-body DWPose skeleton, a raised thigh usually rotates
+    # substantially away from straight-down vertical.  This can remain clear
+    # even when the raw vertical-drop margin is modest.  Qwen has already
+    # supplied the semantic relation "one knee raised"; this geometry is used
+    # only to bind that relation to anatomical left/right.
+    angle_margin = None
+    angle_side = None
+    if left_angle is not None and right_angle is not None:
+        angle_margin = abs(left_angle - right_angle)
+        if angle_margin >= KNEE_THIGH_ANGLE_MIN_MARGIN_DEG:
+            angle_side = "left" if left_angle > right_angle else "right"
+
+    # If both independent 2D cues are strong but disagree, do not publish a
+    # side.  Otherwise use the strong drop signal first, then the thigh-angle
+    # fallback.  This keeps the existing conservative behavior while recovering
+    # obvious raised-knee poses such as a full-body bent-leg stance.
+    if drop_side and angle_side and drop_side != angle_side:
         return None
-    side = "left" if left < right else "right"
+    side = drop_side or angle_side
+    if side is None:
+        return None
+
+    authority = (
+        "dwpose_bilateral_hip_knee_relative_height"
+        if drop_side
+        else "dwpose_bilateral_thigh_angle_from_vertical"
+    )
     return {
         "anatomical_side": side,
-        "authority": "dwpose_bilateral_hip_knee_relative_height",
+        "authority": authority,
         "left_hip_knee_drop_norm": round(left / scale, 3),
         "right_hip_knee_drop_norm": round(right / scale, 3),
-        "score_margin": round(margin, 3),
+        "score_margin": round(drop_margin, 3),
+        "left_thigh_angle_from_down_deg": round(left_angle, 1) if left_angle is not None else None,
+        "right_thigh_angle_from_down_deg": round(right_angle, 1) if right_angle is not None else None,
+        "thigh_angle_margin_deg": round(angle_margin, 1) if angle_margin is not None else None,
     }
 
 
