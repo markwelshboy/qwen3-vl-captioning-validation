@@ -122,7 +122,7 @@ def test_explicit_seated_object_supported_pose_is_protected_even_with_deep_knee_
     assert body["pose_adjudication"]["would_change"] is False
 
 
-@pytest.mark.parametrize("mode", ["framing_only", "configuration"])
+@pytest.mark.parametrize("mode", ["framing_only", "configuration", "unknown"])
 def test_crop_policy_modes_abstain_before_pose_adjudication(mode: str):
     out = mod._apply_shadow_adjudication(
         _sheet(mode=mode),
