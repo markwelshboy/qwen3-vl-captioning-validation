@@ -114,3 +114,64 @@ def test_unprojected_anatomical_laterality_still_fails_audit():
         projection,
     )
     assert "unauthorized_anatomical_laterality" in audit["violations"]
+
+
+def test_trigger_projection_adds_feminine_pronoun_contract_from_subject_class():
+    sheet = {
+        "facts": {"body": {}, "visual": {}},
+        "context_only": {},
+        "audit": {},
+    }
+    projection, projection_audit = mod._projection(
+        sheet,
+        trigger_token="sH1VX",
+        subject_class="woman",
+    )
+    subject = projection["subject"]
+    assert subject["trigger_token"] == "sH1VX"
+    assert subject["subject_class"] == "woman"
+    assert subject["grammar_profile"] == "feminine"
+    assert subject["subject_pronoun"] == "she"
+    assert subject["object_pronoun"] == "her"
+    assert subject["possessive_pronoun"] == "her"
+    assert subject["reflexive_pronoun"] == "herself"
+    assert "repeat the exact trigger" in subject["trigger_remention_policy"]
+    assert projection_audit["trigger_subject_binding_projected"] is True
+    assert projection_audit["subject_grammar_profile"] == "feminine"
+
+
+def test_trigger_remention_and_possessive_are_allowed_when_first_binding_is_valid():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "grammar_profile": "feminine",
+            "subject_pronoun": "she",
+            "possessive_pronoun": "her",
+        },
+        "authoritative_facts": {},
+    }
+    caption = "sH1VX wears a dark jacket. sH1VX's sleeve is partly hidden while she smiles."
+    audit = mod._caption_audit(caption, projection)
+    assert not any(v.startswith("primary_trigger_") for v in audit["violations"])
+    assert audit["trigger_binding"]["exact_occurrences"] == 2
+    assert audit["trigger_binding"]["starts_with_trigger"] is True
+    assert "frequent_trigger_remention:2" not in audit["warnings"]
+
+
+def test_missing_or_noninitial_trigger_fails_binding_audit():
+    projection = {
+        "subject": {"trigger_token": "sH1VX", "grammar_profile": "feminine"},
+        "authoritative_facts": {},
+    }
+    audit = mod._caption_audit("A woman wears a dark jacket and smiles.", projection)
+    assert "primary_trigger_missing" in audit["violations"]
+    assert "primary_trigger_not_first" in audit["violations"]
+
+
+def test_generic_primary_subject_immediately_after_trigger_fails_binding_audit():
+    projection = {
+        "subject": {"trigger_token": "sH1VX", "grammar_profile": "feminine"},
+        "authoritative_facts": {},
+    }
+    audit = mod._caption_audit("sH1VX, a woman, wears a dark jacket and smiles.", projection)
+    assert "generic_primary_subject_after_trigger" in audit["violations"]
