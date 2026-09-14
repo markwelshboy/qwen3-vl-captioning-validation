@@ -59,6 +59,37 @@ def test_raised_knee_uses_thigh_angle_when_vertical_drop_margin_is_modest():
     assert [x["anatomical_side"] for x in bindings] == ["right", "left"]
 
 
+def test_planted_foot_can_disambiguate_raised_knee_when_knee_cues_are_ambiguous():
+    # Both knees sit at nearly the same height and both thighs are nearly
+    # horizontal, so knee-only geometry is intentionally ambiguous. The right
+    # ankle clearly reaches much farther down than the left, making the right
+    # foot the support foot and the left knee the raised one.
+    points = {
+        "left_shoulder": (20.0, 0.0),
+        "right_shoulder": (80.0, 0.0),
+        "left_hip": (60.0, 100.0),
+        "right_hip": (40.0, 100.0),
+        "left_knee": (10.0, 90.0),
+        "right_knee": (-10.0, 92.0),
+        "left_ankle": (40.0, 150.0),
+        "right_ankle": (40.0, 300.0),
+    }
+    configuration = [
+        {"text": "one knee raised", "composer_text": "one knee raised"},
+        {"text": "one foot planted", "composer_text": "one foot planted"},
+    ]
+    assert mod._raised_knee_binding(points) is None
+
+    out, bindings, warnings = mod._bind_leg_laterality(configuration, points)
+    assert warnings == []
+    assert out[0]["composer_text"] == "left knee raised"
+    assert out[0]["laterality_binding"]["authority"] == "opposite_of_dwpose_bound_planted_foot_with_observed_leg_chain"
+    assert out[0]["laterality_binding"]["support_planted_side"] == "right"
+    assert out[1]["composer_text"] == "right foot planted"
+    assert out[1]["laterality_binding"]["authority"] == "dwpose_bilateral_hip_ankle_relative_height"
+    assert [x["anatomical_side"] for x in bindings] == ["right", "left"]
+
+
 def test_planted_and_lifted_feet_bind_from_bilateral_ankle_height():
     points = {
         "left_shoulder": (20.0, 0.0),
