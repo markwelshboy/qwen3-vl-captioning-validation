@@ -58,9 +58,9 @@ def _thigh_angle_from_down_vertical(
 ) -> float | None:
     """Return hip->knee angle away from straight-down image vertical.
 
-    A normally supporting thigh points mostly down (near 0 degrees).  A knee
+    A normally supporting thigh points mostly down (near 0 degrees). A knee
     raised toward the torso makes the thigh more horizontal and therefore has
-    a larger angle.  This is useful when two hip->knee vertical drops differ
+    a larger angle. This is useful when two hip->knee vertical drops differ
     only modestly because of perspective, but the full 2D joint geometry still
     clearly identifies which thigh is lifted.
     """
@@ -89,8 +89,8 @@ def _raised_knee_binding(points: dict[str, tuple[float, float] | None]) -> dict[
     left_angle = _thigh_angle_from_down_vertical(points, "left")
     right_angle = _thigh_angle_from_down_vertical(points, "right")
 
-    # Signal 1: image y increases downward.  Relative hip->knee drop is smaller
-    # for a knee raised toward the torso.  Comparing each knee to its own hip
+    # Signal 1: image y increases downward. Relative hip->knee drop is smaller
+    # for a knee raised toward the torso. Comparing each knee to its own hip
     # avoids much of the error from a tilted pelvis.
     drop_margin = abs(left - right) / scale
     drop_side = None
@@ -98,8 +98,8 @@ def _raised_knee_binding(points: dict[str, tuple[float, float] | None]) -> dict[
         drop_side = "left" if left < right else "right"
 
     # Signal 2: in a full-body DWPose skeleton, a raised thigh usually rotates
-    # substantially away from straight-down vertical.  This can remain clear
-    # even when the raw vertical-drop margin is modest.  Qwen has already
+    # substantially away from straight-down vertical. This can remain clear
+    # even when the raw vertical-drop margin is modest. Qwen has already
     # supplied the semantic relation "one knee raised"; this geometry is used
     # only to bind that relation to anatomical left/right.
     angle_margin = None
@@ -110,9 +110,8 @@ def _raised_knee_binding(points: dict[str, tuple[float, float] | None]) -> dict[
             angle_side = "left" if left_angle > right_angle else "right"
 
     # If both independent 2D cues are strong but disagree, do not publish a
-    # side.  Otherwise use the strong drop signal first, then the thigh-angle
-    # fallback.  This keeps the existing conservative behavior while recovering
-    # obvious raised-knee poses such as a full-body bent-leg stance.
+    # side. Otherwise use the strong drop signal first, then the thigh-angle
+    # fallback.
     if drop_side and angle_side and drop_side != angle_side:
         return None
     side = drop_side or angle_side
@@ -146,7 +145,7 @@ def _foot_height_binding(points: dict[str, tuple[float, float] | None]) -> dict[
         return None
 
     # The planted foot normally extends farther downward from its own hip than
-    # a visibly lifted foot.  Only publish when the bilateral difference is
+    # a visibly lifted foot. Only publish when the bilateral difference is
     # large enough to be useful; otherwise keep Qwen's relation unsigned.
     margin = abs(left - right) / scale
     if margin < FOOT_RELATIVE_HEIGHT_MIN_MARGIN:
@@ -221,9 +220,7 @@ def _bind_leg_laterality(
     knee_binding = None
     if len(knee_items) == 1:
         knee_binding = _raised_knee_binding(points)
-        if knee_binding is None:
-            warnings.append("raised_knee_anatomical_laterality_unresolved")
-        else:
+        if knee_binding is not None:
             side = str(knee_binding["anatomical_side"])
             item = knee_items[0]
             diagnostics = {k: v for k, v in knee_binding.items() if k not in {"anatomical_side", "authority"}}
@@ -239,7 +236,8 @@ def _bind_leg_laterality(
     elif len(knee_items) > 1:
         warnings.append("raised_knee_laterality_unresolved_multiple_relations")
 
-    foot_binding = None
+    # When both planted and lifted feet are explicitly described, bind both
+    # directly from the bilateral ankle geometry.
     if len(planted_items) == 1 and len(lifted_items) == 1:
         foot_binding = _foot_height_binding(points)
         if foot_binding is None:
@@ -269,26 +267,77 @@ def _bind_leg_laterality(
     elif len(planted_items) > 1 or len(lifted_items) > 1:
         warnings.append("asymmetric_feet_laterality_unresolved_multiple_relations")
 
-    # Common pose-candidate pairing: "one knee raised" + "one foot planted".
-    # If the knee has been independently bound, the planted support foot can be
-    # attached to the opposite observed leg without trusting Qwen's side word.
-    if len(planted_items) == 1 and not lifted_items and knee_binding is not None:
+    # Common semantic pairing: "one knee raised" + "one foot planted". There
+    # are two valid ways to resolve this without trusting Qwen's side word:
+    #
+    # 1) If the raised knee is directly bound from knee/thigh geometry, assign
+    #    the planted support foot to the opposite observed leg.
+    # 2) If knee geometry is ambiguous but the full-body ankle geometry clearly
+    #    identifies the planted support foot, bind that foot directly and assign
+    #    the raised-knee relation to the opposite observed leg.
+    #
+    # The second path is important for poses where both thighs are nearly
+    # horizontal (so the knees have similar frame height) but one ankle clearly
+    # reaches the floor while the other leg is folded upward.
+    if len(planted_items) == 1 and not lifted_items and len(knee_items) == 1:
         planted_item = planted_items[0]
-        if not isinstance(planted_item.get("laterality_binding"), dict):
+        knee_item = knee_items[0]
+
+        if knee_binding is not None:
             raised_side = str(knee_binding["anatomical_side"])
             planted_side = phase4b4._opposite(raised_side)
-            if _side_leg_observed(points, planted_side):
-                bindings.append(_bind_item(
-                    planted_item,
-                    side=planted_side,
-                    composer_text=f"{planted_side} foot planted",
-                    semantic_relation="foot_planted",
-                    authority="opposite_of_dwpose_bound_raised_knee_with_observed_leg_chain",
-                    diagnostics={},
-                    source_noun="foot",
-                ))
-            else:
-                warnings.append("planted_foot_laterality_unresolved_missing_opposite_dwpose_chain")
+            if not isinstance(planted_item.get("laterality_binding"), dict):
+                if _side_leg_observed(points, planted_side):
+                    bindings.append(_bind_item(
+                        planted_item,
+                        side=planted_side,
+                        composer_text=f"{planted_side} foot planted",
+                        semantic_relation="foot_planted",
+                        authority="opposite_of_dwpose_bound_raised_knee_with_observed_leg_chain",
+                        diagnostics={},
+                        source_noun="foot",
+                    ))
+                else:
+                    warnings.append("planted_foot_laterality_unresolved_missing_opposite_dwpose_chain")
+        else:
+            support_binding = _foot_height_binding(points)
+            if support_binding is not None:
+                planted_side = str(support_binding["planted_side"])
+                raised_side = phase4b4._opposite(planted_side)
+                diagnostics = {
+                    k: v for k, v in support_binding.items()
+                    if k not in {"planted_side", "lifted_side", "authority"}
+                }
+                if _side_leg_observed(points, planted_side) and _side_leg_observed(points, raised_side):
+                    if not isinstance(planted_item.get("laterality_binding"), dict):
+                        bindings.append(_bind_item(
+                            planted_item,
+                            side=planted_side,
+                            composer_text=f"{planted_side} foot planted",
+                            semantic_relation="foot_planted",
+                            authority=str(support_binding["authority"]),
+                            diagnostics=diagnostics,
+                            source_noun="foot",
+                        ))
+                    if not isinstance(knee_item.get("laterality_binding"), dict):
+                        knee_diagnostics = {
+                            **diagnostics,
+                            "support_planted_side": planted_side,
+                        }
+                        bindings.append(_bind_item(
+                            knee_item,
+                            side=raised_side,
+                            composer_text=f"{raised_side} knee raised",
+                            semantic_relation="knee_raised",
+                            authority="opposite_of_dwpose_bound_planted_foot_with_observed_leg_chain",
+                            diagnostics=knee_diagnostics,
+                            source_noun="knee",
+                        ))
+                else:
+                    warnings.append("raised_knee_support_pair_unresolved_missing_leg_chain")
+
+    if len(knee_items) == 1 and not isinstance(knee_items[0].get("laterality_binding"), dict):
+        warnings.append("raised_knee_anatomical_laterality_unresolved")
 
     return out, bindings, warnings
 
