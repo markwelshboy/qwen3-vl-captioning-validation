@@ -116,10 +116,10 @@ def test_unprojected_anatomical_laterality_still_fails_audit():
     assert "unauthorized_anatomical_laterality" in audit["violations"]
 
 
-def test_trigger_projection_adds_feminine_pronoun_contract_from_subject_class():
+def test_trigger_projection_adds_feminine_pronoun_contract_without_generic_subject_cues():
     sheet = {
         "facts": {"body": {}, "visual": {}},
-        "context_only": {},
+        "context_only": {"gestalt": {"text": "a person outdoors"}},
         "audit": {},
     }
     projection, projection_audit = mod._projection(
@@ -129,7 +129,8 @@ def test_trigger_projection_adds_feminine_pronoun_contract_from_subject_class():
     )
     subject = projection["subject"]
     assert subject["trigger_token"] == "sH1VX"
-    assert subject["subject_class"] == "woman"
+    assert "subject_class" not in subject
+    assert "reference_hint" not in subject
     assert subject["grammar_profile"] == "feminine"
     assert subject["subject_pronoun"] == "she"
     assert subject["object_pronoun"] == "her"
@@ -138,6 +139,8 @@ def test_trigger_projection_adds_feminine_pronoun_contract_from_subject_class():
     assert "repeat the exact trigger" in subject["trigger_remention_policy"]
     assert projection_audit["trigger_subject_binding_projected"] is True
     assert projection_audit["subject_grammar_profile"] == "feminine"
+    assert projection_audit["subject_class_input"] == "woman"
+    assert projection_audit["generic_subject_nouns_removed_when_trigger_bound"] is True
 
 
 def test_trigger_remention_and_possessive_are_allowed_when_first_binding_is_valid():
@@ -175,3 +178,31 @@ def test_generic_primary_subject_immediately_after_trigger_fails_binding_audit()
     }
     audit = mod._caption_audit("sH1VX, a woman, wears a dark jacket and smiles.", projection)
     assert "generic_primary_subject_after_trigger" in audit["violations"]
+
+
+def test_object_sit_word_does_not_trigger_false_seated_pose_violation():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "grammar_profile": "feminine",
+            "subject_pronoun": "she",
+        },
+        "authoritative_facts": {},
+    }
+    caption = "sH1VX is shown in an elevator. Her round sunglasses sit on her face while she holds a phone."
+    audit = mod._caption_audit(caption, projection)
+    assert "unauthorized_broad_pose:seated" not in audit["violations"]
+    assert audit.get("seated_pose_false_positive_removed") is True
+
+
+def test_primary_subject_sits_still_counts_as_seated_pose_language():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "grammar_profile": "feminine",
+            "subject_pronoun": "she",
+        },
+        "authoritative_facts": {},
+    }
+    audit = mod._caption_audit("sH1VX sits near a window while she smiles.", projection)
+    assert "unauthorized_broad_pose:seated" in audit["violations"]
