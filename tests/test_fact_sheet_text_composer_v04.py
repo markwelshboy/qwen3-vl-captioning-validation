@@ -61,3 +61,56 @@ def test_near_frontal_orientation_does_not_invent_turn_direction():
     assert fact is not None
     assert fact["camera_orientation"] == "frontal"
     assert "turn_direction" not in fact
+
+
+def test_phase53_retains_phase52_gaze_caption_semantics_projection():
+    facts = {
+        "gaze": {
+            "publishable": True,
+            "horizontal": "frame_left",
+            "camera_relationship": "uncertain",
+            "caption_semantics": {
+                "publishable": False,
+                "horizontal": {
+                    "publishable": False,
+                    "composer_value": None,
+                    "semantic_class": "near_center",
+                },
+                "vertical": {"publishable": False, "composer_value": None},
+                "camera_relationship": {"publishable": False, "composer_value": None},
+            },
+        }
+    }
+    assert mod._gaze_fact(facts) is None
+
+
+def test_specialist_authorized_anatomical_laterality_passes_audit():
+    projection = {
+        "authoritative_facts": {
+            "body": {
+                "configuration": [
+                    "right hand resting on hip",
+                    "left arm relaxed at side",
+                ]
+            }
+        }
+    }
+    audit = mod._caption_audit(
+        "A woman stands with her right hand resting on her hip while her left arm hangs relaxed at her side.",
+        projection,
+    )
+    assert "unauthorized_anatomical_laterality" not in audit["violations"]
+    assert audit["authorized_anatomical_laterality"] == ["left_arm", "right_hand"]
+
+
+def test_unprojected_anatomical_laterality_still_fails_audit():
+    projection = {
+        "authoritative_facts": {
+            "body": {"configuration": ["right hand resting on hip"]}
+        }
+    }
+    audit = mod._caption_audit(
+        "Her right hand rests on her hip while her left knee is bent.",
+        projection,
+    )
+    assert "unauthorized_anatomical_laterality" in audit["violations"]
