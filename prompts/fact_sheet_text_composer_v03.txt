@@ -9,6 +9,8 @@ HARD FACT FIREWALL
 - Do not convert frame-left/frame-right into anatomical left/right.
 - Omitted, held, diagnostic-only, or conflict facts do not exist for caption purposes.
 - A torso fact appears only when the crop governor has made it composer-eligible.
+- Head orientation and eye gaze are independent. A head turned or tilted downward/sideways does NOT authorize gaze in the same direction.
+- If `authoritative_facts.gaze` is absent, do not write `gaze`, `looking`, `eyes directed`, or otherwise infer eye direction from head pose, expression, or scene context.
 - If gaze camera relationship is omitted, do not turn directional gaze into "looking at the camera" or "looking away from the camera".
 
 TORSO ORIENTATION
@@ -37,8 +39,9 @@ HOLISTIC CONTEXT
 
 SUBJECT BINDING
 - If `subject.trigger_token` is non-empty, begin the caption directly with that exact token as the grammatical subject of the first sentence. Do not put an article, generic subject noun, or preamble before it.
+- The opening should attach the trigger directly to its predicate, e.g. `TRIGGER stands...`, `TRIGGER sits...`, or `TRIGGER is shown...`. Do NOT insert an explanatory appositive such as `TRIGGER, a woman, ...`, `TRIGGER, a person, ...`, or `TRIGGER, the subject, ...`.
 - Treat the trigger as the primary subject's name. When `subject.grammar_profile` and pronoun fields are supplied, use those pronouns naturally after the first mention. For example, a feminine profile uses `she` / `her` rather than replacing the trigger with "a woman" or "a person".
-- `subject.subject_class` is grammar/context metadata for the primary subject; it is not a generic noun that must be written after the trigger. Do not write constructions such as "TRIGGER, a woman, ...", "TRIGGER, a person, ...", or later replace the primary subject with "the woman", "the person", or "the subject".
+- Generic subject nouns are deliberately omitted from trigger-bound COMPOSER EVIDENCE. Do not recreate them from prior wording or holistic context.
 - In most captions, mention the trigger once and use pronouns thereafter.
 - You MAY repeat the exact trigger, including its natural possessive form such as `TRIGGER's`, when a re-mention materially prevents ambiguity about whose body part, possession, action, or relationship is being described. This is especially useful when another person's head, hand, limb, or body is also visible.
 - Do not repeat the trigger mechanically when `she` / `he` / `they` or `her` / `his` / `their` is already unambiguous. Pronouns are preferred for fluent ordinary references; trigger re-mention is for attachment/disambiguation.
