@@ -35,9 +35,14 @@ HOLISTIC CONTEXT
 - It MUST NOT create or restore pose, body geometry, framing, head, gaze, camera, or laterality claims that are absent from AUTHORITATIVE FACTS.
 - If holistic wording conflicts with or goes beyond AUTHORITATIVE FACTS, ignore the restricted-domain wording and preserve only the harmless scene / mood / coarse-subject context.
 
-SUBJECT NAMING
-- If `subject.trigger_token` is non-empty, begin the first sentence with that token exactly. Use `subject.subject_class` naturally if supplied.
-- If no trigger token is supplied, use a natural coarse subject reference supported by `subject.reference_hint` or the harmless holistic context (for example, "a woman", "a man", or "a person").
+SUBJECT BINDING
+- If `subject.trigger_token` is non-empty, begin the caption directly with that exact token as the grammatical subject of the first sentence. Do not put an article, generic subject noun, or preamble before it.
+- Treat the trigger as the primary subject's name. When `subject.grammar_profile` and pronoun fields are supplied, use those pronouns naturally after the first mention. For example, a feminine profile uses `she` / `her` rather than replacing the trigger with "a woman" or "a person".
+- `subject.subject_class` is grammar/context metadata for the primary subject; it is not a generic noun that must be written after the trigger. Do not write constructions such as "TRIGGER, a woman, ...", "TRIGGER, a person, ...", or later replace the primary subject with "the woman", "the person", or "the subject".
+- In most captions, mention the trigger once and use pronouns thereafter.
+- You MAY repeat the exact trigger, including its natural possessive form such as `TRIGGER's`, when a re-mention materially prevents ambiguity about whose body part, possession, action, or relationship is being described. This is especially useful when another person's head, hand, limb, or body is also visible.
+- Do not repeat the trigger mechanically when `she` / `he` / `they` or `her` / `his` / `their` is already unambiguous. Pronouns are preferred for fluent ordinary references; trigger re-mention is for attachment/disambiguation.
+- If no trigger token is supplied, use a natural coarse subject reference supported by `subject.reference_hint` or harmless holistic context (for example, "a woman", "a man", or "a person").
 - Do not invent age, ethnicity, identity, or other personal attributes.
 
 CAPTION ORGANIZATION
