@@ -5,15 +5,15 @@ from pathlib import Path
 from qwen_caption_validate import caption_policy_identity_v05 as mod
 
 
-def test_phase4b9_identity_policy_defaults():
-    assert mod.DEFAULT_INPUT_SUBDIR == Path("semantic-v3") / "caption-fact-sheet-v0.2.9"
+def test_phase4b10_identity_policy_defaults():
+    assert mod.DEFAULT_INPUT_SUBDIR == Path("semantic-v3") / "caption-fact-sheet-v0.2.10"
     assert mod.DEFAULT_OUTPUT_SUBDIR == Path("semantic-v3") / "caption-fact-sheet-v0.3"
-    assert mod.EXPECTED_INPUT_SCHEMA == "caption-fact-sheet-0.2.9"
+    assert mod.EXPECTED_INPUT_SCHEMA == "caption-fact-sheet-0.2.10"
 
 
-def test_identity_policy_preserves_authoritative_pose_and_provenance():
+def test_identity_policy_preserves_authoritative_pose_support_gate_and_provenance():
     source = {
-        "schema_version": "caption-fact-sheet-0.2.9",
+        "schema_version": "caption-fact-sheet-0.2.10",
         "status": "ok",
         "image_key": "imageblind-01_00066",
         "facts": {
@@ -36,7 +36,14 @@ def test_identity_policy_preserves_authoritative_pose_and_provenance():
                     "composer_authoritative": True,
                     "canonical_pose_text": "crouching",
                 },
-                "configuration": [],
+                "support_contact_adjudication": {
+                    "status": "withheld_unverified_ground_contact",
+                    "composer_authoritative": True,
+                    "applied": True,
+                },
+                "configuration": [
+                    {"text": "torso bent forward", "composer_text": "upper body bent forward from the hips"}
+                ],
             },
             "visual": {"appearance": []},
         },
@@ -44,10 +51,12 @@ def test_identity_policy_preserves_authoritative_pose_and_provenance():
     }
 
     out = mod.base.apply_character_identity_policy(source)
-    pose = out["facts"]["body"]["pose_candidate"]
+    body = out["facts"]["body"]
+    pose = body["pose_candidate"]
     assert out["schema_version"] == "caption-fact-sheet-0.3"
     assert pose["text"] == "crouching"
     assert pose["composer_text"] == "crouching"
     assert pose["promotion_status"] == "accepted_specialist_adjudicated_candidate"
     assert pose["broad_pose_adjudication_binding"]["source_pose_candidate"]["text"] == "standing with torso bent forward"
-    assert out["facts"]["body"]["broad_pose_adjudication"]["canonical_pose_text"] == "crouching"
+    assert body["broad_pose_adjudication"]["canonical_pose_text"] == "crouching"
+    assert body["support_contact_adjudication"]["status"] == "withheld_unverified_ground_contact"
