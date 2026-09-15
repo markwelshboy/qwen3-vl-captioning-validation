@@ -128,7 +128,7 @@ def test_00064_like_supported_torso_relation_is_kept_local():
     assert body["pose_candidate"]["composer_text"] == "standing with one leg raised"
 
 
-def test_00066_like_crouch_replaces_composer_pose_and_retains_local_forward_torso():
+def test_00066_like_crouch_replaces_all_canonical_pose_text_and_retains_source_provenance():
     sheet = _sheet(
         pose="standing with torso bent forward",
         configuration=[
@@ -158,10 +158,11 @@ def test_00066_like_crouch_replaces_composer_pose_and_retains_local_forward_tors
     assert broad["composer_authoritative"] is True
     assert broad["applied"] is True
     assert broad["canonical_pose_text"] == "crouching"
-    assert body["pose_candidate"]["text"] == "standing with torso bent forward"
+    assert body["pose_candidate"]["text"] == "crouching"
     assert body["pose_candidate"]["composer_text"] == "crouching"
     assert body["pose_candidate"]["normalized_text"] == "crouching"
     assert body["pose_candidate"]["specialist_owner"] == "sam3d_v16_broad_pose_adjudicator"
+    assert body["pose_candidate"]["broad_pose_adjudication_binding"]["source_pose_candidate"]["text"] == "standing with torso bent forward"
     assert torso["status"] == "supported"
     assert body["configuration"][0]["composer_text"] == "upper body bent forward from the hips"
     # Support/elevation semantics are deliberately not repaired by this phase.
