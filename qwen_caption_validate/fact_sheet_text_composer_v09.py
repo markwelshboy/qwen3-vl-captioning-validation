@@ -13,6 +13,11 @@ DEFAULT_OUTPUT_SUBDIR = Path("semantic-v3") / "text-composer-v0.9"
 SCHEMA_VERSION = "fact-sheet-text-composer-0.9"
 EXPECTED_FACT_SHEET_SCHEMA = "caption-fact-sheet-0.3"
 
+# Freeze the validated Phase-5.7 delegates before main() monkeypatches module
+# globals for the inherited execution loop.
+_BASE_CAPTION_AUDIT = phase57._caption_audit
+_BASE_RETRY_PROMPT = phase57.phase56._retry_prompt
+
 _SUPPORT_CONTACT_LANGUAGE_RE = re.compile(
     r"\b(?:support(?:ed|ing)?|weight[- ]?bearing|weight\s+(?:on|over)|"
     r"contact\s+with|in\s+contact\s+with|planted|feet?\s+flat)\b",
@@ -52,7 +57,7 @@ def _articulated_relationship(projection: dict[str, Any]) -> str | None:
 
 
 def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
-    audit = phase57._caption_audit(caption, projection)
+    audit = _BASE_CAPTION_AUDIT(caption, projection)
     violations = list(audit.get("violations") or [])
 
     support_language_used = bool(_SUPPORT_CONTACT_LANGUAGE_RE.search(caption))
@@ -77,7 +82,7 @@ def _retry_prompt(original_prompt: str, caption: str, violations: list[str]) -> 
     # Reuse the surgical Phase-5.6 repair instructions, then add a universal
     # no-new-facts guard. A retry is allowed to fix wording, not to compensate
     # for a removed clause by inventing biomechanics or another restricted fact.
-    prompt = phase57.phase56._retry_prompt(original_prompt, caption, violations)
+    prompt = _BASE_RETRY_PROMPT(original_prompt, caption, violations)
     extra: list[str] = [
         "Do not introduce any new support/contact, weight-bearing, planted-foot, anatomical-side, gaze, head-direction, or torso-direction claim while revising.",
         "A statement that support/contact is absent or not visible is still a support/contact claim and is forbidden unless explicitly supplied by AUTHORITATIVE FACTS.",
