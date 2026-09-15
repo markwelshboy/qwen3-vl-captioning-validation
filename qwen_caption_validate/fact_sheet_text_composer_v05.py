@@ -20,6 +20,40 @@ _gaze_fact = phase53._gaze_fact
 _caption_audit = phase53._caption_audit
 
 
+def _clean(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = " ".join(value.strip().split())
+    return text or None
+
+
+def _canonical_broad_pose(body: dict[str, Any]) -> str | None:
+    """Return the post-specialist broad pose that the composer may publish.
+
+    Phase-4B.9 can replace an upstream Qwen pose with a specialist-authoritative
+    pose.  Prefer that explicit canonical adjudication.  Otherwise consume the
+    pose candidate's composer-facing text, including accepted specialist
+    promotion statuses, before falling back to the original text field.
+    """
+    adjudication = body.get("broad_pose_adjudication") if isinstance(body.get("broad_pose_adjudication"), dict) else {}
+    if adjudication.get("composer_authoritative"):
+        canonical = _clean(adjudication.get("canonical_pose_text"))
+        if canonical:
+            return canonical
+
+    pose = body.get("pose_candidate") if isinstance(body.get("pose_candidate"), dict) else {}
+    status = str(pose.get("promotion_status") or "").strip()
+    accepted = status in {"candidate", "accepted", "resolved"} or status.startswith("accepted_")
+    if not accepted:
+        return None
+
+    for key in ("composer_text", "normalized_text", "text"):
+        text = _clean(pose.get(key))
+        if text:
+            return text
+    return None
+
+
 def _global_support_shape(body: dict[str, Any]) -> dict[str, Any] | None:
     raw = body.get("support_geometry") if isinstance(body.get("support_geometry"), dict) else {}
     if not raw.get("available") or not raw.get("composer_eligible"):
@@ -46,6 +80,12 @@ def _projection(
     trigger_token: str | None = None,
     subject_class: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    # v04 ultimately delegates to the v01 projection engine.  Its legacy
+    # broad-pose helper read raw `text` and rejected `accepted_*` specialist
+    # statuses.  Patch only that helper for this composer generation so the
+    # canonical Phase-4B.9 pose actually reaches the text-only model.
+    phase53.engine._broad_pose = _canonical_broad_pose
+
     projection, audit = _BASE_PROJECTION(
         sheet,
         trigger_token=trigger_token,
@@ -62,14 +102,22 @@ def _projection(
         authoritative["body"] = body
         projection["authoritative_facts"] = authoritative
 
+    projected_body = (
+        projection.get("authoritative_facts", {}).get("body", {})
+        if isinstance(projection.get("authoritative_facts"), dict)
+        else {}
+    )
     audit["global_support_shape_projected"] = bool(support)
+    audit["canonical_broad_pose_projected"] = _clean(projected_body.get("broad_pose")) if isinstance(projected_body, dict) else None
     return projection, audit
 
 
 def main() -> int:
     # Keep every validated Phase-5.3 behavior (trigger/pronouns, gaze semantics,
     # signed torso direction, specialist laterality) and add one compact global
-    # support-shape fact for the text-only composer.
+    # support-shape fact plus the canonical Phase-4B.9 broad pose for the
+    # text-only composer.
+    phase53.engine._broad_pose = _canonical_broad_pose
     phase53._projection = _projection
     phase53.DEFAULT_INPUT_SUBDIR = DEFAULT_INPUT_SUBDIR
     phase53.DEFAULT_PROMPT = DEFAULT_PROMPT
