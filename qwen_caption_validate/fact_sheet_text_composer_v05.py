@@ -31,7 +31,7 @@ def _canonical_broad_pose(body: dict[str, Any]) -> str | None:
     """Return the post-specialist broad pose that the composer may publish.
 
     Phase-4B.9 can replace an upstream Qwen pose with a specialist-authoritative
-    pose.  Prefer that explicit canonical adjudication.  Otherwise consume the
+    pose. Prefer that explicit canonical adjudication. Otherwise consume the
     pose candidate's composer-facing text, including accepted specialist
     promotion statuses, before falling back to the original text field.
     """
@@ -54,35 +54,15 @@ def _canonical_broad_pose(body: dict[str, Any]) -> str | None:
     return None
 
 
-def _global_support_shape(body: dict[str, Any]) -> dict[str, Any] | None:
-    raw = body.get("support_geometry") if isinstance(body.get("support_geometry"), dict) else {}
-    if not raw.get("available") or not raw.get("composer_eligible"):
-        return None
-    if raw.get("overall_shape") != "mostly_upright_over_support_leg":
-        return None
-
-    out: dict[str, Any] = {
-        "overall_shape": "mostly_upright_over_support_leg",
-    }
-    for key in ("support_side", "elevated_side", "elevated_leg_height"):
-        value = raw.get(key)
-        if isinstance(value, str) and value:
-            out[key] = value
-    angle = raw.get("support_axis_angle_from_vertical_deg")
-    if isinstance(angle, (int, float)):
-        out["support_axis_angle_from_vertical_deg"] = round(float(angle), 1)
-    return out
-
-
 def _projection(
     sheet: dict[str, Any],
     *,
     trigger_token: str | None = None,
     subject_class: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    # v04 ultimately delegates to the v01 projection engine.  Its legacy
+    # v04 ultimately delegates to the v01 projection engine. Its legacy
     # broad-pose helper read raw `text` and rejected `accepted_*` specialist
-    # statuses.  Patch only that helper for this composer generation so the
+    # statuses. Patch only that helper for this composer generation so the
     # canonical Phase-4B.9 pose actually reaches the text-only model.
     phase53.engine._broad_pose = _canonical_broad_pose
 
@@ -94,29 +74,32 @@ def _projection(
 
     facts = sheet.get("facts") if isinstance(sheet.get("facts"), dict) else {}
     source_body = facts.get("body") if isinstance(facts.get("body"), dict) else {}
-    support = _global_support_shape(source_body)
-    if support:
-        authoritative = projection.get("authoritative_facts") if isinstance(projection.get("authoritative_facts"), dict) else {}
-        body = authoritative.get("body") if isinstance(authoritative.get("body"), dict) else {}
-        body["global_support_shape"] = support
-        authoritative["body"] = body
-        projection["authoritative_facts"] = authoritative
-
     projected_body = (
         projection.get("authoritative_facts", {}).get("body", {})
         if isinstance(projection.get("authoritative_facts"), dict)
         else {}
     )
-    audit["global_support_shape_projected"] = bool(support)
-    audit["canonical_broad_pose_projected"] = _clean(projected_body.get("broad_pose")) if isinstance(projected_body, dict) else None
+
+    # The legacy DWPose `support_geometry.overall_shape` was useful for local
+    # relation binding, but population testing showed that its global
+    # `mostly_upright_over_support_leg` interpretation is not a reliable broad
+    # posture classifier (notably the true crouch control). Keep the diagnostic
+    # in the fact sheet, but do not expose it to the text-only composer until a
+    # dedicated support/elevation specialist has been population-gated.
+    support_geometry = source_body.get("support_geometry")
+    audit["support_geometry_present_in_source"] = isinstance(support_geometry, dict)
+    audit["support_geometry_withheld_from_composer"] = isinstance(support_geometry, dict)
+    audit["canonical_broad_pose_projected"] = (
+        _clean(projected_body.get("broad_pose")) if isinstance(projected_body, dict) else None
+    )
     return projection, audit
 
 
 def main() -> int:
     # Keep every validated Phase-5.3 behavior (trigger/pronouns, gaze semantics,
-    # signed torso direction, specialist laterality) and add one compact global
-    # support-shape fact plus the canonical Phase-4B.9 broad pose for the
-    # text-only composer.
+    # signed torso direction, specialist laterality) while ensuring the
+    # canonical Phase-4B.9 broad pose reaches the text-only model. Provisional
+    # DWPose support/global-shape geometry remains audit-only for now.
     phase53.engine._broad_pose = _canonical_broad_pose
     phase53._projection = _projection
     phase53.DEFAULT_INPUT_SUBDIR = DEFAULT_INPUT_SUBDIR
