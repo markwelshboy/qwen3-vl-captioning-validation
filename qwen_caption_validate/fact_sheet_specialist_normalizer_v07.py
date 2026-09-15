@@ -110,8 +110,9 @@ def _support_geometry(
         "elevated_ankle_height_gap_norm": round(ankle_height_gap_norm, 3),
         "authority": "dwpose_bound_leg_relations_plus_hip_to_support_ankle_axis",
         "note": (
-            "Global support shape is distinct from local torso bend: a near-vertical planted-leg axis "
-            "means the overall stance remains mostly upright even when the upper body reaches forward."
+            "Global support shape is diagnostic context only. Broad-pose publication is owned by the "
+            "separate pose specialist; this support record may refine local leg relations without "
+            "injecting global stance wording into a torso relation."
         ),
     }
 
@@ -128,23 +129,25 @@ def _apply_support_shape_to_configuration(
     elevated_side = str(support.get("elevated_side") or "")
     elevated_height = str(support.get("elevated_leg_height") or "")
 
-    # Scope an existing Qwen forward-bend relation to the upper body.  This is
-    # the key distinction between local hinge and global body silhouette.
+    # Scope an existing Qwen forward-bend relation to the upper body, but keep
+    # this fact strictly local. Broad/global pose is owned independently by the
+    # SAM3D posture specialist and must not be embedded in this sentence.
     for item in out:
         if not isinstance(item, dict):
             continue
         source_text = str(item.get("text") or "")
         composer_text = str(item.get("composer_text") or "")
         if FORWARD_TORSO_RE.search(source_text) or FORWARD_TORSO_RE.search(composer_text):
-            item["composer_text"] = "upper body bent forward from the hips while overall stance remains mostly upright"
+            item["composer_text"] = "upper body bent forward from the hips"
             item["normalized_text"] = item["composer_text"]
             item["promotion_status"] = "accepted_specialist_shape_refined_candidate"
-            item["specialist_owner"] = "dwpose_global_support_shape_plus_route_scoped_body_relation"
+            item["specialist_owner"] = "dwpose_support_context_plus_route_scoped_body_relation"
             item["support_shape_refinement"] = {
                 "source_text": source_text,
                 "support_side": support_side,
                 "overall_shape": support.get("overall_shape"),
                 "support_axis_angle_from_vertical_deg": support.get("support_axis_angle_from_vertical_deg"),
+                "global_shape_embedded_in_text": False,
             }
 
     # If the elevated limb is far above the support ankle, do not retain weak
