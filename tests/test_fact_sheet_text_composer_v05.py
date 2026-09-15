@@ -12,6 +12,66 @@ def test_phase54_defaults():
     assert mod.SCHEMA_VERSION == "fact-sheet-text-composer-0.5"
 
 
+def test_authoritative_adjudicated_pose_projects_canonical_text_not_source_text():
+    sheet = {
+        "schema_version": "caption-fact-sheet-0.3",
+        "facts": {
+            "body": {
+                "pose_candidate": {
+                    "text": "crouching",
+                    "composer_text": "crouching",
+                    "normalized_text": "crouching",
+                    "promotion_status": "accepted_specialist_adjudicated_candidate",
+                    "broad_pose_adjudication_binding": {
+                        "source_pose_candidate": {
+                            "text": "standing with torso bent forward",
+                            "composer_text": "standing with torso bent forward",
+                        }
+                    },
+                },
+                "broad_pose_adjudication": {
+                    "status": "adjudicated",
+                    "composer_authoritative": True,
+                    "canonical_pose_text": "crouching",
+                },
+                "configuration": [
+                    {"composer_text": "upper body bent forward from the hips"},
+                ],
+            },
+            "visual": {},
+        },
+        "context_only": {},
+        "audit": {},
+    }
+    projection, audit = mod._projection(sheet, trigger_token="sH1VX", subject_class="woman")
+    body = projection["authoritative_facts"]["body"]
+    assert body["broad_pose"] == "crouching"
+    assert "standing with torso bent forward" not in str(body)
+    assert body["configuration"] == ["upper body bent forward from the hips"]
+    assert audit["canonical_broad_pose_projected"] == "crouching"
+
+
+def test_accepted_candidate_status_remains_composer_visible():
+    sheet = {
+        "schema_version": "caption-fact-sheet-0.3",
+        "facts": {
+            "body": {
+                "pose_candidate": {
+                    "text": "standing with one leg raised",
+                    "composer_text": "standing with one leg raised",
+                    "promotion_status": "accepted_candidate",
+                }
+            },
+            "visual": {},
+        },
+        "context_only": {},
+        "audit": {},
+    }
+    projection, audit = mod._projection(sheet)
+    assert projection["authoritative_facts"]["body"]["broad_pose"] == "standing with one leg raised"
+    assert audit["canonical_broad_pose_projected"] == "standing with one leg raised"
+
+
 def test_global_support_shape_projects_compact_authoritative_fact():
     sheet = {
         "schema_version": "caption-fact-sheet-0.3",
