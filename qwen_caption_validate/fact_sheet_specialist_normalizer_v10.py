@@ -107,15 +107,17 @@ def _promote_broad_pose(body: dict[str, Any]) -> None:
 
     if isinstance(existing, dict):
         candidate = copy.deepcopy(existing)
-        if not isinstance(candidate.get("text"), str) or not str(candidate.get("text")).strip():
-            candidate["text"] = proposed
     else:
         candidate = {
-            "text": proposed,
             "source": "sam3d_v16",
             "domain": "pose",
         }
 
+    # Phase-4B.9 is the canonical post-specialist fact sheet.  Once v09 has
+    # enough authority to replace broad pose, no consumer-facing text field may
+    # retain the contradicted source wording.  Preserve the complete original
+    # candidate in broad_pose_adjudication_binding below for provenance.
+    candidate["text"] = proposed
     candidate["composer_text"] = proposed
     candidate["normalized_text"] = proposed
     candidate["authority"] = "sam3d_v16_observed_pose_specialist"
@@ -216,6 +218,7 @@ def _apply_phase4b9_authoritative(sheet: dict[str, Any]) -> dict[str, Any]:
         contradicted_forward_torso_relations_are_suppressed=True,
         supported_forward_torso_relations_remain_local=True,
         local_torso_relation_does_not_encode_global_stance=True,
+        canonical_pose_text_fields_follow_authoritative_adjudication=True,
         support_and_elevation_semantics_are_unchanged=True,
         dwpose_local_joint_scalars_do_not_independently_classify_broad_pose=True,
     )
