@@ -100,6 +100,44 @@ def test_holistic_context_with_residual_support_mechanics_is_withheld():
     assert projection["authoritative_facts"]["body"]["broad_pose"] == "crouching"
 
 
+def test_holistic_context_with_bending_over_is_withheld():
+    sheet = {
+        "schema_version": "caption-fact-sheet-0.3",
+        "facts": {
+            "body": {
+                "pose_candidate": {
+                    "text": "crouching",
+                    "composer_text": "crouching",
+                    "promotion_status": "accepted_specialist_adjudicated_candidate",
+                },
+                "broad_pose_adjudication": {
+                    "composer_authoritative": True,
+                    "canonical_pose_text": "crouching",
+                },
+                "configuration": [
+                    {"composer_text": "upper body bent forward from the hips"},
+                ],
+            },
+            "visual": {
+                "scene": [
+                    {"composer_text": "bright kitchen with white cabinetry"},
+                ]
+            },
+        },
+        "context_only": {
+            "gestalt": {
+                "text": "person in athletic wear bending over in a kitchen, interacting with fabric on the floor"
+            }
+        },
+        "audit": {},
+    }
+    projection, audit = mod._projection(sheet)
+    assert "holistic_context_non_authoritative" not in projection
+    assert audit["holistic_context_withheld_for_body_mechanics"] is True
+    assert projection["authoritative_facts"]["scene"] == ["bright kitchen with white cabinetry"]
+    assert projection["authoritative_facts"]["body"]["broad_pose"] == "crouching"
+
+
 def test_scene_only_holistic_context_can_survive():
     sheet = {
         "schema_version": "caption-fact-sheet-0.3",
