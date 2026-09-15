@@ -21,13 +21,14 @@ _gaze_fact = phase53._gaze_fact
 _caption_audit = phase53._caption_audit
 
 # The base composer already sanitizes obvious stand/sit/lean wording from the
-# holistic gestalt string.  However, a phrase such as "mostly upright over her
-# left leg" can survive after the word "standing" is removed and then compete
-# with specialist-authoritative pose/support facts.  Holistic context is only a
-# non-authoritative fluency hint, so default-deny the whole hint if any
-# specialist-owned body mechanics remain after the legacy sanitizer.
+# holistic gestalt string. However, phrases such as "mostly upright over her
+# left leg" or "bending over in a kitchen" can survive the legacy sanitizer
+# and compete with specialist-authoritative pose/support facts. Holistic context
+# is only a non-authoritative fluency hint, so default-deny the whole hint if
+# any specialist-owned body mechanics remain after sanitization.
 _RESIDUAL_BODY_MECHANICS_RE = re.compile(
     r"\b(?:upright|weight[- ]?bearing|weight\s+on|support(?:ing)?\s+leg|"
+    r"bend(?:s|ing)?|bent|lean(?:s|ing|ed)?|hunch(?:es|ed|ing)?|stoop(?:s|ed|ing)?|"
     r"planted|lifted|raised|lowered|foot|feet|ankle|knee|knees|leg|legs|hip|hips|"
     r"torso|upper\s+body|shoulder|shoulders|arm|arms|hand|hands|head|neck)\b",
     re.I,
@@ -96,7 +97,7 @@ def _projection(
     audit["support_geometry_withheld_from_composer"] = isinstance(support_geometry, dict)
 
     # Prevent non-authoritative gestalt prose from re-introducing body mechanics
-    # that specialists deliberately removed or replaced.  Scene/appearance/
+    # that specialists deliberately removed or replaced. Scene/appearance/
     # object facts remain available through their typed authoritative fields.
     holistic = _clean(projection.get("holistic_context_non_authoritative"))
     residual_body_mechanics = bool(holistic and _RESIDUAL_BODY_MECHANICS_RE.search(holistic))
