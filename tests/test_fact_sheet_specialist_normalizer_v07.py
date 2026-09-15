@@ -47,7 +47,7 @@ def test_vertical_support_leg_and_high_other_ankle_create_global_support_shape()
     assert support["support_axis_angle_from_vertical_deg"] < mod.SUPPORT_AXIS_MOSTLY_UPRIGHT_MAX_DEG
 
 
-def test_support_shape_scopes_forward_bend_and_strengthens_high_knee():
+def test_support_shape_keeps_forward_bend_local_and_strengthens_high_knee():
     configuration = [
         {"text": "torso bent forward", "composer_text": "torso bent forward"},
         _bound_item("one knee raised", "left knee raised", "knee_raised", "left"),
@@ -63,7 +63,9 @@ def test_support_shape_scopes_forward_bend_and_strengthens_high_knee():
         "elevated_ankle_height_gap_norm": 2.45,
     }
     out = mod._apply_support_shape_to_configuration(configuration, support)
-    assert out[0]["composer_text"] == "upper body bent forward from the hips while overall stance remains mostly upright"
+    assert out[0]["composer_text"] == "upper body bent forward from the hips"
+    assert "overall stance" not in out[0]["composer_text"]
+    assert out[0]["support_shape_refinement"]["global_shape_embedded_in_text"] is False
     assert out[0]["promotion_status"] == "accepted_specialist_shape_refined_candidate"
     assert out[1]["composer_text"] == "left knee raised high"
     assert out[1]["promotion_status"] == "accepted_specialist_shape_refined_candidate"
