@@ -6,9 +6,9 @@ from pathlib import Path
 
 from . import caption_policy_identity_v01 as base
 
-DEFAULT_INPUT_SUBDIR = Path("semantic-v3") / "caption-fact-sheet-v0.2.6"
+DEFAULT_INPUT_SUBDIR = Path("semantic-v3") / "caption-fact-sheet-v0.2.9"
 DEFAULT_OUTPUT_SUBDIR = Path("semantic-v3") / "caption-fact-sheet-v0.3"
-EXPECTED_INPUT_SCHEMA = "caption-fact-sheet-0.2.6"
+EXPECTED_INPUT_SCHEMA = "caption-fact-sheet-0.2.9"
 SCHEMA_VERSION = base.SCHEMA_VERSION
 PROFILE = base.PROFILE
 
@@ -22,7 +22,7 @@ def main() -> int:
     input_dir = args.input_dir.expanduser().resolve() if args.input_dir else run_dir / DEFAULT_INPUT_SUBDIR
     output_dir = args.output_dir.expanduser().resolve() if args.output_dir else run_dir / DEFAULT_OUTPUT_SUBDIR
     if not input_dir.is_dir():
-        print(f"Phase-4B.6 fact-sheet directory not found: {input_dir}", file=sys.stderr)
+        print(f"Phase-4B.9 fact-sheet directory not found: {input_dir}", file=sys.stderr)
         return 2
 
     paths = base._input_files(input_dir, set(args.only))
@@ -64,7 +64,10 @@ def main() -> int:
         "status_counts": dict(sorted(counts.items())),
         "invariants": {
             "no_model_calls": True,
-            "phase4b6_is_input_not_recomputed": True,
+            "phase4b9_is_input_not_recomputed": True,
+            "authoritative_broad_pose_adjudication_is_preserved": True,
+            "authoritative_torso_relation_adjudication_is_preserved": True,
+            "canonical_pose_text_is_preserved": True,
             "signed_torso_turn_direction_is_preserved": True,
             "specialist_bound_anatomical_laterality_is_preserved": True,
             "asymmetric_leg_laterality_is_preserved": True,
