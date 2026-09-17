@@ -23,10 +23,14 @@ def _policy(landmarks: list[str], *, bbox_h: float = 0.8, bbox_w: float = 0.5) -
 
 
 def test_noncontiguous_knees_cannot_turn_head_shoulders_crop_into_medium_wide() -> None:
+    # One hip is only partial, so the canonical contiguous span stops at the
+    # shoulders even though both knees happen to be observed farther down.
+    # v0.2 could still use those non-contiguous knees to emit medium-wide.
     policy = _policy(
         [
             "nose", "left_eye", "right_eye", "neck",
             "left_shoulder", "right_shoulder",
+            "left_hip",
             "left_knee", "right_knee",
         ],
         bbox_h=0.55,
@@ -35,6 +39,7 @@ def test_noncontiguous_knees_cannot_turn_head_shoulders_crop_into_medium_wide() 
     out = mod.evaluate(policy)
     assert out["anatomical_span"]["upper_anchor"] == "head"
     assert out["anatomical_span"]["lower_anchor"] == "shoulders"
+    assert out["anatomical_span"]["lower_partial"] == "hips"
     assert "knees" in out["anatomical_span"]["noncontiguous_observations"]
     assert out["standard_shot_scale"]["status"] == "withheld"
     assert out["standard_shot_scale"]["rejected_candidate"]["label"] == "medium_wide"
