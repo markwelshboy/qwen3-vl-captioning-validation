@@ -25,8 +25,10 @@ HEAD_SUPPORT_RE = re.compile(
     r"|\b(?:hand|fist)\s+support(?:ing|s)?\s+(?:the\s+)?(?:chin|head)\b)",
     re.I,
 )
+# A generic "forearm held ..." phrase is not evidence that the forearm supports
+# the head/chin arrangement.  Require an actual support/beneath/under semantic.
 FOREARM_SUPPORT_RE = re.compile(
-    r"\bforearm\b.{0,40}\b(?:beneath|under|support(?:ing|s|ed)?|held)\b",
+    r"\bforearm\b.{0,40}\b(?:beneath|under|support(?:ing|s|ed)?)\b",
     re.I,
 )
 
@@ -88,7 +90,7 @@ def _head_support_semantics(neutralized: list[str]) -> dict[str, Any]:
 
     uses_fist = any(re.search(r"\bfist\b", text, re.I) for text in support_sources)
     forearm_explicit = bool(forearm_sources) or any(
-        re.search(r"\bforearm\b.{0,40}\b(?:beneath|under)\b", text, re.I)
+        re.search(r"\bforearm\b.{0,40}\b(?:beneath|under|support(?:ing|s|ed)?)\b", text, re.I)
         for text in support_sources
     )
     hand_noun = "fist" if uses_fist else "hand"
@@ -228,6 +230,7 @@ def evaluate(
             "head_support_semantics_can_survive_without_broad_pose": True,
             "single_observed_wrist_can_bind_hand_side_only_when_same_side_proximal_arm_is_observed": True,
             "forearm_side_requires_same_side_elbow_and_wrist": True,
+            "generic_forearm_held_language_does_not_create_head_support": True,
             "external_support_target_is_not_created": True,
             "no_model_calls": True,
         },
