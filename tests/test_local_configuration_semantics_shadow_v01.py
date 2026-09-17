@@ -43,10 +43,30 @@ def test_head_support_relations_collapse_to_one_semantic() -> None:
     assert hs["status"] == "candidate"
     assert hs["uses_fist_semantics"] is True
     assert hs["canonical_side_neutral"] == "chin resting on a fist, with the forearm beneath/supporting the pose"
+    assert hs["source_relations"] == [
+        "fist under the chin with forearm beneath it",
+        "hand supporting the chin/head",
+    ]
+    # A separate "forearm held across the torso" observation is not support
+    # evidence; the beneath relation itself is sufficient here.
+    assert hs["forearm_source_relations"] == ["fist under the chin with forearm beneath it"]
     assert hs["laterality_binding"]["status"] == "bound"
     assert hs["laterality_binding"]["anatomical_side"] == "left"
     assert hs["laterality_binding"]["forearm_side_publishable"] is False
     assert hs["composer_text"] == "chin resting on the left fist, with the forearm beneath/supporting the pose"
+
+
+def test_generic_forearm_held_phrase_does_not_create_support_semantics() -> None:
+    fragment = _fragment(
+        "hand supporting the chin/head",
+        "forearm held across the torso",
+    )
+    out = mod.evaluate(fragment, _policy(), points={})
+    hs = out["head_support"]
+    assert hs["status"] == "candidate"
+    assert hs["forearm_source_relations"] == []
+    assert hs["forearm_support_explicit"] is False
+    assert hs["canonical_side_neutral"] == "chin resting on a hand"
 
 
 def test_forearm_side_requires_same_side_elbow_and_wrist() -> None:
