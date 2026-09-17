@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from typing import Any, Mapping
 
 from . import caption_perception_policy as base
 
 SCHEMA_VERSION = "caption-perception-policy-0.2"
+DEFAULT_OUTPUT_SUBDIR = Path("semantic-v3") / "caption-perception-policy-v0.2"
 
 
 def _tier_state(count: int, *, strong: int = 2) -> str:
@@ -16,7 +19,7 @@ def _visibility(points: dict[str, tuple[float, float] | None], width: int, heigh
 
     Unlike the legacy policy, one ankle/knee cannot promote the crop to a
     full-length/long framing class or independently authorize broad posture.
-    Broad pose requires bilateral hips and bilateral knees.  Head strength is
+    Broad pose requires bilateral hips and bilateral knees. Head strength is
     based on observed face landmarks rather than neck alone.
     """
     visible = {name for name, p in points.items() if p is not None}
@@ -35,13 +38,13 @@ def _visibility(points: dict[str, tuple[float, float] | None], width: int, heigh
     knee_state = _tier_state(knees)
     ankle_state = _tier_state(ankles)
 
-    # Reconstruction is never allowed to fill missing crop evidence.  Broad
+    # Reconstruction is never allowed to fill missing crop evidence. Broad
     # posture requires a coherent observed pelvis->knee structure on both sides.
     broad = hips == 2 and knees == 2
 
-    # Keep the legacy extent field for old consumers, but make it conservative:
-    # only coherent bilateral tiers can select lower-body labels.  Newer stages
-    # should prefer anatomical_tiers / broad_pose_supported over this hint.
+    # Retain a conservative compatibility hint for older consumers. Newer
+    # framing stages should consume anatomical_tiers rather than infer meaning
+    # from a single deepest landmark.
     if ankles == 2 and knees == 2 and hips == 2:
         extent = "full_length"
     elif knees == 2 and hips == 2:
@@ -87,8 +90,8 @@ def _visibility(points: dict[str, tuple[float, float] | None], width: int, heigh
 def _local_configuration_gate(geometry: Mapping[str, Any]) -> dict[str, Any]:
     cues = [str(v) for v in (geometry.get("configuration_cues") or [])]
     # A directly observed arm relationship is sufficient to justify the narrow
-    # configuration observer.  The observer is still forbidden from naming a
-    # broad posture and may abstain with NO RELIABLE POSE FACTS.
+    # configuration observer. The observer remains forbidden from naming broad
+    # posture and may explicitly abstain.
     direct = [cue for cue in cues if cue == "visible_arm_relationship"]
     supported = bool(direct) or int(geometry.get("configuration_score") or 0) >= 2
     return {
@@ -169,20 +172,22 @@ def route_policy(
 
 
 def main() -> int:
-    # Reuse the validated v0.1 artifact discovery/writer while replacing only
-    # visibility/routing semantics and output identity.
-    old_visibility = base._visibility
+    # Reuse v0.1 discovery/writing, but force this successor's own default output
+    # directory so legacy and promoted policies can coexist during validation.
+    original_argv = list(sys.argv)
     old_route_policy = base.route_policy
     old_schema = base.SCHEMA_VERSION
     try:
-        base._visibility = _visibility
+        if len(sys.argv) >= 2 and "--output" not in sys.argv:
+            run_dir = Path(sys.argv[1]).expanduser().resolve()
+            sys.argv.extend(["--output", str(run_dir / DEFAULT_OUTPUT_SUBDIR)])
         base.route_policy = route_policy
         base.SCHEMA_VERSION = SCHEMA_VERSION
         return base.main()
     finally:
-        base._visibility = old_visibility
         base.route_policy = old_route_policy
         base.SCHEMA_VERSION = old_schema
+        sys.argv[:] = original_argv
 
 
 if __name__ == "__main__":
