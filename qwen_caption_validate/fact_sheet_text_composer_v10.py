@@ -33,9 +33,11 @@ _HIPS_LOWERED_ANY_RE = re.compile(
     r"\b(?:slightly\s+)?lowered\s+hips?\b",
     re.I,
 )
+# Match actual depth-strengthening language, but do not confuse an unrelated
+# later phrase such as "low-angle view" with crouch depth.
 _DEEP_OR_LOW_CROUCH_RE = re.compile(
-    r"\b(?:deep|low)\b[^.!?]{0,28}\b(?:crouch(?:ed|ing)?|crouched\s+stance)\b|"
-    r"\b(?:crouch(?:ed|ing)?|crouched\s+stance)\b[^.!?]{0,28}\b(?:deep|low)\b",
+    r"\b(?:deep|low)\s+(?:standing\s+)?crouch(?:ed|ing)?(?:\s+stance)?\b|"
+    r"\bcrouch(?:es|ed|ing)?\s+(?:very\s+)?(?:deeply|low)\b",
     re.I,
 )
 
