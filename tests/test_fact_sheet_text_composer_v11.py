@@ -118,3 +118,53 @@ def test_missing_or_late_authoritative_framing_is_audited():
         projection,
     )
     assert "authoritative_framing_not_near_opening" in late["violations"]
+
+
+def test_three_quarter_torso_orientation_is_not_mistaken_for_shot_scale():
+    projection = _projection({
+        "composer_text": "framed from around the shoulders through the hips",
+        "surface_source": "anatomical_span",
+        "anatomical_span": {"upper": "shoulders", "lower": "hips"},
+    })
+    caption = (
+        "sH1VX is framed from around the shoulders through the hips, shown in a "
+        "three-quarter orientation with her torso angled about 45 degrees toward frame left. "
+        "She holds a white cup near her mouth."
+    )
+
+    audit = composer._caption_audit(caption, projection)
+
+    assert "shot_scale_language_without_authority" not in audit["violations"]
+    assert audit["used_shot_scales"] == []
+
+
+def test_standard_scale_rejects_invented_anatomical_crop_phrase():
+    projection = _projection({
+        "composer_text": "medium close-up",
+        "surface_source": "standard_shot_scale",
+        "shot_scale_label": "medium_close_up",
+    })
+    caption = (
+        "sH1VX is shown in a medium close-up, framed from the upper chest upward, "
+        "with her head centered toward the camera."
+    )
+
+    audit = composer._caption_audit(caption, projection)
+
+    assert "unauthorized_anatomical_crop_language" in audit["violations"]
+
+
+def test_literal_three_quarter_framing_is_still_rejected_without_authority():
+    projection = _projection({
+        "composer_text": "framed from around the shoulders through the knees",
+        "surface_source": "anatomical_span",
+        "anatomical_span": {"upper": "shoulders", "lower": "knees"},
+    })
+    caption = (
+        "sH1VX is framed from around the shoulders through the knees in three-quarter framing, "
+        "with her torso turned toward frame right."
+    )
+
+    audit = composer._caption_audit(caption, projection)
+
+    assert "shot_scale_language_without_authority" in audit["violations"]
