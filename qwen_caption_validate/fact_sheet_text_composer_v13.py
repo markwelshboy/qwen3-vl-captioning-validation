@@ -142,11 +142,12 @@ def _mirror_semantic_economy(value: Any) -> Any:
                 out.append(cleaned)
         return out
     if isinstance(value, dict):
-        return {
-            key: _mirror_semantic_economy(item)
-            for key, item in value.items()
-            if _mirror_semantic_economy(item) not in (None, "", [], {})
-        }
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            cleaned = _mirror_semantic_economy(item)
+            if cleaned not in (None, "", [], {}):
+                out[key] = cleaned
+        return out
     return copy.deepcopy(value)
 
 
