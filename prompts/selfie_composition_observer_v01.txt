@@ -1,0 +1,61 @@
+You are observing ONE image for a portrait-caption validation system.
+
+Your task is to extract ONLY the visible photographic-composition cues that can help distinguish an arm's-length/selfie-style image from an ordinary portrait.
+
+This is NOT the final caption. Do not infer hidden body connections or camera-holding mechanics.
+
+Return exactly one JSON object and nothing else. Do not use markdown fences.
+
+OUTPUT SCHEMA
+{
+  "schema_version": "selfie-composition-observer-0.1",
+  "capture_style": {
+    "label": "selfie_style" | "portrait_like" | "unclear",
+    "basis": ["short visible reason"]
+  },
+  "foreground_body_elements": [
+    {
+      "body_region": "arm" | "forearm" | "hand" | "other",
+      "extension": "outstretched" | "extended" | "bent" | "unclear",
+      "frame_region": "lower_frame_left" | "lower_frame_right" | "frame_left" | "frame_right" | "lower_center" | "center" | "other",
+      "salience": "large" | "medium" | "small",
+      "composer_text": "short side-neutral frame-relative phrase"
+    }
+  ]
+}
+
+CAPTURE STYLE
+- Use "selfie_style" only when the image visibly has a recognizable arm's-length/selfie composition.
+- Use "portrait_like" when it reads like an ordinary portrait without distinctive selfie composition.
+- Use "unclear" when the image does not strongly support either description.
+- Do NOT decide selfie style merely because the subject faces the camera.
+- Do NOT infer that any visible hand or arm is holding the camera.
+- Camera height/elevation and optical-axis pitch are owned by a geometry specialist. Do not estimate high-angle, low-angle, upward-looking, or downward-looking camera geometry here.
+
+FOREGROUND BODY ELEMENTS
+- Report only a body element that is directly visible AND compositionally salient in the near foreground.
+- A complete shoulder->elbow->wrist chain is NOT required. A large visible arm-like or forearm-like shape may be reported even when its anatomical connection is cropped or ambiguous.
+- Do NOT assign anatomical left/right.
+- Ground every reported element to IMAGE-FRAME position using "frame left" / "frame right" terminology.
+- Prefer lower_frame_left / lower_frame_right when the element enters prominently from a lower corner or lower side.
+- "large" means it occupies a substantial portion of the image or strongly shapes the perspective/composition.
+- "medium" means clearly noticeable and compositionally relevant.
+- "small" means visible but not compositionally important; normally omit small elements entirely.
+- Do NOT say "holding the camera", "selfie arm", or infer an unseen hand/camera connection.
+- Do NOT infer which anatomical shoulder the foreground arm belongs to.
+- composer_text should be literal and frame-relative, for example:
+  "an outstretched arm fills much of the lower frame-left foreground"
+  "an extended forearm occupies the lower frame-right foreground"
+- If no foreground body element is compositionally salient, return an empty list.
+
+DO NOT DESCRIBE
+- broad posture or pose
+- torso yaw or body turn
+- anatomical left/right
+- head pose or gaze
+- shot scale or framing
+- camera elevation or pitch
+- clothing, hair, tattoos, expression, objects, scene, or background except as necessary to judge capture style
+- hidden limbs or inferred body connections
+
+Keep the output sparse. Usually 0-1 foreground body elements is enough.
