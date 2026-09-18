@@ -10,6 +10,11 @@ from . import selfie_evidence_shadow_v06 as base
 SCHEMA_VERSION = "selfie-evidence-shadow-0.7"
 DEFAULT_OUTPUT_SUBDIR = Path("semantic-v3") / "selfie-evidence-shadow-v0.7"
 
+# Capture the v0.6 implementation before main() monkey-patches the module.
+# Calling base._neutral_mirror_selfie_semantic dynamically from the wrapper
+# would recurse once base is rebound to this v0.7 function.
+_BASE_NEUTRAL_MIRROR_SELFIE_SEMANTIC = base._neutral_mirror_selfie_semantic
+
 _REAR_CAMERA_RE = re.compile(
     r"\bmultiple\s+rear\s+cameras?\b"
     r"|\brear[- ]facing\s+cameras?\b"
@@ -22,7 +27,7 @@ _REAR_CAMERA_RE = re.compile(
 def _neutral_mirror_selfie_semantic(
     gestalt_record: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    out = dict(base._neutral_mirror_selfie_semantic(gestalt_record))
+    out = dict(_BASE_NEUTRAL_MIRROR_SELFIE_SEMANTIC(gestalt_record))
     if out.get("supported"):
         out["precision_policy"] = (
             "Explicit neutral mirror-selfie language, neutral selfie plus an independent "
