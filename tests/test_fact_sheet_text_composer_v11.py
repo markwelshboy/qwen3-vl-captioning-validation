@@ -205,3 +205,20 @@ def test_specialist_bound_left_fist_laterality_is_allowed_and_wrong_side_is_reje
         projection,
     )
     assert "unauthorized_anatomical_laterality" in wrong["violations"]
+
+
+def test_unsupported_neutral_body_state_filler_is_rejected():
+    projection = _projection({
+        "composer_text": "medium close-up",
+        "surface_source": "standard_shot_scale",
+        "shot_scale_label": "medium_close_up",
+    })
+    caption = (
+        "sH1VX is shown in a medium close-up, with her head centered toward the camera. "
+        "Her posture is upright and relaxed, with no visible body tilt or turn."
+    )
+
+    audit = composer._caption_audit(caption, projection)
+
+    assert "unsupported_body_neutrality_language" in audit["violations"]
+    assert audit["unsupported_body_neutrality_phrases"]
