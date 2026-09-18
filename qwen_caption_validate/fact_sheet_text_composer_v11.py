@@ -26,15 +26,15 @@ _SHOT_SCALE_RE = re.compile(
     r"medium\s+shot|"
     r"full[- ]body(?:\s+(?:shot|framing))?|"
     r"waist[- ]up(?:\s+(?:shot|framing))?|"
-    r"three[- ]quarter\\s+(?:shot|framing|crop|portrait)"
-    r")\\b",
+    r"three[- ]quarter\s+(?:shot|framing|crop|portrait)"
+    r")\b",
     re.I,
 )
 _ANATOMICAL_CROP_RE = re.compile(
-    r"\\b(?:framed|shown|cropped)\\s+from\\s+[^.!?;,]{1,100}"
-    r"|\\bfrom\\s+(?:around\\s+)?(?:the\\s+)?"
-    r"(?:head|face|shoulders?|upper\\s+chest|chest|waist|hips?|knees?|ankles?)"
-    r"\\s+(?:upward|downward|through\\b[^.!?;,]{0,60})",
+    r"\b(?:framed|shown|cropped)\s+from\s+[^.!?;,]{1,100}"
+    r"|\bfrom\s+(?:around\s+)?(?:the\s+)?"
+    r"(?:head|face|shoulders?|upper\s+chest|chest|waist|hips?|knees?|ankles?)"
+    r"\s+(?:upward|downward|through\b[^.!?;,]{0,60})",
     re.I,
 )
 
