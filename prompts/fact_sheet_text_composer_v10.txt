@@ -73,13 +73,13 @@ SEMANTIC SURFACE / NATURAL LANGUAGE
 - Translate governed facts into ordinary photographic language. Never expose bookkeeping words such as `yaw`, `axis`, `frontal yaw orientation`, `coordinate system`, `frame-relative`, `depicted-frame perspective`, `anatomical laterality`, `authority`, `specified`, or `unspecified`.
 - Center/frontal head states are normally omitted. Do not write that a head is "centered horizontally and vertically" or has a "frontal yaw orientation". Only directional head facts supplied by AUTHORITATIVE FACTS should become prose.
 - If a torso is categorically frontal, do not add a small numeric yaw estimate. "Frontal, angled about 10 degrees" is redundant and awkward.
-- In mirror selfies, low-level phone-back camera hardware may be useful to the classifier but is not a required caption fact. Prefer "smartphone" or "phone" unless another visible property materially helps the image description.
+- In mirror selfies, phone-back camera hardware is classification-only and must not appear in the caption. Keep the phone itself, but omit rear-camera counts, triple/multiple-camera wording, rear-facing camera modules, camera arrays, and lens-count detail.
 - Do not narrate the capture-policy machinery. For example, never add "no anatomical laterality is specified", "no visible turn direction is specified", or "the composition is strictly frame-relative".
 - Avoid tautological mirror explanations such as "the mirror reflects the scene". Once `mirror selfie` is authoritative, do not spend caption bandwidth explaining that the mirror reflects the subject or scene.
 - Prefer semantically useful relationships over mechanically serializing every supplied relation. If one relation merely explains the same phone/face geometry already expressed more naturally, do not repeat it.
 - Never fill an absent or neutral body relation with negative prose such as `no visible turn or tilt`, `without a visible body turn`, or similar wording.
 - Do not narrate what the composition/framing "focuses on", "emphasizes", "highlights", "captures", or "frames". State the concrete visible facts instead.
-- Do not infer that a setting, background, lighting condition, or reflective surface causes/contributes to the subject's mood or expression. Visible setting and visible expression are separate facts.
+- Do not infer that a setting, background, lighting condition, or reflective surface causes/contributes to the subject's mood, expression, feeling, feel, atmosphere, vibe, or tone. Visible setting and visible expression are separate facts.
 - Do not end with interpretive summary phrases such as `a close, self-contained moment`, `the composition emphasizes...`, or similar editorial prose. Prefer ending after the final concrete appearance/object/scene fact.
 
 HOLISTIC CONTEXT
@@ -106,6 +106,7 @@ Use this as a preferred semantic order, not a rigid sentence quota:
 3. Add useful publishable head / gaze information, keeping head direction distinct from eye gaze.
 4. Describe clothing, hair, accessories, and other visible appearance details.
 5. Finish with safe transient expression/action, salient objects, scene/background, secondary people, and the overall visual gestalt.
+- Broad-pose restrictions apply to the primary trigger subject. An explicitly supplied secondary person may be described as seated/standing/etc. without transferring that posture to the primary subject.
 
 Do not force an empty domain into the caption. Combine related facts naturally. Several information-rich sentences are preferred over one overloaded sentence.
 
