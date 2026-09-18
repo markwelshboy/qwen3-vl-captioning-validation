@@ -70,3 +70,23 @@ def test_holding_phone_with_both_hands_negative_control_stays_negative():
 
     assert evidence["grade"] == "none"
     assert evidence["supported"] is False
+
+
+def test_v07_wrapper_does_not_recurse_when_v06_hook_is_rebound():
+    original = v07.base._neutral_mirror_selfie_semantic
+    try:
+        v07.base._neutral_mirror_selfie_semantic = v07._neutral_mirror_selfie_semantic
+        evidence = v07._neutral_mirror_selfie_semantic(
+            _gestalt(
+                gestalt="selfie taken in an elevator using a smartphone",
+                objects=["black smartphone with multiple rear cameras"],
+            )
+        )
+    finally:
+        v07.base._neutral_mirror_selfie_semantic = original
+
+    assert evidence["supported"] is True
+    assert (
+        evidence["reason"]
+        == "neutral_selfie_semantic_plus_visible_rear_phone_camera_semantic"
+    )
