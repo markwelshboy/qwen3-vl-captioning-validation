@@ -44,6 +44,29 @@ OCCUPANCY_MEDIUM = 0.04
 OCCUPANCY_SMALL = 0.015
 RASTER_LONG_EDGE = 512
 
+SKELETON_EDGES = [
+    ("nose", "neck"),
+    ("neck", "left_shoulder"),
+    ("left_shoulder", "left_elbow"),
+    ("left_elbow", "left_wrist"),
+    ("neck", "right_shoulder"),
+    ("right_shoulder", "right_elbow"),
+    ("right_elbow", "right_wrist"),
+    ("left_shoulder", "left_hip"),
+    ("right_shoulder", "right_hip"),
+    ("left_hip", "right_hip"),
+    ("left_hip", "left_knee"),
+    ("left_knee", "left_ankle"),
+    ("right_hip", "right_knee"),
+    ("right_knee", "right_ankle"),
+]
+
+CROP_EXIT_LOWER_Y_MIN = 0.55
+CROP_EXIT_SIDE_X_MAX = 0.43
+CROP_EXIT_SIDE_X_MIN = 0.57
+CROP_EXIT_SEGMENT_DIAG_MIN = 0.10
+CROP_EXIT_EDGE_DISTANCE_MAX = 0.14
+
 
 def _read_json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -290,6 +313,86 @@ def _save_debug_overlay(image_path: Path, raster: np.ndarray, out_path: Path) ->
     Image.alpha_composite(image, rgba).convert("RGB").save(out_path, quality=92)
 
 
+def _dwpose_points_pixels(
+    dwpose: dict[str, Any],
+    width: int,
+    height: int,
+) -> dict[str, tuple[float, float] | None]:
+    from .caption_perception_policy import _dwpose_points
+
+    return _dwpose_points(dwpose, width, height)
+
+
+def _save_skeleton_overlay(
+    image_path: Path,
+    raster: np.ndarray,
+    out_path: Path,
+    *,
+    dwpose_points: dict[str, tuple[float, float] | None],
+    sam3d_projected_keypoints: np.ndarray | None = None,
+) -> None:
+    image = Image.open(image_path).convert("RGBA")
+    labels = Image.fromarray(raster, mode="L").resize(image.size, resample=Image.Resampling.NEAREST)
+    arr = np.asarray(labels, dtype=np.uint8)
+
+    overlay = np.zeros((image.height, image.width, 4), dtype=np.uint8)
+    overlay[arr == 2] = [255, 80, 80, 100]
+    overlay[arr == 3] = [80, 180, 255, 100]
+    composed = Image.alpha_composite(image, Image.fromarray(overlay, mode="RGBA"))
+    draw = ImageDraw.Draw(composed)
+
+    for a_name, b_name in SKELETON_EDGES:
+        a = dwpose_points.get(a_name)
+        b = dwpose_points.get(b_name)
+        if a is None or b is None:
+            continue
+        draw.line([a, b], fill=(255, 255, 255, 235), width=max(2, round(min(image.size) / 250)))
+
+    radius = max(3, round(min(image.size) / 180))
+    for name, point in dwpose_points.items():
+        if point is None:
+            continue
+        x, y = point
+        draw.ellipse(
+            [x - radius, y - radius, x + radius, y + radius],
+            fill=(255, 235, 40, 255),
+            outline=(20, 20, 20, 255),
+            width=max(1, radius // 3),
+        )
+        if name in {
+            "left_shoulder", "left_elbow", "left_wrist",
+            "right_shoulder", "right_elbow", "right_wrist",
+        }:
+            short = {
+                "left_shoulder": "LS", "left_elbow": "LE", "left_wrist": "LW",
+                "right_shoulder": "RS", "right_elbow": "RE", "right_wrist": "RW",
+            }[name]
+            draw.text((x + radius + 2, y - radius - 2), short, fill=(255, 255, 255, 255))
+
+    # When DWPose does not observe a wrist, show the SAM3D-projected wrist only as
+    # a diagnostic cross. It is reconstruction, not observation, and is never
+    # treated as proof that a hand/wrist is actually visible.
+    if sam3d_projected_keypoints is not None:
+        for side in ("left", "right"):
+            if dwpose_points.get(f"{side}_wrist") is not None:
+                continue
+            idx = MHR[f"{side}_wrist"]
+            if idx >= len(sam3d_projected_keypoints):
+                continue
+            p = np.asarray(sam3d_projected_keypoints[idx], dtype=np.float64)
+            if p.size < 2 or not np.isfinite(p[:2]).all():
+                continue
+            x, y = float(p[0]), float(p[1])
+            if not (0 <= x < image.width and 0 <= y < image.height):
+                continue
+            rr = radius + 2
+            draw.line([(x - rr, y - rr), (x + rr, y + rr)], fill=(255, 0, 255, 255), width=2)
+            draw.line([(x - rr, y + rr), (x + rr, y - rr)], fill=(255, 0, 255, 255), width=2)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    composed.convert("RGB").save(out_path, quality=92)
+
+
 def _mask_bbox(mask: np.ndarray) -> dict[str, Any] | None:
     ys, xs = np.nonzero(mask)
     if not len(xs):
@@ -392,6 +495,171 @@ def _arm_observation_support(
     }
 
 
+def _point_frame_region(
+    point: tuple[float, float] | None,
+    width: int,
+    height: int,
+) -> str | None:
+    if point is None or width <= 0 or height <= 0:
+        return None
+    x = float(point[0]) / width
+    y = float(point[1]) / height
+    horizontal = "left" if x < CROP_EXIT_SIDE_X_MAX else ("right" if x > CROP_EXIT_SIDE_X_MIN else "center")
+    if y >= CROP_EXIT_LOWER_Y_MIN:
+        if horizontal == "left":
+            return "lower_frame_left"
+        if horizontal == "right":
+            return "lower_frame_right"
+        return "lower_center"
+    if horizontal == "left":
+        return "frame_left"
+    if horizontal == "right":
+        return "frame_right"
+    return "center"
+
+
+def _edge_distance_fraction(
+    point: tuple[float, float] | None,
+    width: int,
+    height: int,
+) -> float | None:
+    if point is None or width <= 0 or height <= 0:
+        return None
+    x = float(point[0]) / width
+    y = float(point[1]) / height
+    return max(0.0, min(x, 1.0 - x, y, 1.0 - y))
+
+
+def _arm_crop_exit_proxy(
+    side: str,
+    *,
+    points: dict[str, tuple[float, float] | None],
+    sam3d_projected_keypoints: np.ndarray | None,
+    width: int,
+    height: int,
+) -> dict[str, Any]:
+    shoulder = points.get(f"{side}_shoulder")
+    elbow = points.get(f"{side}_elbow")
+    wrist = points.get(f"{side}_wrist")
+
+    shoulder_elbow_observed = shoulder is not None and elbow is not None
+    wrist_missing = wrist is None
+    diag = math.hypot(width, height)
+
+    segment_diag = None
+    dx_frac = None
+    dy_frac = None
+    if shoulder_elbow_observed and diag > 0:
+        dx = float(elbow[0] - shoulder[0])
+        dy = float(elbow[1] - shoulder[1])
+        segment_diag = math.hypot(dx, dy) / diag
+        dx_frac = dx / width if width > 0 else None
+        dy_frac = dy / height if height > 0 else None
+
+    elbow_region = _point_frame_region(elbow, width, height)
+    elbow_edge_distance = _edge_distance_fraction(elbow, width, height)
+    lower_side = elbow_region in {"lower_frame_left", "lower_frame_right"}
+    segment_long = bool(segment_diag is not None and segment_diag >= CROP_EXIT_SEGMENT_DIAG_MIN)
+    near_edge = bool(
+        elbow_edge_distance is not None
+        and elbow_edge_distance <= CROP_EXIT_EDGE_DISTANCE_MAX
+    )
+
+    sam_wrist: dict[str, Any] | None = None
+    sam_continues = False
+    sam_outside = False
+    if sam3d_projected_keypoints is not None:
+        idx = MHR[f"{side}_wrist"]
+        if idx < len(sam3d_projected_keypoints):
+            p = np.asarray(sam3d_projected_keypoints[idx], dtype=np.float64)
+            if p.size >= 2 and np.isfinite(p[:2]).all():
+                sx, sy = float(p[0]), float(p[1])
+                inside = 0 <= sx < width and 0 <= sy < height
+                sam_outside = not inside
+                sam_wrist = {
+                    "x_fraction": round(sx / width, 4) if width > 0 else None,
+                    "y_fraction": round(sy / height, 4) if height > 0 else None,
+                    "inside_frame": inside,
+                }
+                if shoulder_elbow_observed:
+                    v1 = np.asarray(
+                        [elbow[0] - shoulder[0], elbow[1] - shoulder[1]],
+                        dtype=np.float64,
+                    )
+                    v2 = np.asarray([sx - elbow[0], sy - elbow[1]], dtype=np.float64)
+                    denom = float(np.linalg.norm(v1) * np.linalg.norm(v2))
+                    if denom > 1e-8:
+                        cosine = float(np.dot(v1, v2) / denom)
+                        sam_wrist["continuation_cosine"] = round(cosine, 4)
+                        sam_continues = cosine >= 0.35
+
+    components = {
+        "shoulder_elbow_observed": shoulder_elbow_observed,
+        "wrist_not_observed": wrist_missing,
+        "elbow_in_lower_frame_side": lower_side,
+        "shoulder_to_elbow_long_enough": segment_long,
+        "elbow_near_frame_edge": near_edge,
+        "sam3d_wrist_continues_arm_direction": sam_continues,
+        "sam3d_wrist_projects_outside_frame": sam_outside,
+    }
+
+    if not shoulder_elbow_observed or not wrist_missing:
+        grade = "none"
+        reason = (
+            "requires_observed_shoulder_and_elbow_with_unobserved_wrist"
+            if not shoulder_elbow_observed
+            else "wrist_is_observed_so_crop_exit_proxy_not_applicable"
+        )
+    else:
+        score = sum(
+            [
+                1 if lower_side else 0,
+                1 if segment_long else 0,
+                1 if near_edge else 0,
+                1 if (sam_outside or sam_continues) else 0,
+            ]
+        )
+        if score >= 3 and lower_side:
+            grade = "strong_candidate"
+        elif score >= 2:
+            grade = "moderate_candidate"
+        elif score >= 1:
+            grade = "weak_candidate"
+        else:
+            grade = "none"
+        reason = "provisional_crop_exit_evidence_score_" + str(score)
+
+    return {
+        "provisional_grade": grade,
+        "reason": reason,
+        "anatomical_side_internal": side,
+        "shoulder": list(shoulder) if shoulder is not None else None,
+        "elbow": list(elbow) if elbow is not None else None,
+        "wrist": list(wrist) if wrist is not None else None,
+        "elbow_frame_region": elbow_region,
+        "elbow_edge_distance_fraction": round(elbow_edge_distance, 4)
+        if elbow_edge_distance is not None
+        else None,
+        "shoulder_to_elbow_length_image_diagonal": round(segment_diag, 4)
+        if segment_diag is not None
+        else None,
+        "shoulder_to_elbow_dx_fraction": round(dx_frac, 4)
+        if dx_frac is not None
+        else None,
+        "shoulder_to_elbow_dy_fraction": round(dy_frac, 4)
+        if dy_frac is not None
+        else None,
+        "sam3d_projected_wrist": sam_wrist,
+        "components": components,
+        "note": (
+            "DWPose BODY18 has a wrist landmark, not a hand landmark. This proxy is "
+            "testing the hypothesis that an observed shoulder->elbow segment entering "
+            "a lower frame side while the wrist is unobserved is a useful crop/foreground-arm cue. "
+            "SAM3D wrist continuation is diagnostic reconstruction only."
+        ),
+    }
+
+
 def _evidence_grade(occupancy: float, observation: dict[str, Any], residual: dict[str, Any]) -> str:
     band = _occupancy_band(occupancy)
     support = str(observation.get("grade") or "none")
@@ -418,6 +686,7 @@ def evaluate(
     *,
     image_path: Path | None = None,
     debug_overlay_path: Path | None = None,
+    debug_skeleton_overlay_path: Path | None = None,
 ) -> dict[str, Any]:
     key = str(policy.get("image_key") or "")
     size = policy.get("image_size") or []
@@ -444,10 +713,26 @@ def evaluate(
         keypoints3d, keypoints2d, cam_t, focal, width, height
     )
     uv, z = _project(vertices, cam_t, focal, width, height)
+    sam3d_projected_keypoints, _ = _project(
+        keypoints3d, cam_t, focal, width, height
+    )
+    dwpose_points = _dwpose_points_pixels(dwpose, width, height)
     face_labels = _classify_face_parts(vertices, faces, keypoints3d)
     raster = _render_part_mask(uv, z, faces, face_labels, width, height)
     if image_path is not None and debug_overlay_path is not None and image_path.is_file():
         _save_debug_overlay(image_path, raster, debug_overlay_path)
+    if (
+        image_path is not None
+        and debug_skeleton_overlay_path is not None
+        and image_path.is_file()
+    ):
+        _save_skeleton_overlay(
+            image_path,
+            raster,
+            debug_skeleton_overlay_path,
+            dwpose_points=dwpose_points,
+            sam3d_projected_keypoints=sam3d_projected_keypoints,
+        )
 
     total = float(raster.size)
     arms: dict[str, Any] = {}
@@ -456,6 +741,13 @@ def evaluate(
         occupancy = float(mask.sum()) / total if total else 0.0
         bbox = _mask_bbox(mask)
         observation = _arm_observation_support(dwpose, side, policy)
+        crop_exit_proxy = _arm_crop_exit_proxy(
+            side,
+            points=dwpose_points,
+            sam3d_projected_keypoints=sam3d_projected_keypoints,
+            width=width,
+            height=height,
+        )
         region = _frame_region(bbox)
         grade = _evidence_grade(occupancy, observation, residual)
         composer_text = None
@@ -471,6 +763,7 @@ def evaluate(
             "frame_region": region,
             "visible_bbox": bbox,
             "dwpose_observation_support": observation,
+            "lower_frame_crop_exit_proxy": crop_exit_proxy,
             "evidence_grade": grade,
             "composer_text_side_neutral": composer_text,
             "mesh_part_authority": "reconstructed_mesh_partition_shadow_not_image_segmentation",
@@ -490,9 +783,14 @@ def evaluate(
             "raster_method": "depth_sorted_projected_mesh_part_labels",
             "part_assignment": "nearest_major_skeleton_segment_in_reconstructed_3d",
             "debug_overlay": str(debug_overlay_path) if debug_overlay_path is not None else None,
+            "debug_skeleton_overlay": str(debug_skeleton_overlay_path)
+            if debug_skeleton_overlay_path is not None
+            else None,
             "debug_overlay_legend": {
                 "left_arm_internal": "red",
-                "right_arm_internal": "blue"
+                "right_arm_internal": "blue",
+                "dwpose_observed_skeleton": "white_lines_yellow_joints",
+                "sam3d_missing_wrist_projection_diagnostic": "magenta_cross"
             },
         },
         "arms": arms,
@@ -503,6 +801,8 @@ def evaluate(
             "frame_left_right_is_image_relative": True,
             "anatomical_side_is_retained_only_for_internal_cross_checks": True,
             "projected_mesh_is_self_occlusion_approximated_by_depth_sorted_rasterization": True,
+            "crop_exit_proxy_requires_observed_shoulder_and_elbow_plus_unobserved_wrist": True,
+            "sam3d_projected_wrist_is_diagnostic_only_not_observation": True,
         },
         "calibration": {
             "large_area_fraction_min": OCCUPANCY_LARGE,
@@ -584,6 +884,7 @@ def main() -> int:
             vertices, faces = _load_obj(obj_path)
             image_path = Path(str(policy.get("image") or "")).expanduser()
             overlay_path = output_dir / f"{key}.mesh_arm_overlay.jpg"
+            skeleton_overlay_path = output_dir / f"{key}.mesh_arm_skeleton_overlay.jpg"
             record = evaluate(
                 policy,
                 _load_arrays(arrays_path),
@@ -592,6 +893,9 @@ def main() -> int:
                 faces,
                 image_path=image_path if image_path.is_file() else None,
                 debug_overlay_path=overlay_path if image_path.is_file() else None,
+                debug_skeleton_overlay_path=skeleton_overlay_path
+                if image_path.is_file()
+                else None,
             )
             record["sources"] = {
                 "policy": str(policy_path),
