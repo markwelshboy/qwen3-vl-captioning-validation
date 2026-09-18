@@ -26,8 +26,15 @@ _SHOT_SCALE_RE = re.compile(
     r"medium\s+shot|"
     r"full[- ]body(?:\s+(?:shot|framing))?|"
     r"waist[- ]up(?:\s+(?:shot|framing))?|"
-    r"three[- ]quarter(?:\s+(?:shot|framing))?"
-    r")\b",
+    r"three[- ]quarter\\s+(?:shot|framing|crop|portrait)"
+    r")\\b",
+    re.I,
+)
+_ANATOMICAL_CROP_RE = re.compile(
+    r"\\b(?:framed|shown|cropped)\\s+from\\s+[^.!?;,]{1,100}"
+    r"|\\bfrom\\s+(?:around\\s+)?(?:the\\s+)?"
+    r"(?:head|face|shoulders?|upper\\s+chest|chest|waist|hips?|knees?|ankles?)"
+    r"\\s+(?:upward|downward|through\\b[^.!?;,]{0,60})",
     re.I,
 )
 
@@ -161,6 +168,10 @@ def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
     source = _clean(framing.get("surface_source"))
     expected_scale = _clean(framing.get("shot_scale_label"))
     used_scales = _used_shot_scales(caption)
+    anatomical_crop_phrases = [
+        " ".join(match.group(0).split())
+        for match in _ANATOMICAL_CROP_RE.finditer(caption)
+    ]
 
     position = _phrase_word_position(caption, expected_text) if expected_text else None
     if expected_text and position is None:
@@ -175,6 +186,8 @@ def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
         unauthorized = sorted(used_scales - {expected_scale})
         if unauthorized:
             violations.append("unauthorized_shot_scale:" + ",".join(unauthorized))
+        if anatomical_crop_phrases:
+            violations.append("unauthorized_anatomical_crop_language")
 
     audit["violations"] = sorted(set(violations))
     audit["authoritative_framing_text"] = expected_text
@@ -182,6 +195,7 @@ def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
     audit["authoritative_framing_word_position"] = position
     audit["authorized_shot_scale"] = expected_scale
     audit["used_shot_scales"] = sorted(used_scales)
+    audit["anatomical_crop_phrases"] = anatomical_crop_phrases
     audit["framing_first_visual_fact_contract"] = True
     return audit
 
@@ -205,6 +219,11 @@ def _retry_prompt(original_prompt: str, caption: str, violations: list[str]) -> 
     if any(v.startswith("unauthorized_shot_scale:") for v in violations):
         extra.append(
             "Remove every shot-scale term except the one explicitly supplied in authoritative_facts.framing."
+        )
+    if "unauthorized_anatomical_crop_language" in violations:
+        extra.append(
+            "Do not append or invent an anatomical crop phrase such as 'framed from the chest upward'. "
+            "When authoritative framing supplies a standard shot scale, use only that scale."
         )
 
     if not extra:
