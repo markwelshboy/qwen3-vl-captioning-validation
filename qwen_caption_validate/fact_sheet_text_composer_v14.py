@@ -279,6 +279,18 @@ def _retry_prompt(
     prompt = _BASE_RETRY_PROMPT(original_prompt, caption, violations)
     extra: list[str] = []
 
+    unauthorized_pose = [
+        violation.split(":", 1)[1]
+        for violation in violations
+        if violation.startswith("unauthorized_broad_pose:") and ":" in violation
+    ]
+    if unauthorized_pose:
+        extra.append(
+            "Remove the unsupported broad-pose/posture claim(s) "
+            + ", ".join(unauthorized_pose)
+            + " entirely. Do not replace them with another posture or with a negative/neutral posture statement. If a scene/object phrase depends grammatically on the unsupported posture (for example 'lying on a gray fabric surface'), remove that dependent relation too rather than preserving a dangling preposition."
+        )
+
     if "capture_mechanism_language_without_capture_authority" in violations:
         extra.append(
             "Remove all claims that the subject is holding a camera, taking a photo, or otherwise operating the capture device. Preserve only local body geometry that is independently supplied, such as an arm extending forward."
