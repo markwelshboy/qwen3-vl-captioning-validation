@@ -38,6 +38,12 @@ _ANATOMICAL_CROP_RE = re.compile(
     re.I,
 )
 
+_EXTENDED_LATERALITY_RE = re.compile(
+    r"\b(left|right)\s+"
+    r"(fist|hand|arm|forearm|wrist|elbow|shoulder|hip|knee|leg|ankle|foot|eye|ear)\b",
+    re.I,
+)
+
 
 def _clean(value: Any) -> str | None:
     if not isinstance(value, str):
@@ -159,6 +165,32 @@ def _phrase_word_position(caption: str, phrase: str) -> int | None:
     return len(caption_norm[:idx].split())
 
 
+def _extended_laterality_pairs(text: str) -> set[tuple[str, str]]:
+    pairs: set[tuple[str, str]] = set()
+    for match in _EXTENDED_LATERALITY_RE.finditer(str(text or "")):
+        side = match.group(1).lower()
+        part = match.group(2).lower()
+        if part == "fist":
+            part = "hand"
+        pairs.add((side, part))
+    return pairs
+
+
+def _authorized_extended_laterality(projection: dict[str, Any]) -> set[tuple[str, str]]:
+    authoritative = (
+        projection.get("authoritative_facts")
+        if isinstance(projection.get("authoritative_facts"), dict)
+        else {}
+    )
+    body = authoritative.get("body") if isinstance(authoritative.get("body"), dict) else {}
+    configuration = body.get("configuration") if isinstance(body.get("configuration"), list) else []
+    allowed: set[tuple[str, str]] = set()
+    for value in configuration:
+        if isinstance(value, str):
+            allowed.update(_extended_laterality_pairs(value))
+    return allowed
+
+
 def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
     audit = _BASE_CAPTION_AUDIT(caption, projection)
     violations = list(audit.get("violations") or [])
@@ -168,6 +200,8 @@ def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
     source = _clean(framing.get("surface_source"))
     expected_scale = _clean(framing.get("shot_scale_label"))
     used_scales = _used_shot_scales(caption)
+    used_laterality = _extended_laterality_pairs(caption)
+    allowed_laterality = _authorized_extended_laterality(projection)
     anatomical_crop_phrases = [
         " ".join(match.group(0).split())
         for match in _ANATOMICAL_CROP_RE.finditer(caption)
@@ -189,6 +223,13 @@ def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
         if anatomical_crop_phrases:
             violations.append("unauthorized_anatomical_crop_language")
 
+    if used_laterality:
+        unauthorized_laterality = used_laterality - allowed_laterality
+        if unauthorized_laterality:
+            violations.append("unauthorized_anatomical_laterality")
+        elif "unauthorized_anatomical_laterality" in violations:
+            violations = [v for v in violations if v != "unauthorized_anatomical_laterality"]
+
     audit["violations"] = sorted(set(violations))
     audit["authoritative_framing_text"] = expected_text
     audit["authoritative_framing_source"] = source
@@ -196,6 +237,12 @@ def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
     audit["authorized_shot_scale"] = expected_scale
     audit["used_shot_scales"] = sorted(used_scales)
     audit["anatomical_crop_phrases"] = anatomical_crop_phrases
+    audit["extended_used_anatomical_laterality"] = sorted(
+        f"{side}_{part}" for side, part in used_laterality
+    )
+    audit["extended_authorized_anatomical_laterality"] = sorted(
+        f"{side}_{part}" for side, part in allowed_laterality
+    )
     audit["framing_first_visual_fact_contract"] = True
     return audit
 
