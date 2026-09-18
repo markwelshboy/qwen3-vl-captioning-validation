@@ -189,3 +189,119 @@ def test_retry_prompt_explicitly_removes_unauthorized_broad_pose():
     assert "Remove the unsupported broad-pose/posture claim(s) lying entirely." in prompt
     assert "remove that dependent relation too" in prompt
     assert "do not replace" in prompt.lower()
+
+
+
+def test_secondary_person_seated_does_not_count_as_primary_pose():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "subject_pronoun": "she",
+            "possessive_pronoun": "her",
+        },
+        "authoritative_facts": {
+            "body": {},
+        },
+        "omitted_review_conflict_domains": [],
+    }
+
+    audit = v14._caption_audit(
+        "sH1VX is shown in a close-up inside an aircraft cabin. "
+        "Behind her, a person in a navy shirt and jeans is seated.",
+        projection,
+    )
+
+    assert "unauthorized_broad_pose:seated" not in audit["violations"]
+    assert audit["primary_subject_used_pose_groups"] == []
+
+
+def test_primary_subject_seated_still_requires_authority():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "subject_pronoun": "she",
+            "possessive_pronoun": "her",
+        },
+        "authoritative_facts": {
+            "body": {},
+        },
+        "omitted_review_conflict_domains": [],
+    }
+
+    audit = v14._caption_audit(
+        "sH1VX is shown in a close-up. She is seated beside a window.",
+        projection,
+    )
+
+    assert "unauthorized_broad_pose:seated" in audit["violations"]
+    assert audit["primary_subject_used_pose_groups"] == ["seated"]
+
+
+def test_primary_subject_seated_is_allowed_when_broad_pose_authorizes_it():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "subject_pronoun": "she",
+            "possessive_pronoun": "her",
+        },
+        "authoritative_facts": {
+            "body": {
+                "broad_pose": "seated",
+            },
+        },
+        "omitted_review_conflict_domains": [],
+    }
+
+    audit = v14._caption_audit(
+        "sH1VX is shown in a medium shot. She is seated beside a window.",
+        projection,
+    )
+
+    assert "unauthorized_broad_pose:seated" not in audit["violations"]
+    assert audit["primary_subject_allowed_pose_groups"] == ["seated"]
+
+
+def test_mirror_phone_hardware_surface_strips_triple_camera_sentence_variant():
+    removed = []
+    value = {
+        "objects": [
+            "black smartphone",
+            "the smartphone features a triple camera",
+        ]
+    }
+
+    out = v14._mirror_phone_hardware_surface(value, removed)
+
+    assert out["objects"] == ["black smartphone", "the smartphone"]
+    assert removed == ["the smartphone features a triple camera"]
+
+
+def test_mirror_phone_hardware_audit_rejects_triple_camera_variant():
+    projection = {
+        "subject": {},
+        "authoritative_facts": {
+            "capture": {
+                "family": "selfie",
+                "subtype": "mirror_selfie",
+                "composer_text": "mirror selfie",
+            }
+        },
+        "omitted_review_conflict_domains": [],
+    }
+
+    audit = v14._caption_audit(
+        "A mirror selfie in an elevator. The smartphone features a triple camera.",
+        projection,
+    )
+
+    assert "mirror_phone_hardware_leak" in audit["violations"]
+    assert audit["mirror_phone_hardware_phrases"] == ["triple camera"]
+
+
+def test_audit_rejects_setting_to_cozy_feel_causality():
+    audit = v14._caption_audit(
+        "The wooden room gives the setting a cozy, lived-in feel.",
+        _projection(),
+    )
+
+    assert "unsupported_setting_to_mood_causality" in audit["violations"]
