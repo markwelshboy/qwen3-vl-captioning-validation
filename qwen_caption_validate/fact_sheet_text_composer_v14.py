@@ -37,6 +37,35 @@ _NEGATIVE_BODY_GEOMETRY_RE = re.compile(
     r"|\bwithout\s+(?:any\s+)?(?:visible\s+)?(?:body\s+|torso\s+)?(?:turn|tilt|lean|bend)\b",
     re.I,
 )
+_NEGATIVE_VISIBILITY_CONTACT_RE = re.compile(
+    r"\b(?:the\s+|her\s+|his\s+|their\s+)?(?:left\s+|right\s+)?"
+    r"(?:hand|arm|forearm|wrist|elbow|leg|knee|foot|feet)\s+"
+    r"(?:is\s+|are\s+)?not\s+visible"
+    r"(?:\s+in\s+(?:the\s+)?(?:crop|frame|image))?\b"
+    r"|\b(?:there\s+is\s+)?no\s+(?:visible\s+)?contact\s+(?:with|between)\s+[^.!?;,]{1,90}"
+    r"|\b(?:hand|palm|fingers?|arm|forearm)\s+(?:does|do)\s+not\s+"
+    r"(?:touch|contact|support)\b"
+    r"|\b(?:hand|palm|fingers?|arm|forearm)\s+(?:is|are)\s+not\s+"
+    r"(?:touching|supporting)\b"
+    r"|\bwithout\s+(?:any\s+)?contact\s+with\s+[^.!?;,]{1,90}",
+    re.I,
+)
+_NEGATIVE_VISIBILITY_CONTACT_SUFFIX_RE = re.compile(
+    r"(?:,\s*|\s+(?:and|but|though|while)\s+)"
+    r"(?:"
+    r"(?:the\s+|her\s+|his\s+|their\s+)?(?:left\s+|right\s+)?"
+    r"(?:hand|arm|forearm|wrist|elbow|leg|knee|foot|feet)\s+"
+    r"(?:is\s+|are\s+)?not\s+visible"
+    r"(?:\s+in\s+(?:the\s+)?(?:crop|frame|image))?"
+    r"|(?:there\s+is\s+)?no\s+(?:visible\s+)?contact\s+(?:with|between)\s+[^.!?;,]{1,90}"
+    r"|(?:hand|palm|fingers?|arm|forearm)\s+(?:does|do)\s+not\s+"
+    r"(?:touch|contact|support)\b[^.!?;,]*"
+    r"|(?:hand|palm|fingers?|arm|forearm)\s+(?:is|are)\s+not\s+"
+    r"(?:touching|supporting)\b[^.!?;,]*"
+    r")"
+    r".*$",
+    re.I,
+)
 _MIRROR_TAUTOLOGY_RE = re.compile(
     r"\b(?:the\s+)?mirror(?:\s+surface)?\s+reflects?\s+(?:the\s+)?scene\b",
     re.I,
@@ -126,6 +155,46 @@ def _strip_unauthorized_capture_mechanism(text: str) -> str | None:
         return None
 
     return value or None
+
+
+
+def _strip_negative_visibility_contact(text: str) -> str | None:
+    """Keep positive visible geometry; drop negative visibility/contact bookkeeping."""
+    value = " ".join(str(text or "").split())
+    if not value:
+        return None
+
+    value = _NEGATIVE_VISIBILITY_CONTACT_SUFFIX_RE.sub("", value).strip(" ,.;")
+    if not value:
+        return None
+
+    if _NEGATIVE_VISIBILITY_CONTACT_RE.search(value):
+        return None
+
+    return value or None
+
+
+def _sanitize_negative_visibility_contact_configuration(
+    values: Any,
+) -> tuple[list[Any], list[str]]:
+    if not isinstance(values, list):
+        return [], []
+
+    out: list[Any] = []
+    sanitized: list[str] = []
+    for item in values:
+        if not isinstance(item, str):
+            out.append(copy.deepcopy(item))
+            continue
+
+        normalized = " ".join(item.split())
+        cleaned = _strip_negative_visibility_contact(item)
+        if cleaned != normalized:
+            sanitized.append(item)
+        if cleaned:
+            out.append(cleaned)
+
+    return out, sanitized
 
 
 def _capture_safe_configuration(
@@ -348,6 +417,9 @@ def _projection(
         original_configuration,
         capture_authorized=capture_ok,
     )
+    configuration, sanitized_negative_relations = (
+        _sanitize_negative_visibility_contact_configuration(configuration)
+    )
     if original_configuration:
         if configuration:
             body["configuration"] = configuration
@@ -385,6 +457,7 @@ def _projection(
     projection["authoritative_facts"] = authoritative
     audit["capture_mechanism_domain_firewall_enforced"] = True
     audit["capture_mechanism_relations_sanitized"] = withheld_capture_relations
+    audit["negative_visibility_contact_relations_sanitized"] = sanitized_negative_relations
     audit["holistic_capture_mechanism_withheld"] = holistic_capture_withheld
     audit["mirror_neutral_frontal_torso_suppressed"] = (
         mirror_frontal_torso_suppressed
@@ -420,6 +493,13 @@ def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
     ]
     if negative_geometry:
         violations.append("unsupported_negative_body_geometry_language")
+
+    negative_visibility_contact = [
+        " ".join(m.group(0).split())
+        for m in _NEGATIVE_VISIBILITY_CONTACT_RE.finditer(caption)
+    ]
+    if negative_visibility_contact:
+        violations.append("negative_visibility_or_contact_language")
 
     mirror_tautology = [
         " ".join(m.group(0).split())
@@ -470,6 +550,7 @@ def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
     audit["capture_mechanism_language_used"] = capture_mechanism_used
     audit["capture_mechanism_authorized"] = capture_ok
     audit["negative_body_geometry_phrases"] = negative_geometry
+    audit["negative_visibility_contact_phrases"] = negative_visibility_contact
     audit["mirror_reflection_tautology_phrases"] = mirror_tautology
     audit["meta_composition_phrases"] = meta_composition
     audit["setting_to_mood_causality_phrases"] = interpretive_causal
@@ -509,6 +590,10 @@ def _retry_prompt(
     if "unsupported_negative_body_geometry_language" in violations:
         extra.append(
             "Remove negative/neutral completion such as 'no visible turn or tilt'. Absence of a turn, tilt, lean, or bend is not a caption fact."
+        )
+    if "negative_visibility_or_contact_language" in violations:
+        extra.append(
+            "Remove negative visibility/contact bookkeeping such as 'the hand is not visible in the crop', 'there is no contact with her face or chin', 'the hand does not touch/support the face', or similar veto language. Preserve only independently supplied positive visible geometry, such as 'one arm extends outward with the elbow bent'."
         )
     if "mirror_reflection_tautology" in violations:
         extra.append(
