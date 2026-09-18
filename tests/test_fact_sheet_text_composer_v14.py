@@ -177,3 +177,15 @@ def test_audit_rejects_self_contained_moment_narration():
     )
 
     assert "interpretive_moment_narration" in audit["violations"]
+
+
+def test_retry_prompt_explicitly_removes_unauthorized_broad_pose():
+    prompt = v14._retry_prompt(
+        "BASE PROMPT",
+        "sH1VX is lying on a gray fabric surface.",
+        ["unauthorized_broad_pose:lying"],
+    )
+
+    assert "Remove the unsupported broad-pose/posture claim(s) lying entirely." in prompt
+    assert "remove that dependent relation too" in prompt
+    assert "do not replace" in prompt.lower()
