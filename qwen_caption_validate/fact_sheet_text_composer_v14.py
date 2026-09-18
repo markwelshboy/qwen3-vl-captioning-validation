@@ -48,8 +48,9 @@ _META_COMPOSITION_RE = re.compile(
     re.I,
 )
 _INTERPRETIVE_CAUSAL_RE = re.compile(
-    r"\b(?:contribut(?:es|ing)|adds?|giv(?:es|ing)|creat(?:es|ing)|evok(?:es|ing)|"
-    r"suggest(?:s|ing))\b[^.!?]{0,120}\b(?:mood|expression|feeling|atmosphere)\b",
+    r"\b(?:contribut(?:e|es|ed|ing)|add(?:s|ed|ing)?|giv(?:e|es|ing)|"
+    r"creat(?:e|es|ed|ing)|evok(?:e|es|ed|ing)|suggest(?:s|ed|ing)?)\b"
+    r"[^.!?]{0,120}\b(?:mood|expression|feeling|atmosphere)\b",
     re.I,
 )
 _SELF_CONTAINED_MOMENT_RE = re.compile(r"\bself[- ]contained\s+moment\b", re.I)
