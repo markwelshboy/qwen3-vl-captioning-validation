@@ -145,3 +145,64 @@ def test_shoulder_is_supportive_but_never_primary():
     )
     assert result["publishable_selfie"] is False
     assert result["qualifying_primary_families"] == []
+
+
+def test_crop_exit_proxy_prefers_lower_side_segment_with_missing_wrist():
+    points = {
+        "left_shoulder": (700.0, 250.0),
+        "left_elbow": (900.0, 650.0),
+        "left_wrist": None,
+    }
+    sam = np.full((70, 2), np.nan, dtype=np.float64)
+    sam[62] = [1080.0, 860.0]
+
+    result = mesh._arm_crop_exit_proxy(
+        "left",
+        points=points,
+        sam3d_projected_keypoints=sam,
+        width=1000,
+        height=800,
+    )
+
+    assert result["provisional_grade"] in {"strong_candidate", "moderate_candidate"}
+    assert result["components"]["shoulder_elbow_observed"] is True
+    assert result["components"]["wrist_not_observed"] is True
+    assert result["components"]["elbow_in_lower_frame_side"] is True
+
+
+def test_crop_exit_proxy_is_not_applicable_when_wrist_is_observed():
+    points = {
+        "right_shoulder": (300.0, 250.0),
+        "right_elbow": (180.0, 600.0),
+        "right_wrist": (80.0, 760.0),
+    }
+
+    result = mesh._arm_crop_exit_proxy(
+        "right",
+        points=points,
+        sam3d_projected_keypoints=None,
+        width=1000,
+        height=800,
+    )
+
+    assert result["provisional_grade"] == "none"
+    assert result["components"]["wrist_not_observed"] is False
+
+
+def test_crop_exit_proxy_does_not_fire_without_observed_shoulder_elbow_pair():
+    points = {
+        "left_shoulder": (700.0, 250.0),
+        "left_elbow": None,
+        "left_wrist": None,
+    }
+
+    result = mesh._arm_crop_exit_proxy(
+        "left",
+        points=points,
+        sam3d_projected_keypoints=None,
+        width=1000,
+        height=800,
+    )
+
+    assert result["provisional_grade"] == "none"
+    assert result["components"]["shoulder_elbow_observed"] is False
