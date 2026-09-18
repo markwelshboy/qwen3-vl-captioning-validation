@@ -305,3 +305,54 @@ def test_audit_rejects_setting_to_cozy_feel_causality():
     )
 
     assert "unsupported_setting_to_mood_causality" in audit["violations"]
+
+
+
+def test_negative_visibility_suffix_is_removed_but_positive_geometry_survives():
+    out = v14._strip_negative_visibility_contact(
+        "arm extended outward with elbow bent, though the hand is not visible in the crop"
+    )
+
+    assert out == "arm extended outward with elbow bent"
+
+
+def test_pure_negative_contact_relation_is_withheld():
+    out = v14._strip_negative_visibility_contact(
+        "no contact with her face or chin"
+    )
+
+    assert out is None
+
+
+def test_configuration_sanitizer_removes_negative_visibility_and_contact_bookkeeping():
+    values, sanitized = v14._sanitize_negative_visibility_contact_configuration(
+        [
+            "arm extended outward with elbow bent",
+            "hand not visible in crop",
+            "no contact with her face or chin",
+        ]
+    )
+
+    assert values == ["arm extended outward with elbow bent"]
+    assert sanitized == [
+        "hand not visible in crop",
+        "no contact with her face or chin",
+    ]
+
+
+def test_audit_rejects_negative_visibility_and_contact_prose():
+    audit = v14._caption_audit(
+        "Her arm is extended outward with the elbow bent, though the hand is not visible "
+        "in the crop and there is no contact with her face or chin.",
+        _projection(),
+    )
+
+    assert "negative_visibility_or_contact_language" in audit["violations"]
+    assert any(
+        "hand is not visible" in phrase
+        for phrase in audit["negative_visibility_contact_phrases"]
+    )
+    assert any(
+        "no contact with her face or chin" in phrase
+        for phrase in audit["negative_visibility_contact_phrases"]
+    )
