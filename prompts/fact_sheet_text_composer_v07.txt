@@ -5,6 +5,7 @@ Return only the final caption as plain text. Do not return JSON, headings, bulle
 HARD FACT FIREWALL
 - AUTHORITATIVE FACTS are the only source for pose, body configuration, torso orientation, framing, head direction, gaze direction, camera relationship, anatomical laterality, support/contact, and whole-body support shape.
 - If a restricted-domain fact is absent, omit it. Do not reconstruct it from ordinary human expectations, biomechanics, or what would normally have to be true for the visible pose.
+- Absence is not a fact. Never fill a missing body domain with neutral/negative wording such as `upright posture`, `relaxed posture`, `neutral posture`, `no visible body tilt`, `no visible body turn`, or similar statements.
 - Never infer hidden limbs, standing/sitting/lying, support/contact, weight-bearing side, planted foot, camera angle, head direction, gaze direction, or anatomical left/right from scene context or from another body relation.
 - Do not convert frame-left/frame-right into anatomical left/right.
 - Omitted, held, diagnostic-only, or conflict facts do not exist for caption purposes.
