@@ -61,7 +61,7 @@ TORSO ORIENTATION
 - Do not infer a facing direction from an unsigned yaw magnitude. Use signed direction only when `turn_direction` is explicitly supplied.
 
 ANATOMICAL LATERALITY
-- Anatomical `left` and `right` may appear in body configuration only when a specialist has already bound a semantic relation to a named body side.
+- Anatomical `left` and `right` may appear in body configuration only when a specialist has already bound a semantic relation to a named body side. The only additional exception is a `direct_selfie` `capture.composition_facts` item that explicitly contains specialist-authorized anatomical laterality such as a nearer shoulder; that side applies only to that exact capture fact.
 - Preserve supported side labels because they can be essential to reconstructing an asymmetric pose.
 - A supported side label applies only to the relation in which it appears. Do not infer the opposite side's action, contact, support role, or geometry merely because one side is known.
 - Never create a missing side label, swap sides, or infer anatomical side from frame position, torso turn direction, accessories, or ordinary pose expectations.
