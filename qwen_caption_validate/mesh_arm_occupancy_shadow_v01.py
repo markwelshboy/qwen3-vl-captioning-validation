@@ -274,6 +274,22 @@ def _render_part_mask(
     return np.asarray(canvas, dtype=np.uint8)
 
 
+def _save_debug_overlay(image_path: Path, raster: np.ndarray, out_path: Path) -> None:
+    image = Image.open(image_path).convert("RGBA")
+    labels = Image.fromarray(raster, mode="L").resize(image.size, resample=Image.Resampling.NEAREST)
+    arr = np.asarray(labels, dtype=np.uint8)
+
+    overlay = np.zeros((image.height, image.width, 4), dtype=np.uint8)
+    # Left/right are intentionally different only for debugging. Caption-facing
+    # foreground language remains side-neutral unless another specialist binds anatomy.
+    overlay[arr == 2] = [255, 80, 80, 115]
+    overlay[arr == 3] = [80, 180, 255, 115]
+    rgba = Image.fromarray(overlay, mode="RGBA")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    Image.alpha_composite(image, rgba).convert("RGB").save(out_path, quality=92)
+
+
 def _mask_bbox(mask: np.ndarray) -> dict[str, Any] | None:
     ys, xs = np.nonzero(mask)
     if not len(xs):
@@ -385,6 +401,9 @@ def evaluate(
     dwpose: dict[str, Any],
     vertices: np.ndarray,
     faces: np.ndarray,
+    *,
+    image_path: Path | None = None,
+    debug_overlay_path: Path | None = None,
 ) -> dict[str, Any]:
     key = str(policy.get("image_key") or "")
     size = policy.get("image_size") or []
@@ -413,6 +432,8 @@ def evaluate(
     uv, z = _project(vertices, cam_t, focal, width, height)
     face_labels = _classify_face_parts(vertices, faces, keypoints3d)
     raster = _render_part_mask(uv, z, faces, face_labels, width, height)
+    if image_path is not None and debug_overlay_path is not None and image_path.is_file():
+        _save_debug_overlay(image_path, raster, debug_overlay_path)
 
     total = float(raster.size)
     arms: dict[str, Any] = {}
@@ -454,6 +475,11 @@ def evaluate(
             "raster_size": [int(raster.shape[1]), int(raster.shape[0])],
             "raster_method": "depth_sorted_projected_mesh_part_labels",
             "part_assignment": "nearest_major_skeleton_segment_in_reconstructed_3d",
+            "debug_overlay": str(debug_overlay_path) if debug_overlay_path is not None else None,
+            "debug_overlay_legend": {
+                "left_arm_internal": "red",
+                "right_arm_internal": "blue"
+            },
         },
         "arms": arms,
         "invariants": {
@@ -542,12 +568,16 @@ def main() -> int:
             }
         else:
             vertices, faces = _load_obj(obj_path)
+            image_path = Path(str(policy.get("image") or "")).expanduser()
+            overlay_path = output_dir / f"{key}.mesh_arm_overlay.jpg"
             record = evaluate(
                 policy,
                 _load_arrays(arrays_path),
                 _read_json(dwpose_path),
                 vertices,
                 faces,
+                image_path=image_path if image_path.is_file() else None,
+                debug_overlay_path=overlay_path if image_path.is_file() else None,
             )
             record["sources"] = {
                 "policy": str(policy_path),
