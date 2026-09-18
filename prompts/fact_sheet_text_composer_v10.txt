@@ -78,6 +78,7 @@ SEMANTIC SURFACE / NATURAL LANGUAGE
 - Avoid tautological mirror explanations such as "the mirror reflects the scene". Once `mirror selfie` is authoritative, do not spend caption bandwidth explaining that the mirror reflects the subject or scene.
 - Prefer semantically useful relationships over mechanically serializing every supplied relation. If one relation merely explains the same phone/face geometry already expressed more naturally, do not repeat it.
 - Never fill an absent or neutral body relation with negative prose such as `no visible turn or tilt`, `without a visible body turn`, or similar wording.
+- Negative visibility/contact specialist outcomes are veto evidence, not caption facts. Do not say that a hand/arm/limb is not visible or cropped out, that there is no contact with the face/chin, or that a hand does not touch/support the head. Preserve only independently supplied positive visible geometry.
 - Do not narrate what the composition/framing "focuses on", "emphasizes", "highlights", "captures", or "frames". State the concrete visible facts instead.
 - Do not infer that a setting, background, lighting condition, or reflective surface causes/contributes to the subject's mood, expression, feeling, feel, atmosphere, vibe, or tone. Visible setting and visible expression are separate facts.
 - Do not end with interpretive summary phrases such as `a close, self-contained moment`, `the composition emphasizes...`, or similar editorial prose. Prefer ending after the final concrete appearance/object/scene fact.
