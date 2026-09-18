@@ -44,6 +44,14 @@ _EXTENDED_LATERALITY_RE = re.compile(
     re.I,
 )
 
+_UNSUPPORTED_BODY_NEUTRALITY_RE = re.compile(
+    r"\bposture\s+(?:is\s+|appears\s+|looks\s+)?(?:upright|neutral|relaxed)\b"
+    r"|\b(?:body|torso|upper\s+body)\s+(?:is\s+|appears\s+|looks\s+)?(?:upright|neutral)\b"
+    r"|\bno\s+(?:visible\s+)?(?:body|torso|upper\s+body)\s+(?:tilt|turn|lean|bend)\b"
+    r"|\bwithout\s+(?:any\s+)?(?:visible\s+)?(?:body|torso|upper\s+body)\s+(?:tilt|turn|lean|bend)\b",
+    re.I,
+)
+
 
 def _clean(value: Any) -> str | None:
     if not isinstance(value, str):
@@ -206,6 +214,10 @@ def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
         " ".join(match.group(0).split())
         for match in _ANATOMICAL_CROP_RE.finditer(caption)
     ]
+    unsupported_body_neutrality = [
+        " ".join(match.group(0).split())
+        for match in _UNSUPPORTED_BODY_NEUTRALITY_RE.finditer(caption)
+    ]
 
     position = _phrase_word_position(caption, expected_text) if expected_text else None
     if expected_text and position is None:
@@ -230,6 +242,9 @@ def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
         elif "unauthorized_anatomical_laterality" in violations:
             violations = [v for v in violations if v != "unauthorized_anatomical_laterality"]
 
+    if unsupported_body_neutrality:
+        violations.append("unsupported_body_neutrality_language")
+
     audit["violations"] = sorted(set(violations))
     audit["authoritative_framing_text"] = expected_text
     audit["authoritative_framing_source"] = source
@@ -243,6 +258,7 @@ def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
     audit["extended_authorized_anatomical_laterality"] = sorted(
         f"{side}_{part}" for side, part in allowed_laterality
     )
+    audit["unsupported_body_neutrality_phrases"] = unsupported_body_neutrality
     audit["framing_first_visual_fact_contract"] = True
     return audit
 
@@ -271,6 +287,11 @@ def _retry_prompt(original_prompt: str, caption: str, violations: list[str]) -> 
         extra.append(
             "Do not append or invent an anatomical crop phrase such as 'framed from the chest upward'. "
             "When authoritative framing supplies a standard shot scale, use only that scale."
+        )
+    if "unsupported_body_neutrality_language" in violations:
+        extra.append(
+            "Remove unsupported posture/neutrality claims such as 'upright posture', 'relaxed posture', "
+            "or 'no visible body tilt or turn'. Absence of a body fact does not authorize a negative or neutral body-state statement."
         )
 
     if not extra:
