@@ -352,8 +352,18 @@ def _dwpose_visible_names(dwpose: dict[str, Any]) -> set[str]:
     return set()
 
 
-def _arm_observation_support(dwpose: dict[str, Any], side: str) -> dict[str, Any]:
-    visible = _dwpose_visible_names(dwpose)
+def _arm_observation_support(
+    dwpose: dict[str, Any],
+    side: str,
+    policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    policy_visible = set()
+    if isinstance(policy, dict):
+        visibility = policy.get("visibility") if isinstance(policy.get("visibility"), dict) else {}
+        observed = visibility.get("observed_landmarks")
+        if isinstance(observed, list):
+            policy_visible = {str(v) for v in observed if isinstance(v, str)}
+    visible = policy_visible or _dwpose_visible_names(dwpose)
     states = {
         "shoulder": f"{side}_shoulder" in visible,
         "elbow": f"{side}_elbow" in visible,
@@ -374,7 +384,11 @@ def _arm_observation_support(dwpose: dict[str, Any], side: str) -> dict[str, Any
         "observed": states,
         "observed_count": count,
         "adjacent_pair_observed": adjacent,
-        "authority": "dwpose_observed_joint_visibility",
+        "authority": (
+            "caption_perception_policy_v02_observed_landmarks"
+            if policy_visible
+            else "dwpose_observed_joint_visibility"
+        ),
     }
 
 
@@ -441,7 +455,7 @@ def evaluate(
         mask = raster == label
         occupancy = float(mask.sum()) / total if total else 0.0
         bbox = _mask_bbox(mask)
-        observation = _arm_observation_support(dwpose, side)
+        observation = _arm_observation_support(dwpose, side, policy)
         region = _frame_region(bbox)
         grade = _evidence_grade(occupancy, observation, residual)
         composer_text = None
