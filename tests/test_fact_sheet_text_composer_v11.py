@@ -168,3 +168,40 @@ def test_literal_three_quarter_framing_is_still_rejected_without_authority():
     audit = composer._caption_audit(caption, projection)
 
     assert "shot_scale_language_without_authority" in audit["violations"]
+
+
+def test_specialist_bound_left_fist_laterality_is_allowed_and_wrong_side_is_rejected():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "grammar_profile": "feminine",
+            "subject_pronoun": "she",
+            "possessive_pronoun": "her",
+        },
+        "authoritative_facts": {
+            "framing": {
+                "composer_text": "medium close-up",
+                "surface_source": "standard_shot_scale",
+                "shot_scale_label": "medium_close_up",
+            },
+            "body": {
+                "configuration": [
+                    "chin resting on the left fist, with the forearm beneath/supporting the pose",
+                    "forearm held across the torso",
+                ]
+            },
+        },
+        "omitted_review_conflict_domains": [],
+    }
+
+    correct = composer._caption_audit(
+        "sH1VX is shown in a medium close-up, resting her chin on her left fist with the forearm beneath it.",
+        projection,
+    )
+    assert "unauthorized_anatomical_laterality" not in correct["violations"]
+
+    wrong = composer._caption_audit(
+        "sH1VX is shown in a medium close-up, resting her chin on her right fist with the forearm beneath it.",
+        projection,
+    )
+    assert "unauthorized_anatomical_laterality" in wrong["violations"]
