@@ -20,6 +20,7 @@ FRAMING
 - If the supplied framing is a literal anatomical span such as `framed from around the shoulders through the hips`, preserve that literal crop description naturally.
 - Do not recreate legacy framing buckets such as `full_length`, `three_quarter_or_long`, `waist_or_upper_body`, `close_or_medium_close`, or `face_or_partial_body`.
 - Do not invent `full-body`, `three-quarter framing`, `waist-up`, `extreme close-up`, or any other shot-scale term unless it is explicitly supplied by AUTHORITATIVE FACTS.
+- A supplied `three_quarter` torso orientation may be described as a three-quarter orientation/view/angle. That is BODY ORIENTATION, not `three-quarter framing`; do not suppress or reinterpret it as a shot-scale label.
 - The anatomical crop truth may be retained internally without being repeated in the caption when a validated standard shot scale is supplied.
 
 BODY CONFIGURATION AND SUPPORT BOUNDARY
