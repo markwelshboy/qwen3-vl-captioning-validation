@@ -215,6 +215,51 @@ def test_secondary_person_seated_does_not_count_as_primary_pose():
     assert audit["primary_subject_used_pose_groups"] == []
 
 
+def test_nonhuman_object_sits_does_not_count_as_primary_seated_pose():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "subject_pronoun": "she",
+            "possessive_pronoun": "her",
+        },
+        "authoritative_facts": {
+            "body": {},
+        },
+        "omitted_review_conflict_domains": [],
+    }
+
+    audit = v14._caption_audit(
+        "She holds a yellow teacup with a blue handle on a saucer, "
+        "and a clear glass tumbler sits nearby.",
+        projection,
+    )
+
+    assert "unauthorized_broad_pose:seated" not in audit["violations"]
+    assert audit["primary_subject_used_pose_groups"] == []
+
+
+def test_local_torso_lying_does_not_count_as_primary_global_pose():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "subject_pronoun": "she",
+            "possessive_pronoun": "her",
+        },
+        "authoritative_facts": {
+            "body": {},
+        },
+        "omitted_review_conflict_domains": [],
+    }
+
+    audit = v14._caption_audit(
+        "Her torso is lying flat on a surface with visible white bedding.",
+        projection,
+    )
+
+    assert "unauthorized_broad_pose:lying" not in audit["violations"]
+    assert audit["primary_subject_used_pose_groups"] == []
+
+
 def test_primary_subject_seated_still_requires_authority():
     projection = {
         "subject": {
