@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import copy
+import re
 from pathlib import Path
 from typing import Any
 
 from . import fact_sheet_specialist_normalizer_v01 as phase4b0
+from . import fact_sheet_specialist_normalizer_v05 as phase4b4
 from . import fact_sheet_specialist_normalizer_v15 as phase4b14
 from . import local_configuration_semantics_shadow_v01 as local_shadow
 
@@ -13,6 +15,33 @@ DEFAULT_INPUT_SUBDIR = Path("semantic-v3") / "caption-fact-sheet-v0.1-routed-v0.
 DEFAULT_POLICY_SUBDIR = Path("semantic-v3") / "caption-perception-policy-v0.2"
 DEFAULT_OUTPUT_SUBDIR = Path("semantic-v3") / "caption-fact-sheet-v0.2.15"
 
+
+# Population-reviewed contradiction gate for direct body-to-face relations.
+# In the 87-image census, non-device positive controls were <= 0.72 body
+# scales, while the first visually false candidate was 1.533 and the known
+# 00002/46/50 failures were 3.488-3.988. The gate is deliberately one-sided:
+# geometry may veto an obviously impossible relation but may not create one.
+FACE_RELATION_CONTRADICTION_MIN_NORM_BODY = 1.35
+
+_FACE_RELATION_RE = re.compile(
+    r"\b(?:hand|fist|palm|fingers?|wrist|forearm)\b.{0,55}\b(?:face|chin)\b"
+    r"|\b(?:face|chin)\b.{0,55}\b(?:hand|fist|palm|fingers?|wrist|forearm)\b",
+    re.I,
+)
+_DEVICE_MEDIATED_FACE_RELATION_RE = re.compile(
+    r"\b(?:phone|smartphone|mobile|device|camera)\b",
+    re.I,
+)
+_NEGATED_FACE_RELATION_RE = re.compile(
+    r"\bno\s+(?:visible\s+)?(?:hand|fist|palm|fingers?|wrist|forearm)\b"
+    r".{0,55}\b(?:contact|touch(?:es|ing)?|support(?:s|ing|ed)?)\b"
+    r".{0,55}\b(?:face|chin)\b"
+    r"|\b(?:hand|fist|palm|fingers?|wrist|forearm)\b.{0,40}"
+    r"\b(?:does|do)\s+not\s+(?:touch|contact|support)\b"
+    r"|\b(?:hand|fist|palm|fingers?|wrist|forearm)\b.{0,40}"
+    r"\b(?:is|are)\s+not\s+(?:touching|contacting|supporting)\b",
+    re.I,
+)
 
 def _body(sheet: dict[str, Any]) -> dict[str, Any]:
     facts = sheet.get("facts")
@@ -57,6 +86,154 @@ def _points_from_authoritative_laterality(body: dict[str, Any]) -> dict[str, tup
             any_observed = any_observed or observed
     return points if any_observed else None
 
+
+def _positive_direct_face_relation(text: str) -> bool:
+    """Return True only for direct positive body-to-face/chin relation claims."""
+    value = " ".join(str(text or "").split())
+    if not value or not _FACE_RELATION_RE.search(value):
+        return False
+    if _DEVICE_MEDIATED_FACE_RELATION_RE.search(value):
+        return False
+    if _NEGATED_FACE_RELATION_RE.search(value):
+        return False
+    return True
+
+
+def _face_relation_distance_norm(
+    points: dict[str, tuple[float, float] | None],
+) -> tuple[float | None, str | None]:
+    """Use the same forearm-aware metric validated by the shadow census."""
+    from . import local_relation_geometry_shadow_v01 as relation_shadow
+
+    geometry = relation_shadow._geometry(points)
+    value = geometry.get("nearest_upper_limb_to_face_norm_body")
+    side = geometry.get("nearest_upper_limb_to_face_side")
+    if not isinstance(value, (int, float)):
+        return None, None
+    return float(value), str(side) if side in {"left", "right"} else None
+
+
+def _apply_face_relation_truth_gate(
+    sheet: dict[str, Any],
+    *,
+    points: dict[str, tuple[float, float] | None] | None = None,
+    geometry_error: str | None = None,
+) -> dict[str, Any]:
+    """Withhold only directly contradicted body-to-face/chin relations.
+
+    Qwen remains the semantic proposer. DWPose is used only as a negative
+    truth gate: if every observed hand/forearm candidate is far from the face,
+    the relation is withheld from the composer. Missing geometry is an
+    abstention, never counterevidence. Device-mediated relations are outside
+    this anatomical relation gate and are preserved.
+    """
+    out = copy.deepcopy(sheet)
+    body = _body(out)
+    configuration = (
+        body.get("configuration")
+        if isinstance(body.get("configuration"), list)
+        else []
+    )
+
+    candidate_indexes = [
+        index
+        for index, item in enumerate(configuration)
+        if isinstance(item, dict) and _positive_direct_face_relation(_item_text(item))
+    ]
+    adjudication: dict[str, Any] = {
+        "status": "not_applicable",
+        "authoritative_stage": True,
+        "composer_authoritative": False,
+        "applied": False,
+        "candidate_count": len(candidate_indexes),
+        "withheld_count": 0,
+        "threshold_norm_body": FACE_RELATION_CONTRADICTION_MIN_NORM_BODY,
+        "nearest_upper_limb_to_face_norm_body": None,
+        "nearest_upper_limb_side": None,
+        "geometry_error": geometry_error,
+        "reason": "no_direct_positive_body_to_face_relation_candidate",
+        "device_mediated_relations_are_out_of_scope": True,
+        "missing_geometry_is_not_counterevidence": True,
+    }
+
+    if not candidate_indexes:
+        body["face_relation_truth_adjudication"] = adjudication
+        return out
+
+    resolved_points = points
+    point_error = geometry_error
+    if resolved_points is None:
+        resolved_points, point_error = phase4b4._load_dwpose_points_for_sheet(out)
+
+    if resolved_points is None:
+        adjudication.update(
+            status="insufficient_evidence",
+            geometry_error=point_error,
+            reason=point_error or "dwpose_geometry_unavailable",
+        )
+        body["face_relation_truth_adjudication"] = adjudication
+        return out
+
+    distance_norm, side = _face_relation_distance_norm(resolved_points)
+    adjudication.update(
+        nearest_upper_limb_to_face_norm_body=distance_norm,
+        nearest_upper_limb_side=side,
+        geometry_error=point_error,
+    )
+    if distance_norm is None:
+        adjudication.update(
+            status="insufficient_evidence",
+            reason="visible_upper_limb_to_face_distance_unavailable",
+        )
+        body["face_relation_truth_adjudication"] = adjudication
+        return out
+
+    if distance_norm <= FACE_RELATION_CONTRADICTION_MIN_NORM_BODY:
+        adjudication.update(
+            status="preserved",
+            reason="visible_upper_limb_geometry_does_not_contradict_face_relation",
+        )
+        body["face_relation_truth_adjudication"] = adjudication
+        return out
+
+    updated = copy.deepcopy(configuration)
+    withheld: list[dict[str, Any]] = []
+    for index in candidate_indexes:
+        item = updated[index]
+        source_text = _item_text(item)
+        previous_composer = item.get("composer_text")
+        item["composer_text"] = None
+        item["promotion_status"] = "withheld_by_face_relation_geometry_contradiction"
+        item["specialist_owner"] = "dwpose_face_relation_truth_gate"
+        item["face_relation_truth_gate"] = {
+            "semantic_relation": "hand_or_forearm_near_face_or_chin",
+            "decision": "withhold",
+            "source_text": source_text,
+            "previous_composer_text": previous_composer,
+            "nearest_upper_limb_to_face_norm_body": round(distance_norm, 3),
+            "nearest_upper_limb_side": side,
+            "contradiction_threshold_norm_body": (
+                FACE_RELATION_CONTRADICTION_MIN_NORM_BODY
+            ),
+            "authority": "dwpose_visible_upper_limb_to_face_geometry",
+            "reason": (
+                "all observed hand/forearm geometry is too far from the face "
+                "for the proposed direct anatomical relation"
+            ),
+        }
+        withheld.append(copy.deepcopy(item["face_relation_truth_gate"]))
+
+    body["configuration"] = updated
+    adjudication.update(
+        status="adjudicated",
+        composer_authoritative=True,
+        applied=True,
+        withheld_count=len(withheld),
+        withheld_relations=withheld,
+        reason="visible_dwpose_geometry_strongly_contradicts_direct_face_relation",
+    )
+    body["face_relation_truth_adjudication"] = adjudication
+    return out
 
 def _canonical_head_support_item(
     semantics: dict[str, Any],
@@ -203,6 +380,7 @@ _BASE_APPLY_PHASE4B14 = phase4b14._apply_phase4b14_authoritative
 def _apply_phase4b15_authoritative(sheet: dict[str, Any]) -> dict[str, Any]:
     out = _BASE_APPLY_PHASE4B14(sheet)
     out = _apply_head_support_authority(out)
+    out = _apply_face_relation_truth_gate(out)
 
     audit = out.get("audit") if isinstance(out.get("audit"), dict) else {}
     audit["phase"] = "4B.15-authoritative"
@@ -216,8 +394,21 @@ def _apply_phase4b15_authoritative(sheet: dict[str, Any]) -> dict[str, Any]:
         head_support_forearm_side_requires_same_side_elbow_and_wrist=True,
         generic_forearm_held_language_does_not_create_head_support=True,
         head_support_stage_cannot_create_broad_pose=True,
+        direct_face_relation_truth_gate_is_contradiction_only=True,
+        direct_face_relation_truth_gate_never_creates_relation=True,
+        missing_face_relation_geometry_is_not_counterevidence=True,
+        device_mediated_face_relations_are_outside_anatomical_truth_gate=True,
         prior_broad_pose_torso_support_knee_raised_leg_and_crouch_depth_gates_remain_authoritative=True,
     )
+    face_gate = (
+        _body(out).get("face_relation_truth_adjudication")
+        if isinstance(_body(out).get("face_relation_truth_adjudication"), dict)
+        else {}
+    )
+    if face_gate.get("applied") and face_gate.get("withheld_count"):
+        warnings = [str(value) for value in (audit.get("warnings") or []) if value]
+        warnings.append("face_relation_geometry_contradiction_withheld")
+        audit["warnings"] = sorted(set(warnings))
     audit["invariants"] = invariants
     out["audit"] = audit
     out["schema_version"] = SCHEMA_VERSION
