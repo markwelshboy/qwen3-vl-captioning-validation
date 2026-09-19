@@ -120,6 +120,32 @@ def test_multiple_relaxed_arm_relations_are_not_all_forced_to_same_opposite_side
     assert "relaxed_arm_laterality_unresolved_multiple_relations" in warnings
 
 
+
+
+def test_hand_near_hip_is_not_strengthened_to_contact():
+    configuration = [
+        {
+            "text": "right forearm resting along the torso with hand placed near the hip",
+            "composer_text": "forearm resting along the torso with hand near the hip",
+        }
+    ]
+    out, bindings, warnings = mod._bind_configuration_laterality(
+        configuration,
+        _asymmetric_arm_points(),
+    )
+
+    assert out[0]["composer_text"] == "forearm resting along the torso with hand near the hip"
+    assert bindings == []
+    assert "hand_near_hip_relation_not_promoted_to_contact" in warnings
+
+
+def test_hand_hip_relation_strength_distinguishes_contact_from_proximity():
+    assert mod._hand_hip_relation_strength("right hand on hip") == "contact"
+    assert mod._hand_hip_relation_strength("hand resting on the hip") == "contact"
+    assert mod._hand_hip_relation_strength("hand placed near the hip") == "proximity"
+    assert mod._hand_hip_relation_strength("hand near the waist") == "proximity"
+
+
 def test_ambiguous_hand_on_hip_geometry_stays_unlateralized():
     points = {
         "left_shoulder": (20.0, 0.0),
