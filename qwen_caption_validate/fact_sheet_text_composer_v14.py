@@ -112,6 +112,12 @@ _SECONDARY_HUMAN_NOUN_RE = re.compile(
     r"\b(?:person|people|child|children|man|men|woman|women|figure|figures|boy|girl)\b",
     re.I,
 )
+_INTERVENING_NONPRIMARY_CLAUSE_SUBJECT_RE = re.compile(
+    r"(?:[,;]\s*|\b)(?:and|but|while|whereas)\s+"
+    r"(?:a|an|the|this|that|these|those|another|one)\s+"
+    r"(?:[A-Za-z][A-Za-z'’-]*\s+){0,5}[A-Za-z][A-Za-z'’-]*\s*$",
+    re.I,
+)
 
 _MIRROR_PHONE_HARDWARE_RE = re.compile(
     r"\b(?:triple|multiple|three)\s+(?:rear[- ]?)?camera"
@@ -328,7 +334,7 @@ def _primary_subject_pose_groups(
 
     possessive_body_re = (
         re.compile(
-            rf"\b{re.escape(possessive)}\s+(?:body|posture|stance|torso)\b",
+            rf"\b{re.escape(possessive)}\s+(?:body|posture|stance)\b",
             re.I,
         )
         if possessive
@@ -355,7 +361,10 @@ def _primary_subject_pose_groups(
                 for ref in refs:
                     if ref.end() <= pose_match.start():
                         between = sentence[ref.end():pose_match.start()]
-                        if not _SECONDARY_HUMAN_NOUN_RE.search(between):
+                        if (
+                            not _SECONDARY_HUMAN_NOUN_RE.search(between)
+                            and not _INTERVENING_NONPRIMARY_CLAUSE_SUBJECT_RE.search(between)
+                        ):
                             primary_bound = True
                     elif pose_match.end() <= ref.start():
                         # Fronted participle: "Seated near the window, sH1VX ..."
