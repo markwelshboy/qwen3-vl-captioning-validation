@@ -19,6 +19,14 @@ HAND_HIP_RE = re.compile(
     r"(?:\b(?:one\s+)?hand\b.{0,28}\b(?:hip|waist)\b|\b(?:hip|waist)\b.{0,28}\b(?:one\s+)?hand\b)",
     re.I,
 )
+HAND_HIP_PROXIMITY_RE = re.compile(
+    r"\b(?:near|beside|adjacent\s+to|close\s+to|positioned\s+near|placed\s+near)\b",
+    re.I,
+)
+HAND_HIP_CONTACT_RE = re.compile(
+    r"\b(?:on|against|touch(?:es|ing|ed)?|press(?:ed|ing)?\s+against)\b",
+    re.I,
+)
 RELAXED_ARM_RE = re.compile(
     r"\b(?:(?:left|right|other|one)\s+)?arm\b.{0,32}\b(?:relaxed|hang(?:s|ing)?|at\s+(?:the\s+)?side)\b",
     re.I,
@@ -183,6 +191,17 @@ def _source_arm_side(text: str) -> str | None:
     return match.group(1).lower() if match else None
 
 
+def _hand_hip_relation_strength(text: str) -> str | None:
+    """Classify Qwen's semantic strength without allowing geometry to strengthen it."""
+    if not HAND_HIP_RE.search(text):
+        return None
+    if HAND_HIP_PROXIMITY_RE.search(text):
+        return "proximity"
+    if HAND_HIP_CONTACT_RE.search(text):
+        return "contact"
+    return "unspecified"
+
+
 def _bind_configuration_laterality(
     configuration: list[dict[str, Any]],
     points: dict[str, tuple[float, float] | None],
@@ -191,11 +210,21 @@ def _bind_configuration_laterality(
     bindings: list[dict[str, Any]] = []
     warnings: list[str] = []
 
+    proximity_items = [
+        item for item in out
+        if isinstance(item, dict)
+        and isinstance(item.get("text"), str)
+        and _hand_hip_relation_strength(str(item.get("text"))) == "proximity"
+        and not re.search(r"\b(?:both|two)\s+hands\b", str(item.get("text")), re.I)
+    ]
+    if proximity_items:
+        warnings.append("hand_near_hip_relation_not_promoted_to_contact")
+
     hip_items = [
         item for item in out
         if isinstance(item, dict)
         and isinstance(item.get("text"), str)
-        and HAND_HIP_RE.search(str(item.get("text")))
+        and _hand_hip_relation_strength(str(item.get("text"))) == "contact"
         and not re.search(r"\b(?:both|two)\s+hands\b", str(item.get("text")), re.I)
     ]
     if len(hip_items) != 1:
@@ -332,6 +361,7 @@ def _apply_phase4b4(sheet: dict[str, Any]) -> dict[str, Any]:
         qwen_source_side_labels_are_ignored_during_relation_rebinding=True,
         dwpose_named_joints_can_bind_supported_semantic_relations_to_anatomical_side=True,
         unresolved_relation_laterality_remains_unlateralized=True,
+        hand_hip_proximity_is_never_strengthened_to_contact=True,
     )
     audit["invariants"] = invariants
     out["audit"] = audit
