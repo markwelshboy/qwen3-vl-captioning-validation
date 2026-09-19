@@ -108,7 +108,7 @@ STAGES: tuple[Stage, ...] = (
         "identity",
         "identity-policy-final-fact-sheet",
         identity_v11,
-        identity__fact_sheet_output_subdir(v11),
+        _fact_sheet_output_subdir(identity_v11),
         19,
         True,
     ),
