@@ -20,6 +20,28 @@ def test_default_stages_are_current_production_chain():
     ]
 
 
+def test_early_wrapper_stage_derives_output_namespace_from_schema():
+    stage2 = next(stage for stage in mod.STAGES if stage.key == "2")
+    assert stage2.output_subdir == Path("semantic-v3") / "caption-fact-sheet-v0.2.1"
+
+
+def test_stage_args_pin_output_namespace_explicitly(tmp_path: Path):
+    stage2 = next(stage for stage in mod.STAGES if stage.key == "2")
+    args = mod._stage_args(
+        stage2,
+        tmp_path,
+        only=["imageblind-01_00001"],
+        overwrite=True,
+    )
+    assert args[:3] == [
+        str(tmp_path),
+        "--output-dir",
+        str(tmp_path / "semantic-v3" / "caption-fact-sheet-v0.2.1"),
+    ]
+    assert "--only" in args
+    assert "--overwrite" in args
+
+
 def test_requested_stages_are_deduplicated_and_execution_ordered():
     stages = mod.resolve_stages(["11", "6", "10", "7", "6"])
     assert [stage.key for stage in stages] == ["6", "7", "10", "11"]
