@@ -27,6 +27,20 @@ HAND_HIP_CONTACT_RE = re.compile(
     r"\b(?:on|against|touch(?:es|ing|ed)?|press(?:ed|ing)?\s+against)\b",
     re.I,
 )
+HAND_HIP_PROXIMITY_SUFFIX_RE = re.compile(
+    r"(?:,\s*|\s+)(?:with\s+)?(?:the\s+)?(?:(?:left|right|one|other)\s+)?"
+    r"hand\s+(?:(?:is|was)\s+)?(?:(?:placed|positioned|held)\s+)?"
+    r"(?:near|beside|adjacent\s+to|close\s+to|positioned\s+near|placed\s+near)\s+"
+    r"(?:the\s+)?(?:hip|waist)\b.*$",
+    re.I,
+)
+HAND_HIP_PROXIMITY_ONLY_RE = re.compile(
+    r"^(?:(?:the|her|his|their)\s+)?(?:(?:left|right|one|other)\s+)?"
+    r"hand\s+(?:(?:is|was)\s+)?(?:(?:placed|positioned|held)\s+)?"
+    r"(?:near|beside|adjacent\s+to|close\s+to|positioned\s+near|placed\s+near)\s+"
+    r"(?:the\s+)?(?:hip|waist)\b[ .;,:-]*$",
+    re.I,
+)
 RELAXED_ARM_RE = re.compile(
     r"\b(?:(?:left|right|other|one)\s+)?arm\b.{0,32}\b(?:relaxed|hang(?:s|ing)?|at\s+(?:the\s+)?side)\b",
     re.I,
@@ -202,6 +216,19 @@ def _hand_hip_relation_strength(text: str) -> str | None:
     return "unspecified"
 
 
+def _strip_hand_hip_proximity_surface(text: str) -> str | None:
+    """Remove low-value hip-proximity language while preserving other local geometry."""
+    value = " ".join(str(text or "").split()).strip()
+    if not value:
+        return None
+    if HAND_HIP_PROXIMITY_ONLY_RE.match(value):
+        return None
+    cleaned = HAND_HIP_PROXIMITY_SUFFIX_RE.sub("", value).strip(" ,.;")
+    if cleaned == value and HAND_HIP_PROXIMITY_RE.search(value) and HAND_HIP_RE.search(value):
+        return None
+    return cleaned or None
+
+
 def _bind_configuration_laterality(
     configuration: list[dict[str, Any]],
     points: dict[str, tuple[float, float] | None],
@@ -219,6 +246,38 @@ def _bind_configuration_laterality(
     ]
     if proximity_items:
         warnings.append("hand_near_hip_relation_not_promoted_to_contact")
+        warnings.append("hand_near_hip_proximity_withheld_from_composer")
+
+    drop_ids: set[int] = set()
+    for item in proximity_items:
+        source_text = str(item.get("text") or "")
+        surface = (
+            str(item.get("composer_text") or "").strip()
+            or str(item.get("normalized_text") or "").strip()
+            or source_text
+        )
+        cleaned = _strip_hand_hip_proximity_surface(surface)
+        if cleaned:
+            item["composer_text"] = cleaned
+            item["normalized_text"] = cleaned
+            item["promotion_status"] = "accepted_residual_with_hip_proximity_withheld"
+            item["specialist_owner"] = "hand_hip_semantic_strength_guard"
+            item["relation_strength_guard"] = {
+                "semantic_relation": "hand_near_hip_or_waist",
+                "source_text": source_text,
+                "source_strength": "proximity",
+                "composer_hip_relation_withheld": True,
+                "residual_composer_text": cleaned,
+                "reason": (
+                    "Qwen proximity language is not contact authority and image-plane "
+                    "hip distance is insufficient to prove a useful hip relation."
+                ),
+            }
+        else:
+            drop_ids.add(id(item))
+
+    if drop_ids:
+        out = [item for item in out if id(item) not in drop_ids]
 
     hip_items = [
         item for item in out
@@ -362,6 +421,8 @@ def _apply_phase4b4(sheet: dict[str, Any]) -> dict[str, Any]:
         dwpose_named_joints_can_bind_supported_semantic_relations_to_anatomical_side=True,
         unresolved_relation_laterality_remains_unlateralized=True,
         hand_hip_proximity_is_never_strengthened_to_contact=True,
+        hand_hip_proximity_is_withheld_from_composer_without_contact_authority=True,
+        non_hip_residual_local_geometry_is_preserved_when_proximity_is_withheld=True,
     )
     audit["invariants"] = invariants
     out["audit"] = audit
