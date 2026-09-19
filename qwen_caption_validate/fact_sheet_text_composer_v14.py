@@ -106,6 +106,7 @@ _PRIMARY_POSE_PATTERNS: dict[str, re.Pattern[str]] = {
     "lying": re.compile(r"\b(?:lie|lies|lying|reclined|reclining)\b", re.I),
     "crouching": re.compile(r"\b(?:crouch|crouches|crouched|crouching)\b", re.I),
     "kneeling": re.compile(r"\b(?:kneel|kneels|kneeled|kneeling)\b", re.I),
+    "squatting": re.compile(r"\b(?:squat|squats|squatted|squatting)\b", re.I),
 }
 _SECONDARY_HUMAN_NOUN_RE = re.compile(
     r"\b(?:person|people|child|children|man|men|woman|women|figure|figures|boy|girl)\b",
