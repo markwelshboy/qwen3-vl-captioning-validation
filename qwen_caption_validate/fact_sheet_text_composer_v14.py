@@ -118,6 +118,11 @@ _INTERVENING_NONPRIMARY_CLAUSE_SUBJECT_RE = re.compile(
     r"(?:[A-Za-z][A-Za-z'’-]*\s+){0,5}[A-Za-z][A-Za-z'’-]*\s*$",
     re.I,
 )
+_LOCAL_BODY_PART_POSE_SUBJECT_RE_TEMPLATE = (
+    r"\b{possessive}\s+(?:upper\s+)?torso\b"
+    r"[^,;.!?]{0,40}$"
+)
+
 
 _MIRROR_PHONE_HARDWARE_RE = re.compile(
     r"\b(?:triple|multiple|three)\s+(?:rear[- ]?)?camera"
@@ -340,6 +345,16 @@ def _primary_subject_pose_groups(
         if possessive
         else None
     )
+    local_body_part_pose_subject_re = (
+        re.compile(
+            _LOCAL_BODY_PART_POSE_SUBJECT_RE_TEMPLATE.format(
+                possessive=re.escape(possessive)
+            ),
+            re.I,
+        )
+        if possessive
+        else None
+    )
 
     used: set[str] = set()
     sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", caption) if s.strip()]
@@ -351,6 +366,17 @@ def _primary_subject_pose_groups(
 
         for name, pattern in _PRIMARY_POSE_PATTERNS.items():
             for pose_match in pattern.finditer(sentence):
+                prefix = sentence[:pose_match.start()]
+                if (
+                    local_body_part_pose_subject_re
+                    and local_body_part_pose_subject_re.search(prefix)
+                ):
+                    # Local torso topology such as "with her torso lying flat"
+                    # is not a statement that the primary subject is globally
+                    # lying/reclining. The torso phrase has its own grammatical
+                    # subject and remains valid configuration evidence.
+                    continue
+
                 after = sentence[pose_match.end():pose_match.end() + 28]
                 # "a seated person" / "standing man" belongs to the secondary
                 # noun that immediately follows the posture adjective.
