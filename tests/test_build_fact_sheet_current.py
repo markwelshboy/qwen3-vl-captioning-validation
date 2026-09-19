@@ -149,13 +149,17 @@ def test_run_stage_fork_isolates_legacy_module_mutation(tmp_path: Path):
 
 
 def test_stage_args_keep_one_only_batch_in_one_worker(tmp_path: Path):
+    stage16 = next(stage for stage in mod.STAGES if stage.key == "16")
     args = mod._stage_args(
+        stage16,
         tmp_path,
         only=["imageblind-01_00001", "imageblind-01_00002"],
         overwrite=True,
     )
     assert args == [
         str(tmp_path),
+        "--output-dir",
+        str(tmp_path / stage16.output_subdir),
         "--only",
         "imageblind-01_00001",
         "imageblind-01_00002",
