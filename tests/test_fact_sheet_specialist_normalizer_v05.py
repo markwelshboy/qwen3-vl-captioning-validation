@@ -172,9 +172,11 @@ def test_hand_near_hip_is_not_strengthened_to_contact():
         _asymmetric_arm_points(),
     )
 
-    assert out[0]["composer_text"] == "forearm resting along the torso with hand near the hip"
+    assert out[0]["composer_text"] == "forearm resting along the torso"
+    assert out[0]["promotion_status"] == "accepted_residual_with_hip_proximity_withheld"
     assert bindings == []
     assert "hand_near_hip_relation_not_promoted_to_contact" in warnings
+    assert "hand_near_hip_proximity_withheld_from_composer" in warnings
 
 
 def test_hand_hip_relation_strength_distinguishes_contact_from_proximity():
