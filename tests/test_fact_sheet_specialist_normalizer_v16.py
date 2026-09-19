@@ -126,3 +126,129 @@ def test_bilateral_wrists_keep_head_support_side_neutral():
     assert "left" not in canonical["composer_text"]
     assert "right" not in canonical["composer_text"]
     assert adjudication["laterality_binding"]["status"] == "unresolved"
+
+
+def _face_points(*, near: bool):
+    points = {
+        "left_shoulder": (0.0, 0.0),
+        "right_shoulder": (100.0, 0.0),
+        "left_hip": (10.0, 150.0),
+        "right_hip": (90.0, 150.0),
+        "neck": (50.0, -20.0),
+        "nose": (50.0, -60.0),
+        "left_eye": (42.0, -65.0),
+        "right_eye": (58.0, -65.0),
+        "left_ear": (30.0, -60.0),
+        "right_ear": (70.0, -60.0),
+    }
+    if near:
+        points.update({
+            "left_elbow": (20.0, -10.0),
+            "left_wrist": (45.0, -55.0),
+            "right_elbow": (120.0, 80.0),
+            "right_wrist": (140.0, 140.0),
+        })
+    else:
+        points.update({
+            "left_elbow": (5.0, 105.0),
+            "left_wrist": (12.0, 145.0),
+            "right_elbow": (95.0, 105.0),
+            "right_wrist": (88.0, 145.0),
+        })
+    return points
+
+
+def test_face_relation_truth_gate_withholds_far_direct_relation():
+    sheet = _sheet(
+        [_item("hand near the face"), _item("forearm held beneath the chin/hand arrangement")],
+        left=("shoulder", "elbow", "wrist"),
+        right=("shoulder", "elbow", "wrist"),
+    )
+
+    out = phase4b15._apply_face_relation_truth_gate(
+        sheet,
+        points=_face_points(near=False),
+    )
+    body = out["facts"]["body"]
+    config = body["configuration"]
+
+    assert config[0]["composer_text"] is None
+    assert config[1]["composer_text"] is None
+    assert config[0]["promotion_status"] == "withheld_by_face_relation_geometry_contradiction"
+    gate = body["face_relation_truth_adjudication"]
+    assert gate["status"] == "adjudicated"
+    assert gate["withheld_count"] == 2
+    assert gate["nearest_upper_limb_to_face_norm_body"] > (
+        phase4b15.FACE_RELATION_CONTRADICTION_MIN_NORM_BODY
+    )
+
+
+def test_face_relation_truth_gate_preserves_near_direct_relation():
+    sheet = _sheet(
+        [_item("hand positioned near the chin with index finger extended")],
+        left=("shoulder", "elbow", "wrist"),
+        right=("shoulder", "elbow", "wrist"),
+    )
+
+    out = phase4b15._apply_face_relation_truth_gate(
+        sheet,
+        points=_face_points(near=True),
+    )
+    body = out["facts"]["body"]
+
+    assert body["configuration"][0]["composer_text"] == (
+        "hand positioned near the chin with index finger extended"
+    )
+    assert body["face_relation_truth_adjudication"]["status"] == "preserved"
+
+
+def test_face_relation_truth_gate_exempts_device_mediated_relation():
+    sheet = _sheet(
+        [_item("hand holding a smartphone in front of the face")],
+        left=("shoulder", "elbow", "wrist"),
+        right=("shoulder", "elbow", "wrist"),
+    )
+
+    out = phase4b15._apply_face_relation_truth_gate(
+        sheet,
+        points=_face_points(near=False),
+    )
+    body = out["facts"]["body"]
+
+    assert body["configuration"][0]["composer_text"] == (
+        "hand holding a smartphone in front of the face"
+    )
+    assert body["face_relation_truth_adjudication"]["status"] == "not_applicable"
+
+
+def test_face_relation_truth_gate_does_not_treat_negative_relation_as_positive():
+    sheet = _sheet(
+        [_item("no visible hand or fist contact with face or chin")],
+        left=("shoulder",),
+        right=("shoulder",),
+    )
+
+    out = phase4b15._apply_face_relation_truth_gate(sheet, points={})
+    body = out["facts"]["body"]
+
+    assert body["configuration"][0]["composer_text"] == (
+        "no visible hand or fist contact with face or chin"
+    )
+    assert body["face_relation_truth_adjudication"]["candidate_count"] == 0
+
+
+def test_face_relation_truth_gate_abstains_when_geometry_missing():
+    sheet = _sheet(
+        [_item("hand near the face")],
+        left=(),
+        right=(),
+    )
+
+    out = phase4b15._apply_face_relation_truth_gate(
+        sheet,
+        points={},
+    )
+    body = out["facts"]["body"]
+
+    assert body["configuration"][0]["composer_text"] == "hand near the face"
+    assert body["face_relation_truth_adjudication"]["status"] == "insufficient_evidence"
