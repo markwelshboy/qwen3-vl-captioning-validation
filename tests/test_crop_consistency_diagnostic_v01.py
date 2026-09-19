@@ -314,6 +314,11 @@ def test_registry_covers_all_87_records_in_56_source_families():
         "imageblind-01_00046",
         "imageblind-01_00050",
     ]
+    assert family_2["wide_to_tight"] == [
+        "imageblind-01_00050",
+        "imageblind-01_00002",
+        "imageblind-01_00046",
+    ]
     assert family_2["exact_duplicate_groups"] == [
         [
             "imageblind-01_00002",
