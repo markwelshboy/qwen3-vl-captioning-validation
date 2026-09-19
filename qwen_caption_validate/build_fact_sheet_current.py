@@ -21,6 +21,7 @@ retired knee-angle shadow experiment.
 
 import argparse
 import contextlib
+import json
 import sys
 import time
 from dataclasses import dataclass
@@ -157,6 +158,46 @@ def _stage_args(
     return args
 
 
+def _record_paths(stage: Stage, run_dir: Path, only: list[str]) -> list[Path]:
+    directory = run_dir / stage.output_subdir
+    paths = sorted(directory.glob("*.fact_sheet.json")) if directory.is_dir() else []
+    if not only:
+        return paths
+    requested = set(only)
+    return [
+        path
+        for path in paths
+        if path.name.removesuffix(".fact_sheet.json") in requested
+    ]
+
+
+def _snapshot_records(
+    stage: Stage,
+    run_dir: Path,
+    only: list[str],
+) -> dict[str, object]:
+    snapshot: dict[str, object] = {}
+    for path in _record_paths(stage, run_dir, only):
+        snapshot[path.name] = json.loads(path.read_text(encoding="utf-8"))
+    return snapshot
+
+
+def _verify_snapshot(
+    stage: Stage,
+    run_dir: Path,
+    only: list[str],
+    baseline: dict[str, object],
+) -> tuple[bool, list[str]]:
+    current = _snapshot_records(stage, run_dir, only)
+    names = sorted(set(baseline) | set(current))
+    differences = [
+        name
+        for name in names
+        if baseline.get(name) != current.get(name)
+    ]
+    return not differences, differences
+
+
 def run_stage(
     stage: Stage,
     run_dir: Path,
@@ -190,6 +231,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--only", nargs="*", default=[])
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--verify-existing",
+        action="store_true",
+        help=(
+            "Snapshot existing selected record JSON before each stage, rerun it, "
+            "and require exact JSON equality. Intended for consolidation validation."
+        ),
+    )
     parser.add_argument(
         "--list-stages",
         action="store_true",
@@ -241,11 +290,24 @@ def main() -> int:
     for stage in stages:
         print()
         print(f"===== stage {stage.key}: {stage.label} =====")
+
+        baseline: dict[str, object] = {}
+        if args.verify_existing:
+            baseline = _snapshot_records(stage, run_dir, only)
+            if not baseline:
+                print(
+                    f"cannot verify stage {stage.key}: no existing selected "
+                    f"fact-sheet records in {run_dir / stage.output_subdir}",
+                    file=sys.stderr,
+                )
+                return 2
+            print(f"verification baseline: {len(baseline)} record(s)")
+
         rc, elapsed = run_stage(
             stage,
             run_dir,
             only=only,
-            overwrite=bool(args.overwrite),
+            overwrite=bool(args.overwrite or args.verify_existing),
         )
         timings.append((stage, elapsed))
         print(f"stage {stage.key} elapsed: {elapsed:.3f}s")
@@ -255,6 +317,32 @@ def main() -> int:
                 file=sys.stderr,
             )
             return rc
+
+        if args.verify_existing:
+            identical, differences = _verify_snapshot(
+                stage,
+                run_dir,
+                only,
+                baseline,
+            )
+            if not identical:
+                print(
+                    f"stage {stage.key} deterministic equivalence FAILED: "
+                    f"{len(differences)} differing record(s)",
+                    file=sys.stderr,
+                )
+                for name in differences[:20]:
+                    print(f"  {name}", file=sys.stderr)
+                if len(differences) > 20:
+                    print(
+                        f"  ... and {len(differences) - 20} more",
+                        file=sys.stderr,
+                    )
+                return 1
+            print(
+                f"stage {stage.key} deterministic equivalence: "
+                f"PASS ({len(baseline)}/{len(baseline)} exact JSON)"
+            )
 
     total = time.perf_counter() - total_started
     print()
