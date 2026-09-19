@@ -1,0 +1,269 @@
+from __future__ import annotations
+
+"""Single-process orchestrator for the deterministic caption fact-sheet stack.
+
+The numbered normalizer modules remain the source of truth. This module does
+not reimplement their semantics: it invokes their existing main() entry points
+in one interpreter so the expensive Python/import startup is paid once.
+
+--stages selects which stage artifacts are materialized. Each selected
+numbered stage remains cumulative according to its existing module wiring, so
+prerequisite logic can execute without requiring every intermediate artifact
+to be written.
+
+The current production path is:
+
+    16 -> 17 -> 18 -> identity
+
+Stage 8 is intentionally omitted because the current pipeline bypasses that
+retired knee-angle shadow experiment.
+"""
+
+import argparse
+import contextlib
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from types import ModuleType
+from typing import Iterable
+
+from . import caption_policy_identity_v11 as identity_v11
+from . import fact_sheet_specialist_normalizer_v01 as v01
+from . import fact_sheet_specialist_normalizer_v02 as v02
+from . import fact_sheet_specialist_normalizer_v03 as v03
+from . import fact_sheet_specialist_normalizer_v04 as v04
+from . import fact_sheet_specialist_normalizer_v05 as v05
+from . import fact_sheet_specialist_normalizer_v06 as v06
+from . import fact_sheet_specialist_normalizer_v07 as v07
+from . import fact_sheet_specialist_normalizer_v09 as v09
+from . import fact_sheet_specialist_normalizer_v10 as v10
+from . import fact_sheet_specialist_normalizer_v11 as v11
+from . import fact_sheet_specialist_normalizer_v12 as v12
+from . import fact_sheet_specialist_normalizer_v13 as v13
+from . import fact_sheet_specialist_normalizer_v14 as v14
+from . import fact_sheet_specialist_normalizer_v15 as v15
+from . import fact_sheet_specialist_normalizer_v16 as v16
+from . import fact_sheet_specialist_normalizer_v17 as v17
+from . import fact_sheet_specialist_normalizer_v18 as v18
+
+
+@dataclass(frozen=True)
+class Stage:
+    key: str
+    label: str
+    module: ModuleType
+    output_subdir: Path
+    order: int
+    production_default: bool = False
+
+
+STAGES: tuple[Stage, ...] = (
+    Stage("1", "base-specialist-normalizer", v01, v01.DEFAULT_OUTPUT_SUBDIR, 1),
+    Stage("2", "torso-scope-head-authority", v02, v02.DEFAULT_OUTPUT_SUBDIR, 2),
+    Stage("3", "torso-orientation-enrichment", v03, v03.DEFAULT_OUTPUT_SUBDIR, 3),
+    Stage("4", "gaze-caption-semantics", v04, v04.DEFAULT_OUTPUT_SUBDIR, 4),
+    Stage("5", "relation-laterality", v05, v05.DEFAULT_OUTPUT_SUBDIR, 5),
+    Stage("6", "leg-relation-laterality", v06, v06.DEFAULT_OUTPUT_SUBDIR, 6),
+    Stage("7", "support-shape", v07, v07.DEFAULT_OUTPUT_SUBDIR, 7),
+    Stage("9", "sam3d-pose-torso-shadow", v09, v09.DEFAULT_OUTPUT_SUBDIR, 9),
+    Stage("10", "broad-pose-torso-authority", v10, v10.DEFAULT_OUTPUT_SUBDIR, 10),
+    Stage("11", "support-contact-truth", v11, v11.DEFAULT_OUTPUT_SUBDIR, 11),
+    Stage("12", "support-topology-truth", v12, v12.DEFAULT_OUTPUT_SUBDIR, 12),
+    Stage("13", "bilateral-knee-flexion", v13, v13.DEFAULT_OUTPUT_SUBDIR, 13),
+    Stage("14", "unilateral-raised-leg", v14, v14.DEFAULT_OUTPUT_SUBDIR, 14),
+    Stage("15", "crouch-depth", v15, v15.DEFAULT_OUTPUT_SUBDIR, 15),
+    Stage("16", "head-support-current-specialist-stack", v16, v16.DEFAULT_OUTPUT_SUBDIR, 16, True),
+    Stage("17", "framing-authority", v17, v17.DEFAULT_OUTPUT_SUBDIR, 17, True),
+    Stage("18", "capture-authority", v18, v18.DEFAULT_OUTPUT_SUBDIR, 18, True),
+    Stage(
+        "identity",
+        "identity-policy-final-fact-sheet",
+        identity_v11,
+        identity_v11.DEFAULT_OUTPUT_SUBDIR,
+        19,
+        True,
+    ),
+)
+
+_STAGE_BY_KEY = {stage.key: stage for stage in STAGES}
+_STAGE_BY_LABEL = {stage.label: stage for stage in STAGES}
+
+ALIASES = {
+    "relation": "5",
+    "leg": "6",
+    "support": "7",
+    "pose-shadow": "9",
+    "pose": "10",
+    "contact": "11",
+    "topology": "12",
+    "knees": "13",
+    "raised-leg": "14",
+    "crouch-depth": "15",
+    "head-support": "16",
+    "framing": "17",
+    "capture": "18",
+    "final": "identity",
+}
+
+DEFAULT_STAGE_KEYS = tuple(stage.key for stage in STAGES if stage.production_default)
+
+
+def _resolve_stage(value: str) -> Stage:
+    token = str(value).strip().lower()
+    token = ALIASES.get(token, token)
+    if token == "8":
+        raise ValueError(
+            "stage 8 is retired and intentionally bypassed by the current pipeline; "
+            "use stage 9 for the active SAM3D-v16 shadow adjudication"
+        )
+    stage = _STAGE_BY_KEY.get(token) or _STAGE_BY_LABEL.get(token)
+    if stage is None:
+        valid = ", ".join(stage.key for stage in STAGES)
+        raise ValueError(f"unknown stage {value!r}; valid stages: {valid}, identity")
+    return stage
+
+
+def resolve_stages(values: Iterable[str] | None) -> list[Stage]:
+    raw = list(values or DEFAULT_STAGE_KEYS)
+    resolved: dict[str, Stage] = {}
+    for value in raw:
+        stage = _resolve_stage(value)
+        resolved[stage.key] = stage
+    return sorted(resolved.values(), key=lambda stage: stage.order)
+
+
+@contextlib.contextmanager
+def _argv_for(module: ModuleType, args: list[str]):
+    old = sys.argv
+    sys.argv = [getattr(module, "__file__", module.__name__), *args]
+    try:
+        yield
+    finally:
+        sys.argv = old
+
+
+def _stage_args(
+    run_dir: Path,
+    *,
+    only: list[str],
+    overwrite: bool,
+) -> list[str]:
+    args = [str(run_dir)]
+    if only:
+        args.extend(["--only", *only])
+    if overwrite:
+        args.append("--overwrite")
+    return args
+
+
+def run_stage(
+    stage: Stage,
+    run_dir: Path,
+    *,
+    only: list[str],
+    overwrite: bool,
+) -> tuple[int, float]:
+    args = _stage_args(run_dir, only=only, overwrite=overwrite)
+    started = time.perf_counter()
+    with _argv_for(stage.module, args):
+        rc = int(stage.module.main())
+    elapsed = time.perf_counter() - started
+    return rc, elapsed
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Build deterministic caption fact-sheet stages in one Python process. "
+            "Default: current production path 16 -> 17 -> 18 -> identity."
+        )
+    )
+    parser.add_argument("run_dir", type=Path, nargs="?")
+    parser.add_argument(
+        "--stages",
+        nargs="+",
+        help=(
+            "Artifacts to materialize. Numeric stages and aliases are accepted, "
+            "for example: --stages 6 7 10 11 or --stages head-support framing capture final."
+        ),
+    )
+    parser.add_argument("--only", nargs="*", default=[])
+    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--list-stages",
+        action="store_true",
+        help="Print stage numbers, names, and output namespaces, then exit.",
+    )
+    return parser.parse_args()
+
+
+def _print_stage_table() -> None:
+    print("stage\tname\toutput")
+    for stage in STAGES:
+        marker = " [default]" if stage.production_default else ""
+        print(f"{stage.key}\t{stage.label}{marker}\t{stage.output_subdir}")
+    print("8\tRETIRED (bypassed by current pipeline)\t-")
+
+
+def main() -> int:
+    args = parse_args()
+    if args.list_stages:
+        _print_stage_table()
+        return 0
+
+    if args.run_dir is None:
+        print("run_dir is required unless --list-stages is used", file=sys.stderr)
+        return 2
+
+    run_dir = args.run_dir.expanduser().resolve()
+    if not run_dir.is_dir():
+        print(f"Run directory not found: {run_dir}", file=sys.stderr)
+        return 2
+
+    try:
+        stages = resolve_stages(args.stages)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    only = [str(value) for value in args.only]
+    print(
+        "build-fact-sheet: single Python process | "
+        + " -> ".join(f"{stage.key}:{stage.label}" for stage in stages)
+    )
+    if only:
+        print(f"build-fact-sheet: selected records={len(only)}")
+
+    total_started = time.perf_counter()
+    timings: list[tuple[Stage, float]] = []
+
+    for stage in stages:
+        print()
+        print(f"===== stage {stage.key}: {stage.label} =====")
+        rc, elapsed = run_stage(
+            stage,
+            run_dir,
+            only=only,
+            overwrite=bool(args.overwrite),
+        )
+        timings.append((stage, elapsed))
+        print(f"stage {stage.key} elapsed: {elapsed:.3f}s")
+        if rc != 0:
+            print(
+                f"build-fact-sheet stopped: stage {stage.key} returned {rc}",
+                file=sys.stderr,
+            )
+            return rc
+
+    total = time.perf_counter() - total_started
+    print()
+    print("===== build-fact-sheet timings =====")
+    for stage, elapsed in timings:
+        print(f"{stage.key:>8}  {elapsed:8.3f}s  {stage.label}")
+    print(f"{'total':>8}  {total:8.3f}s")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
