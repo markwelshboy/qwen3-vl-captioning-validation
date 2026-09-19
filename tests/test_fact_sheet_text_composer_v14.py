@@ -260,6 +260,51 @@ def test_local_torso_lying_does_not_count_as_primary_global_pose():
     assert audit["primary_subject_used_pose_groups"] == []
 
 
+def test_trigger_then_local_torso_lying_does_not_count_as_global_pose():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "subject_pronoun": "she",
+            "possessive_pronoun": "her",
+        },
+        "authoritative_facts": {
+            "body": {},
+        },
+        "omitted_review_conflict_domains": [],
+    }
+
+    audit = v14._caption_audit(
+        "sH1VX is shown in a medium shot with her torso lying flat on a surface "
+        "with visible white bedding, her legs extended upward.",
+        projection,
+    )
+
+    assert "unauthorized_broad_pose:lying" not in audit["violations"]
+    assert audit["primary_subject_used_pose_groups"] == []
+
+
+def test_primary_subject_lying_still_requires_authority():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "subject_pronoun": "she",
+            "possessive_pronoun": "her",
+        },
+        "authoritative_facts": {
+            "body": {},
+        },
+        "omitted_review_conflict_domains": [],
+    }
+
+    audit = v14._caption_audit(
+        "sH1VX is shown in a medium shot, lying flat on a bed.",
+        projection,
+    )
+
+    assert "unauthorized_broad_pose:lying" in audit["violations"]
+    assert audit["primary_subject_used_pose_groups"] == ["lying"]
+
+
 def test_primary_subject_seated_still_requires_authority():
     projection = {
         "subject": {
