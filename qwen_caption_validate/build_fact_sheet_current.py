@@ -55,6 +55,27 @@ from . import fact_sheet_specialist_normalizer_v17 as v17
 from . import fact_sheet_specialist_normalizer_v18 as v18
 
 
+def _fact_sheet_output_subdir(module: ModuleType) -> Path:
+    """Return the historical output namespace for a fact-sheet stage.
+
+    Most successor modules define DEFAULT_OUTPUT_SUBDIR directly.  A small
+    number of early wrappers (notably v02) only replace the inherited writer
+    schema, so derive their namespace from SCHEMA_VERSION.
+    """
+    value = getattr(module, "DEFAULT_OUTPUT_SUBDIR", None)
+    if value is not None:
+        return Path(value)
+
+    schema = str(getattr(module, "SCHEMA_VERSION", ""))
+    prefix = "caption-fact-sheet-"
+    if not schema.startswith(prefix):
+        raise AttributeError(
+            f"{module.__name__} has neither DEFAULT_OUTPUT_SUBDIR nor a "
+            f"{prefix!r} SCHEMA_VERSION"
+        )
+    return Path("semantic-v3") / f"caption-fact-sheet-v{schema[len(prefix):]}"
+
+
 @dataclass(frozen=True)
 class Stage:
     key: str
@@ -66,28 +87,28 @@ class Stage:
 
 
 STAGES: tuple[Stage, ...] = (
-    Stage("1", "base-specialist-normalizer", v01, v01.DEFAULT_OUTPUT_SUBDIR, 1),
-    Stage("2", "torso-scope-head-authority", v02, v02.DEFAULT_OUTPUT_SUBDIR, 2),
-    Stage("3", "torso-orientation-enrichment", v03, v03.DEFAULT_OUTPUT_SUBDIR, 3),
-    Stage("4", "gaze-caption-semantics", v04, v04.DEFAULT_OUTPUT_SUBDIR, 4),
-    Stage("5", "relation-laterality", v05, v05.DEFAULT_OUTPUT_SUBDIR, 5),
-    Stage("6", "leg-relation-laterality", v06, v06.DEFAULT_OUTPUT_SUBDIR, 6),
-    Stage("7", "support-shape", v07, v07.DEFAULT_OUTPUT_SUBDIR, 7),
-    Stage("9", "sam3d-pose-torso-shadow", v09, v09.DEFAULT_OUTPUT_SUBDIR, 9),
-    Stage("10", "broad-pose-torso-authority", v10, v10.DEFAULT_OUTPUT_SUBDIR, 10),
-    Stage("11", "support-contact-truth", v11, v11.DEFAULT_OUTPUT_SUBDIR, 11),
-    Stage("12", "support-topology-truth", v12, v12.DEFAULT_OUTPUT_SUBDIR, 12),
-    Stage("13", "bilateral-knee-flexion", v13, v13.DEFAULT_OUTPUT_SUBDIR, 13),
-    Stage("14", "unilateral-raised-leg", v14, v14.DEFAULT_OUTPUT_SUBDIR, 14),
-    Stage("15", "crouch-depth", v15, v15.DEFAULT_OUTPUT_SUBDIR, 15),
-    Stage("16", "head-support-current-specialist-stack", v16, v16.DEFAULT_OUTPUT_SUBDIR, 16, True),
-    Stage("17", "framing-authority", v17, v17.DEFAULT_OUTPUT_SUBDIR, 17, True),
-    Stage("18", "capture-authority", v18, v18.DEFAULT_OUTPUT_SUBDIR, 18, True),
+    Stage("1", "base-specialist-normalizer", v01, _fact_sheet_output_subdir(v01), 1),
+    Stage("2", "torso-scope-head-authority", v02, _fact_sheet_output_subdir(v02), 2),
+    Stage("3", "torso-orientation-enrichment", v03, _fact_sheet_output_subdir(v03), 3),
+    Stage("4", "gaze-caption-semantics", v04, _fact_sheet_output_subdir(v04), 4),
+    Stage("5", "relation-laterality", v05, _fact_sheet_output_subdir(v05), 5),
+    Stage("6", "leg-relation-laterality", v06, _fact_sheet_output_subdir(v06), 6),
+    Stage("7", "support-shape", v07, _fact_sheet_output_subdir(v07), 7),
+    Stage("9", "sam3d-pose-torso-shadow", v09, _fact_sheet_output_subdir(v09), 9),
+    Stage("10", "broad-pose-torso-authority", v10, _fact_sheet_output_subdir(v10), 10),
+    Stage("11", "support-contact-truth", v11, _fact_sheet_output_subdir(v11), 11),
+    Stage("12", "support-topology-truth", v12, _fact_sheet_output_subdir(v12), 12),
+    Stage("13", "bilateral-knee-flexion", v13, _fact_sheet_output_subdir(v13), 13),
+    Stage("14", "unilateral-raised-leg", v14, _fact_sheet_output_subdir(v14), 14),
+    Stage("15", "crouch-depth", v15, _fact_sheet_output_subdir(v15), 15),
+    Stage("16", "head-support-current-specialist-stack", v16, _fact_sheet_output_subdir(v16), 16, True),
+    Stage("17", "framing-authority", v17, _fact_sheet_output_subdir(v17), 17, True),
+    Stage("18", "capture-authority", v18, _fact_sheet_output_subdir(v18), 18, True),
     Stage(
         "identity",
         "identity-policy-final-fact-sheet",
         identity_v11,
-        identity_v11.DEFAULT_OUTPUT_SUBDIR,
+        identity__fact_sheet_output_subdir(v11),
         19,
         True,
     ),
@@ -151,12 +172,20 @@ def _argv_for(module: ModuleType, args: list[str]):
 
 
 def _stage_args(
+    stage: Stage,
     run_dir: Path,
     *,
     only: list[str],
     overwrite: bool,
 ) -> list[str]:
-    args = [str(run_dir)]
+    # Always pin the output namespace explicitly.  This matters for early
+    # wrapper stages such as v02, whose standalone module inherits the v01
+    # writer defaults and otherwise has no stage-specific output constant.
+    args = [
+        str(run_dir),
+        "--output-dir",
+        str(run_dir / stage.output_subdir),
+    ]
     if only:
         args.extend(["--only", *only])
     if overwrite:
@@ -223,7 +252,7 @@ def run_stage(
     those mutations disappear when the child exits and therefore cannot leak
     into another requested stage.
     """
-    args = _stage_args(run_dir, only=only, overwrite=overwrite)
+    args = _stage_args(stage, run_dir, only=only, overwrite=overwrite)
     started = time.perf_counter()
 
     if not hasattr(os, "fork"):
