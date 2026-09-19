@@ -378,3 +378,74 @@ def test_audit_rejects_no_hand_or_fist_makes_contact_variant():
         "no hand or fist makes contact with her face or chin" in phrase
         for phrase in audit["negative_visibility_contact_phrases"]
     )
+
+
+
+def test_primary_subject_squatting_is_recorded_when_authorized():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "subject_pronoun": "she",
+            "possessive_pronoun": "her",
+        },
+        "authoritative_facts": {
+            "body": {
+                "broad_pose": "squatting",
+            },
+        },
+        "omitted_review_conflict_domains": [],
+    }
+
+    audit = v14._caption_audit(
+        "sH1VX is framed from around the shoulders through the knees, "
+        "squatting with her torso bent forward.",
+        projection,
+    )
+
+    assert "unauthorized_broad_pose:squatting" not in audit["violations"]
+    assert audit["primary_subject_allowed_pose_groups"] == ["squatting"]
+    assert audit["primary_subject_used_pose_groups"] == ["squatting"]
+
+
+def test_primary_subject_squatting_requires_authority():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "subject_pronoun": "she",
+            "possessive_pronoun": "her",
+        },
+        "authoritative_facts": {
+            "body": {},
+        },
+        "omitted_review_conflict_domains": [],
+    }
+
+    audit = v14._caption_audit(
+        "sH1VX is shown in a medium shot. She is squatting with both knees bent.",
+        projection,
+    )
+
+    assert "unauthorized_broad_pose:squatting" in audit["violations"]
+    assert audit["primary_subject_used_pose_groups"] == ["squatting"]
+
+
+def test_secondary_person_squatting_does_not_count_as_primary_pose():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "subject_pronoun": "she",
+            "possessive_pronoun": "her",
+        },
+        "authoritative_facts": {
+            "body": {},
+        },
+        "omitted_review_conflict_domains": [],
+    }
+
+    audit = v14._caption_audit(
+        "sH1VX is shown in a close-up. Behind her, a person is squatting near a bench.",
+        projection,
+    )
+
+    assert "unauthorized_broad_pose:squatting" not in audit["violations"]
+    assert audit["primary_subject_used_pose_groups"] == []
