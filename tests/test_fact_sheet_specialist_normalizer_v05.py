@@ -122,6 +122,44 @@ def test_multiple_relaxed_arm_relations_are_not_all_forced_to_same_opposite_side
 
 
 
+def test_hand_near_hip_suffix_is_removed_but_residual_geometry_survives():
+    configuration = [
+        {
+            "text": "right forearm resting along the torso with hand placed near the hip",
+            "composer_text": "forearm resting along the torso with hand placed near the hip",
+        }
+    ]
+    out, bindings, warnings = mod._bind_configuration_laterality(
+        configuration,
+        _asymmetric_arm_points(),
+    )
+
+    assert out[0]["composer_text"] == "forearm resting along the torso"
+    assert out[0]["promotion_status"] == "accepted_residual_with_hip_proximity_withheld"
+    assert out[0]["specialist_owner"] == "hand_hip_semantic_strength_guard"
+    assert out[0]["relation_strength_guard"]["composer_hip_relation_withheld"] is True
+    assert bindings == []
+    assert "hand_near_hip_proximity_withheld_from_composer" in warnings
+
+
+def test_pure_hand_near_hip_relation_is_withheld_entirely():
+    configuration = [
+        {
+            "text": "hand near the hip",
+            "composer_text": "hand near the hip",
+        }
+    ]
+    out, bindings, warnings = mod._bind_configuration_laterality(
+        configuration,
+        _asymmetric_arm_points(),
+    )
+
+    assert out == []
+    assert bindings == []
+    assert "hand_near_hip_relation_not_promoted_to_contact" in warnings
+    assert "hand_near_hip_proximity_withheld_from_composer" in warnings
+
+
 def test_hand_near_hip_is_not_strengthened_to_contact():
     configuration = [
         {
