@@ -26,14 +26,14 @@
         "imageblind-01_00050"
       ],
       "wide_to_tight": [
+        "imageblind-01_00050",
         "imageblind-01_00002",
-        "imageblind-01_00046",
-        "imageblind-01_00050"
+        "imageblind-01_00046"
       ],
       "relative_fov_area": {
-        "imageblind-01_00002": 1.252,
-        "imageblind-01_00046": 1.252,
-        "imageblind-01_00050": 1
+        "imageblind-01_00050": 1.252,
+        "imageblind-01_00002": 1,
+        "imageblind-01_00046": 1
       },
       "exact_duplicate_groups": [
         [
