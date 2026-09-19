@@ -1,0 +1,673 @@
+{
+  "schema_version": "crop-family-registry-0.1",
+  "dataset": "SemanticV3-Blind-20260906-160740",
+  "record_count": 87,
+  "source_family_count": 56,
+  "multi_member_family_count": 26,
+  "derivation": {
+    "method": "crop-aware local-feature matching, RANSAC homography, relative field-of-view estimation, and human visual validation",
+    "relative_fov_area": "Within each crop family, the tightest member is normalized to 1.0. Larger values show a wider field of view. Values are evaluation metadata, not caption evidence.",
+    "principle": "Crop defines the truth envelope. Same-source family information is evaluation-only and must never provide hidden evidence to a tighter crop during caption generation."
+  },
+  "families": [
+    {
+      "family_id": "source-image-00001",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00001"
+      ]
+    },
+    {
+      "family_id": "source-image-00002",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00002",
+        "imageblind-01_00046",
+        "imageblind-01_00050"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00002",
+        "imageblind-01_00046",
+        "imageblind-01_00050"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00002": 1.252,
+        "imageblind-01_00046": 1.252,
+        "imageblind-01_00050": 1
+      },
+      "exact_duplicate_groups": [
+        [
+          "imageblind-01_00002",
+          "imageblind-01_00046"
+        ]
+      ]
+    },
+    {
+      "family_id": "source-image-00003",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00003",
+        "imageblind-01_00067"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00003",
+        "imageblind-01_00067"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00003": 2.913,
+        "imageblind-01_00067": 1
+      }
+    },
+    {
+      "family_id": "source-image-00004",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00004"
+      ]
+    },
+    {
+      "family_id": "source-image-00005",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00005",
+        "imageblind-01_00013"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00005",
+        "imageblind-01_00013"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00005": 4.036,
+        "imageblind-01_00013": 1
+      }
+    },
+    {
+      "family_id": "source-image-00006",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00006"
+      ]
+    },
+    {
+      "family_id": "source-image-00007",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00007"
+      ]
+    },
+    {
+      "family_id": "source-image-00008",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00008"
+      ]
+    },
+    {
+      "family_id": "source-image-00009",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00009",
+        "imageblind-01_00026",
+        "imageblind-01_00076"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00009",
+        "imageblind-01_00026",
+        "imageblind-01_00076"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00009": 2.21,
+        "imageblind-01_00026": 1.778,
+        "imageblind-01_00076": 1
+      }
+    },
+    {
+      "family_id": "source-image-00010",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00010",
+        "imageblind-01_00048",
+        "imageblind-01_00065"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00010",
+        "imageblind-01_00048",
+        "imageblind-01_00065"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00010": 4.277,
+        "imageblind-01_00048": 3.857,
+        "imageblind-01_00065": 1
+      }
+    },
+    {
+      "family_id": "source-image-00011",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00011",
+        "imageblind-01_00069"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00011",
+        "imageblind-01_00069"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00011": 3.485,
+        "imageblind-01_00069": 1
+      }
+    },
+    {
+      "family_id": "source-image-00012",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00012",
+        "imageblind-01_00063"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00063",
+        "imageblind-01_00012"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00063": 1.457,
+        "imageblind-01_00012": 1
+      }
+    },
+    {
+      "family_id": "source-image-00014",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00014"
+      ]
+    },
+    {
+      "family_id": "source-image-00015",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00015",
+        "imageblind-01_00068"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00015",
+        "imageblind-01_00068"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00015": 3.485,
+        "imageblind-01_00068": 1
+      }
+    },
+    {
+      "family_id": "source-image-00016",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00016",
+        "imageblind-01_00077"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00016",
+        "imageblind-01_00077"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00016": 1.778,
+        "imageblind-01_00077": 1
+      }
+    },
+    {
+      "family_id": "source-image-00017",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00017"
+      ]
+    },
+    {
+      "family_id": "source-image-00018",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00018",
+        "imageblind-01_00070"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00018",
+        "imageblind-01_00070"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00018": 2.35,
+        "imageblind-01_00070": 1
+      }
+    },
+    {
+      "family_id": "source-image-00019",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00019",
+        "imageblind-01_00071"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00019",
+        "imageblind-01_00071"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00019": 3.516,
+        "imageblind-01_00071": 1
+      }
+    },
+    {
+      "family_id": "source-image-00020",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00020",
+        "imageblind-01_00074"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00020",
+        "imageblind-01_00074"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00020": 3.485,
+        "imageblind-01_00074": 1
+      }
+    },
+    {
+      "family_id": "source-image-00021",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00021"
+      ]
+    },
+    {
+      "family_id": "source-image-00022",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00022"
+      ]
+    },
+    {
+      "family_id": "source-image-00023",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00023"
+      ]
+    },
+    {
+      "family_id": "source-image-00024",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00024",
+        "imageblind-01_00073"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00024",
+        "imageblind-01_00073"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00024": 2.19,
+        "imageblind-01_00073": 1
+      }
+    },
+    {
+      "family_id": "source-image-00025",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00025",
+        "imageblind-01_00084"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00025",
+        "imageblind-01_00084"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00025": 2.734,
+        "imageblind-01_00084": 1
+      }
+    },
+    {
+      "family_id": "source-image-00027",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00027"
+      ]
+    },
+    {
+      "family_id": "source-image-00028",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00028"
+      ]
+    },
+    {
+      "family_id": "source-image-00029",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00029"
+      ]
+    },
+    {
+      "family_id": "source-image-00030",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00030",
+        "imageblind-01_00039"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00039",
+        "imageblind-01_00030"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00039": 2.53,
+        "imageblind-01_00030": 1
+      }
+    },
+    {
+      "family_id": "source-image-00031",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00031",
+        "imageblind-01_00075"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00031",
+        "imageblind-01_00075"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00031": 3.484,
+        "imageblind-01_00075": 1
+      }
+    },
+    {
+      "family_id": "source-image-00032",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00032"
+      ]
+    },
+    {
+      "family_id": "source-image-00033",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00033",
+        "imageblind-01_00034",
+        "imageblind-01_00079"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00033",
+        "imageblind-01_00034",
+        "imageblind-01_00079"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00033": 3.483,
+        "imageblind-01_00034": 3.483,
+        "imageblind-01_00079": 1
+      },
+      "exact_duplicate_groups": [
+        [
+          "imageblind-01_00033",
+          "imageblind-01_00034"
+        ]
+      ]
+    },
+    {
+      "family_id": "source-image-00035",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00035"
+      ]
+    },
+    {
+      "family_id": "source-image-00036",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00036"
+      ]
+    },
+    {
+      "family_id": "source-image-00037",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00037"
+      ]
+    },
+    {
+      "family_id": "source-image-00038",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00038"
+      ]
+    },
+    {
+      "family_id": "source-image-00040",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00040"
+      ]
+    },
+    {
+      "family_id": "source-image-00041",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00041",
+        "imageblind-01_00080"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00041",
+        "imageblind-01_00080"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00041": 3.484,
+        "imageblind-01_00080": 1
+      }
+    },
+    {
+      "family_id": "source-image-00042",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00042",
+        "imageblind-01_00072"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00042",
+        "imageblind-01_00072"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00042": 1.777,
+        "imageblind-01_00072": 1
+      }
+    },
+    {
+      "family_id": "source-image-00043",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00043"
+      ]
+    },
+    {
+      "family_id": "source-image-00044",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00044",
+        "imageblind-01_00058",
+        "imageblind-01_00061"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00058",
+        "imageblind-01_00044",
+        "imageblind-01_00061"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00058": 2.979,
+        "imageblind-01_00044": 1.033,
+        "imageblind-01_00061": 1
+      }
+    },
+    {
+      "family_id": "source-image-00045",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00045",
+        "imageblind-01_00082"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00045",
+        "imageblind-01_00082"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00045": 3.484,
+        "imageblind-01_00082": 1
+      }
+    },
+    {
+      "family_id": "source-image-00047",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00047"
+      ]
+    },
+    {
+      "family_id": "source-image-00049",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00049"
+      ]
+    },
+    {
+      "family_id": "source-image-00051",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00051",
+        "imageblind-01_00056"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00056",
+        "imageblind-01_00051"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00056": 1.139,
+        "imageblind-01_00051": 1
+      }
+    },
+    {
+      "family_id": "source-image-00052",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00052",
+        "imageblind-01_00078"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00052",
+        "imageblind-01_00078"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00052": 1.778,
+        "imageblind-01_00078": 1
+      }
+    },
+    {
+      "family_id": "source-image-00053",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00053"
+      ]
+    },
+    {
+      "family_id": "source-image-00054",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00054"
+      ]
+    },
+    {
+      "family_id": "source-image-00055",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00055",
+        "imageblind-01_00083"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00055",
+        "imageblind-01_00083"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00055": 3.486,
+        "imageblind-01_00083": 1
+      }
+    },
+    {
+      "family_id": "source-image-00057",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00057"
+      ]
+    },
+    {
+      "family_id": "source-image-00059",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00059",
+        "imageblind-01_00060"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00059",
+        "imageblind-01_00060"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00059": 1,
+        "imageblind-01_00060": 1
+      },
+      "exact_duplicate_groups": [
+        [
+          "imageblind-01_00059",
+          "imageblind-01_00060"
+        ]
+      ]
+    },
+    {
+      "family_id": "source-image-00062",
+      "kind": "crop_family",
+      "members": [
+        "imageblind-01_00062",
+        "imageblind-01_00081"
+      ],
+      "wide_to_tight": [
+        "imageblind-01_00062",
+        "imageblind-01_00081"
+      ],
+      "relative_fov_area": {
+        "imageblind-01_00062": 1.923,
+        "imageblind-01_00081": 1
+      }
+    },
+    {
+      "family_id": "source-image-00064",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00064"
+      ]
+    },
+    {
+      "family_id": "source-image-00066",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00066"
+      ]
+    },
+    {
+      "family_id": "source-image-00085",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00085"
+      ]
+    },
+    {
+      "family_id": "source-image-00086",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00086"
+      ]
+    },
+    {
+      "family_id": "source-image-00087",
+      "kind": "singleton",
+      "members": [
+        "imageblind-01_00087"
+      ]
+    }
+  ]
+}
