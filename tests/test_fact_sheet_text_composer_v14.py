@@ -356,3 +356,25 @@ def test_audit_rejects_negative_visibility_and_contact_prose():
         "no contact with her face or chin" in phrase
         for phrase in audit["negative_visibility_contact_phrases"]
     )
+
+
+
+def test_negative_contact_subject_variant_is_removed_from_suffix():
+    out = v14._strip_negative_visibility_contact(
+        "arm extends outward with the elbow bent, though no hand or fist makes contact with her face or chin"
+    )
+
+    assert out == "arm extends outward with the elbow bent"
+
+
+def test_audit_rejects_no_hand_or_fist_makes_contact_variant():
+    audit = v14._caption_audit(
+        "Her arm extends outward with the elbow bent, though no hand or fist makes contact with her face or chin.",
+        _projection(),
+    )
+
+    assert "negative_visibility_or_contact_language" in audit["violations"]
+    assert any(
+        "no hand or fist makes contact with her face or chin" in phrase
+        for phrase in audit["negative_visibility_contact_phrases"]
+    )
