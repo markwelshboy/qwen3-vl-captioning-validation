@@ -111,10 +111,14 @@ def test_geometry_reports_hip_offsets_and_existing_production_binding():
         "right_shoulder": (100.0, 0.0),
         "left_hip": (10.0, 150.0),
         "right_hip": (90.0, 150.0),
-        "left_elbow": (10.0, 80.0),
+        # Make the left arm an unambiguous hand-on-hip geometry control:
+        # wrist very near the left hip, bent elbow, and a clearly worse
+        # opposite-side candidate. The production binder intentionally
+        # withholds when the two side scores are too close.
+        "left_elbow": (-30.0, 80.0),
         "right_elbow": (80.0, 80.0),
         "left_wrist": (12.0, 148.0),
-        "right_wrist": (140.0, 150.0),
+        "right_wrist": (200.0, 150.0),
         "neck": (50.0, -20.0),
         "nose": (50.0, -60.0),
     }
