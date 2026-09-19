@@ -69,6 +69,26 @@ def _distance(
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
 
+def _point_to_segment_distance(
+    point: tuple[float, float] | None,
+    start: tuple[float, float] | None,
+    end: tuple[float, float] | None,
+) -> float | None:
+    """Euclidean distance from a point to the visible 2-D forearm segment."""
+    if point is None or start is None or end is None:
+        return None
+    sx, sy = float(start[0]), float(start[1])
+    ex, ey = float(end[0]), float(end[1])
+    px, py = float(point[0]), float(point[1])
+    vx, vy = ex - sx, ey - sy
+    denom = vx * vx + vy * vy
+    if denom <= 1e-8:
+        return math.hypot(px - sx, py - sy)
+    t = max(0.0, min(1.0, ((px - sx) * vx + (py - sy) * vy) / denom))
+    qx, qy = sx + t * vx, sy + t * vy
+    return math.hypot(px - qx, py - qy)
+
+
 def _safe_div(value: float | None, scale: float | None) -> float | None:
     if value is None or scale is None or scale <= 1e-8:
         return None
@@ -161,16 +181,48 @@ def _geometry(
         elbow = points.get(f"{side}_elbow")
         shoulder = points.get(f"{side}_shoulder")
 
-        face_distances = [
+        wrist_face_distances = [
             _distance(wrist, head)
             for head in head_points
             if wrist is not None
         ]
-        face_distances = [
-            value for value in face_distances
+        wrist_face_distances = [
+            value for value in wrist_face_distances
             if value is not None
         ]
-        min_face = min(face_distances) if face_distances else None
+        min_wrist_face = min(wrist_face_distances) if wrist_face_distances else None
+
+        elbow_face_distances = [
+            _distance(elbow, head)
+            for head in head_points
+            if elbow is not None
+        ]
+        elbow_face_distances = [
+            value for value in elbow_face_distances
+            if value is not None
+        ]
+        min_elbow_face = min(elbow_face_distances) if elbow_face_distances else None
+
+        forearm_face_distances = [
+            _point_to_segment_distance(head, elbow, wrist)
+            for head in head_points
+            if elbow is not None and wrist is not None
+        ]
+        forearm_face_distances = [
+            value for value in forearm_face_distances
+            if value is not None
+        ]
+        min_forearm_face = min(forearm_face_distances) if forearm_face_distances else None
+
+        # For relation-existence auditing, visible forearm geometry is the
+        # strongest contradiction signal when both elbow and wrist exist. If
+        # the elbow is unavailable, retain wrist-only evidence rather than
+        # treating missing geometry as counterevidence.
+        min_upper_limb_face = (
+            min_forearm_face
+            if min_forearm_face is not None
+            else min_wrist_face
+        )
         wrist_hip = _distance(wrist, hip)
 
         dx = (
@@ -189,9 +241,9 @@ def _geometry(
             "elbow_observed": elbow is not None,
             "shoulder_observed": shoulder is not None,
             "hip_observed": hip is not None,
-            "wrist_to_face_min_norm_body": _safe_div(min_face, body_scale),
+            "wrist_to_face_min_norm_body": _safe_div(min_wrist_face, body_scale),
             "wrist_to_face_min_norm_shoulders": _safe_div(
-                min_face,
+                min_wrist_face,
                 shoulder_scale,
             ),
             "wrist_to_nose_norm_body": _safe_div(
@@ -200,6 +252,18 @@ def _geometry(
             ),
             "wrist_to_neck_norm_body": _safe_div(
                 _distance(wrist, points.get("neck")),
+                body_scale,
+            ),
+            "elbow_to_face_min_norm_body": _safe_div(
+                min_elbow_face,
+                body_scale,
+            ),
+            "forearm_segment_to_face_min_norm_body": _safe_div(
+                min_forearm_face,
+                body_scale,
+            ),
+            "upper_limb_to_face_min_norm_body": _safe_div(
+                min_upper_limb_face,
                 body_scale,
             ),
             "wrist_to_same_hip_norm_body": _safe_div(
@@ -257,6 +321,16 @@ def _geometry(
         if visible_face_distances
         else None
     )
+    visible_upper_limb_distances = [
+        (side, payload["upper_limb_to_face_min_norm_body"])
+        for side, payload in sides.items()
+        if payload["upper_limb_to_face_min_norm_body"] is not None
+    ]
+    nearest_upper_limb_face = (
+        min(visible_upper_limb_distances, key=lambda value: value[1])
+        if visible_upper_limb_distances
+        else None
+    )
 
     return {
         "body_scale_px": round(body_scale, 3) if body_scale is not None else None,
@@ -267,6 +341,12 @@ def _geometry(
         ),
         "nearest_wrist_to_face_side": nearest_face[0] if nearest_face else None,
         "nearest_wrist_to_face_norm_body": nearest_face[1] if nearest_face else None,
+        "nearest_upper_limb_to_face_side": (
+            nearest_upper_limb_face[0] if nearest_upper_limb_face else None
+        ),
+        "nearest_upper_limb_to_face_norm_body": (
+            nearest_upper_limb_face[1] if nearest_upper_limb_face else None
+        ),
         "sides": sides,
         "production_hand_on_hip_binding": phase4b4._hand_on_hip_binding(points),
     }
@@ -429,7 +509,8 @@ def main() -> int:
             f"{key}: {record['status']} "
             f"framing={record['framing']['composer_text'] or '-'} "
             f"candidates={record['candidate_count']} "
-            f"face={geometry.get('nearest_wrist_to_face_norm_body')} "
+            f"face_wrist={geometry.get('nearest_wrist_to_face_norm_body')} "
+            f"face_limb={geometry.get('nearest_upper_limb_to_face_norm_body')} "
             f"hip={hip.get('anatomical_side') or '-'}:"
             f"{hip.get('wrist_hip_distance_norm')}"
         )
