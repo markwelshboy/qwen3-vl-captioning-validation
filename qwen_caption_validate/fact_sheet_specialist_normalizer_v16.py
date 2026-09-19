@@ -140,6 +140,13 @@ def _apply_face_relation_truth_gate(
         for index, item in enumerate(configuration)
         if isinstance(item, dict) and _positive_direct_face_relation(_item_text(item))
     ]
+    device_context_relations = [
+        _item_text(item)
+        for item in configuration
+        if isinstance(item, dict)
+        and _FACE_RELATION_RE.search(_item_text(item))
+        and _DEVICE_MEDIATED_FACE_RELATION_RE.search(_item_text(item))
+    ]
     adjudication: dict[str, Any] = {
         "status": "not_applicable",
         "authoritative_stage": True,
@@ -153,10 +160,26 @@ def _apply_face_relation_truth_gate(
         "geometry_error": geometry_error,
         "reason": "no_direct_positive_body_to_face_relation_candidate",
         "device_mediated_relations_are_out_of_scope": True,
+        "device_context_relations": copy.deepcopy(device_context_relations),
         "missing_geometry_is_not_counterevidence": True,
     }
 
     if not candidate_indexes:
+        body["face_relation_truth_adjudication"] = adjudication
+        return out
+
+    # A coexisting device-mediated face relation (for example, a hand holding
+    # a phone in front of the face) makes 2-D hand/forearm distance a poor
+    # contradiction signal for a generic companion relation. The hand may be
+    # partially occluded by the device and DWPose can localize the visible
+    # wrist/forearm away from the semantic device-hand configuration. In that
+    # case, preserve the Qwen relation rather than converting uncertain
+    # geometry into counterevidence.
+    if device_context_relations:
+        adjudication.update(
+            status="preserved_device_context",
+            reason="coexisting_device_mediated_face_relation_disables_direct_distance_veto",
+        )
         body["face_relation_truth_adjudication"] = adjudication
         return out
 
@@ -398,6 +421,7 @@ def _apply_phase4b15_authoritative(sheet: dict[str, Any]) -> dict[str, Any]:
         direct_face_relation_truth_gate_never_creates_relation=True,
         missing_face_relation_geometry_is_not_counterevidence=True,
         device_mediated_face_relations_are_outside_anatomical_truth_gate=True,
+        coexisting_device_face_relation_disables_direct_distance_veto=True,
         prior_broad_pose_torso_support_knee_raised_leg_and_crouch_depth_gates_remain_authoritative=True,
     )
     face_gate = (
