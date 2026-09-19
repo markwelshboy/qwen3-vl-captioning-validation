@@ -118,6 +118,7 @@ _STAGE_BY_KEY = {stage.key: stage for stage in STAGES}
 _STAGE_BY_LABEL = {stage.label: stage for stage in STAGES}
 
 ALIASES = {
+    "19": "identity",
     "relation": "5",
     "leg": "6",
     "support": "7",
@@ -148,7 +149,7 @@ def _resolve_stage(value: str) -> Stage:
     stage = _STAGE_BY_KEY.get(token) or _STAGE_BY_LABEL.get(token)
     if stage is None:
         valid = ", ".join(stage.key for stage in STAGES)
-        raise ValueError(f"unknown stage {value!r}; valid stages: {valid}, identity")
+        raise ValueError(f"unknown stage {value!r}; valid stages: {valid}, 19")
     return stage
 
 
@@ -328,6 +329,8 @@ def _print_stage_table() -> None:
     for stage in STAGES:
         marker = " [default]" if stage.production_default else ""
         print(f"{stage.key}\t{stage.label}{marker}\t{stage.output_subdir}")
+    print("19\tidentity-policy-final-fact-sheet [alias for identity]\t"
+          f"{identity_v11.DEFAULT_OUTPUT_SUBDIR}")
     print("8\tRETIRED (bypassed by current pipeline)\t-")
 
 
