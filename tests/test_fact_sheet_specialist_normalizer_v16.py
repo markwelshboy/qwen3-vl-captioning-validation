@@ -202,6 +202,34 @@ def test_face_relation_truth_gate_preserves_near_direct_relation():
     assert body["face_relation_truth_adjudication"]["status"] == "preserved"
 
 
+def test_face_relation_truth_gate_preserves_generic_relation_with_device_context():
+    sheet = _sheet(
+        [
+            _item("hand holding a smartphone in front of the face"),
+            _item("forearm extended with hand positioned near the lower face region"),
+        ],
+        left=("shoulder", "elbow", "wrist"),
+        right=("shoulder", "elbow", "wrist"),
+    )
+
+    out = phase4b15._apply_face_relation_truth_gate(
+        sheet,
+        points=_face_points(near=False),
+    )
+    body = out["facts"]["body"]
+
+    assert body["configuration"][1]["composer_text"] == (
+        "forearm extended with hand positioned near the lower face region"
+    )
+    gate = body["face_relation_truth_adjudication"]
+    assert gate["status"] == "preserved_device_context"
+    assert gate["applied"] is False
+    assert gate["withheld_count"] == 0
+    assert gate["device_context_relations"] == [
+        "hand holding a smartphone in front of the face"
+    ]
+
+
 def test_face_relation_truth_gate_exempts_device_mediated_relation():
     sheet = _sheet(
         [_item("hand holding a smartphone in front of the face")],
