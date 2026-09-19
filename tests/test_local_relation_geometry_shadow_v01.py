@@ -105,6 +105,48 @@ def test_geometry_separates_near_face_from_far_wrist():
     assert geometry["sides"]["right"]["wrist_to_face_min_norm_body"] > 1.0
 
 
+def test_geometry_reports_forearm_segment_distance_to_face():
+    points = {
+        "left_shoulder": (0.0, 0.0),
+        "right_shoulder": (100.0, 0.0),
+        "left_hip": (10.0, 150.0),
+        "right_hip": (90.0, 150.0),
+        "neck": (50.0, -20.0),
+        "nose": (50.0, -60.0),
+        "left_eye": (42.0, -65.0),
+        "right_eye": (58.0, -65.0),
+        "left_ear": (30.0, -60.0),
+        "right_ear": (70.0, -60.0),
+        # Wrist is not especially close to the face, but the visible forearm
+        # crosses immediately beneath it.
+        "left_elbow": (20.0, -45.0),
+        "left_wrist": (95.0, -45.0),
+        "right_elbow": (120.0, 80.0),
+        "right_wrist": (140.0, 140.0),
+    }
+
+    geometry = mod._geometry(points)
+
+    left = geometry["sides"]["left"]
+    assert left["forearm_segment_to_face_min_norm_body"] is not None
+    assert left["forearm_segment_to_face_min_norm_body"] < left["wrist_to_face_min_norm_body"]
+    assert geometry["nearest_upper_limb_to_face_side"] == "left"
+    assert geometry["nearest_upper_limb_to_face_norm_body"] == left["upper_limb_to_face_min_norm_body"]
+
+
+def test_point_to_segment_distance_clamps_to_visible_forearm():
+    assert mod._point_to_segment_distance(
+        (5.0, 2.0),
+        (0.0, 0.0),
+        (10.0, 0.0),
+    ) == 2.0
+    assert mod._point_to_segment_distance(
+        (15.0, 0.0),
+        (0.0, 0.0),
+        (10.0, 0.0),
+    ) == 5.0
+
+
 def test_geometry_reports_hip_offsets_and_existing_production_binding():
     points = {
         "left_shoulder": (0.0, 0.0),
