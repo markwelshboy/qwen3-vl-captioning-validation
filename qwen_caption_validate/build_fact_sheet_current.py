@@ -1,15 +1,19 @@
 from __future__ import annotations
 
-"""Single-process orchestrator for the deterministic caption fact-sheet stack.
+"""Warm-process orchestrator for the deterministic caption fact-sheet stack.
 
 The numbered normalizer modules remain the source of truth. This module does
-not reimplement their semantics: it invokes their existing main() entry points
-in one interpreter so the expensive Python/import startup is paid once.
+not reimplement their semantics. It imports the full deterministic stack once,
+then runs each requested legacy stage in an isolated forked worker.
+
+The fork boundary is deliberate: several historical normalizer main() functions
+temporarily monkeypatch lower modules to assemble their cumulative stage. A
+fresh standalone Python process naturally isolates those mutations. Forking
+from one already-imported parent preserves that isolation while paying the
+expensive Python/NumPy/Pillow/module import cost only once.
 
 --stages selects which stage artifacts are materialized. Each selected
-numbered stage remains cumulative according to its existing module wiring, so
-prerequisite logic can execute without requiring every intermediate artifact
-to be written.
+numbered stage remains cumulative according to its existing module wiring.
 
 The current production path is:
 
@@ -22,8 +26,10 @@ retired knee-angle shadow experiment.
 import argparse
 import contextlib
 import json
+import os
 import sys
 import time
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -198,6 +204,11 @@ def _verify_snapshot(
     return not differences, differences
 
 
+def _run_stage_main(stage: Stage, args: list[str]) -> int:
+    with _argv_for(stage.module, args):
+        return int(stage.module.main())
+
+
 def run_stage(
     stage: Stage,
     run_dir: Path,
@@ -205,19 +216,55 @@ def run_stage(
     only: list[str],
     overwrite: bool,
 ) -> tuple[int, float]:
+    """Run one legacy stage with standalone-process semantics but warm imports.
+
+    Every stage is forked from the same pristine, fully imported parent. The
+    child may freely perform the historical monkeypatching used by that stage;
+    those mutations disappear when the child exits and therefore cannot leak
+    into another requested stage.
+    """
     args = _stage_args(run_dir, only=only, overwrite=overwrite)
     started = time.perf_counter()
-    with _argv_for(stage.module, args):
-        rc = int(stage.module.main())
+
+    if not hasattr(os, "fork"):
+        print(
+            "WARNING: os.fork unavailable; running stage in-process. "
+            "Multiple historical stages may not be isolation-equivalent.",
+            file=sys.stderr,
+        )
+        rc = _run_stage_main(stage, args)
+        return rc, time.perf_counter() - started
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    pid = os.fork()
+    if pid == 0:
+        try:
+            rc = _run_stage_main(stage, args)
+        except SystemExit as exc:
+            rc = int(exc.code or 0) if isinstance(exc.code, (int, type(None))) else 1
+        except BaseException:
+            traceback.print_exc()
+            rc = 1
+        finally:
+            try:
+                sys.stdout.flush()
+                sys.stderr.flush()
+            finally:
+                os._exit(int(rc))
+
+    _, status = os.waitpid(pid, 0)
+    rc = os.waitstatus_to_exitcode(status)
     elapsed = time.perf_counter() - started
-    return rc, elapsed
+    return int(rc), elapsed
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Build deterministic caption fact-sheet stages in one Python process. "
-            "Default: current production path 16 -> 17 -> 18 -> identity."
+            "Build deterministic caption fact-sheet stages from one warmed Python "
+            "orchestrator. Stage workers are fork-isolated so legacy monkeypatch "
+            "semantics match standalone runs. Default: 16 -> 17 -> 18 -> identity."
         )
     )
     parser.add_argument("run_dir", type=Path, nargs="?")
@@ -278,7 +325,7 @@ def main() -> int:
 
     only = [str(value) for value in args.only]
     print(
-        "build-fact-sheet: single Python process | "
+        "build-fact-sheet: one warm import process + isolated stage forks | "
         + " -> ".join(f"{stage.key}:{stage.label}" for stage in stages)
     )
     if only:
