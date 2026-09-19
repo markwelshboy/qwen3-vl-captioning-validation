@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -93,3 +94,48 @@ def test_snapshot_and_verify_exact_json(tmp_path: Path):
     )
     assert identical is False
     assert differences == ["imageblind-01_00001.fact_sheet.json"]
+
+
+def test_run_stage_fork_isolates_legacy_module_mutation(tmp_path: Path):
+    if not hasattr(os, "fork"):
+        pytest.skip("fork isolation is POSIX-only")
+
+    fake_module = SimpleNamespace(__name__="fake_stage", mutated=False)
+
+    def fake_main():
+        fake_module.mutated = True
+        return 0
+
+    fake_module.main = fake_main
+    stage = mod.Stage(
+        key="x",
+        label="fake",
+        module=fake_module,
+        output_subdir=Path("semantic-v3") / "fake",
+        order=1,
+    )
+
+    rc, _elapsed = mod.run_stage(
+        stage,
+        tmp_path,
+        only=[],
+        overwrite=False,
+    )
+
+    assert rc == 0
+    assert fake_module.mutated is False
+
+
+def test_stage_args_keep_one_only_batch_in_one_worker(tmp_path: Path):
+    args = mod._stage_args(
+        tmp_path,
+        only=["imageblind-01_00001", "imageblind-01_00002"],
+        overwrite=True,
+    )
+    assert args == [
+        str(tmp_path),
+        "--only",
+        "imageblind-01_00001",
+        "imageblind-01_00002",
+        "--overwrite",
+    ]
