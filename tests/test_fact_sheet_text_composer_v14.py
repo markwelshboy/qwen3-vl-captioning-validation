@@ -143,6 +143,78 @@ def test_audit_rejects_mirror_reflection_tautology():
     assert "mirror_reflection_tautology" in audit["violations"]
 
 
+def test_support_word_in_metadata_like_phrase_does_not_count_as_contact():
+    audit = v14._caption_audit(
+        "No other body parts, accessories, or support details are visible or specified.",
+        _projection(),
+    )
+
+    assert "support_contact_language_without_authority" not in audit["violations"]
+    assert audit["concrete_support_contact_phrases"] == []
+
+
+def test_concrete_support_relation_still_requires_authority():
+    audit = v14._caption_audit(
+        "Her head is supported by a cushion.",
+        _projection(),
+    )
+
+    assert "support_contact_language_without_authority" in audit["violations"]
+    assert audit["concrete_support_contact_phrases"]
+
+
+def test_authorized_torso_upright_is_not_body_neutrality_violation():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "subject_pronoun": "she",
+            "possessive_pronoun": "her",
+        },
+        "authoritative_facts": {
+            "body": {
+                "configuration": [
+                    "torso upright",
+                    "arms at sides",
+                    "legs straight",
+                    "feet planted on ground",
+                ],
+            },
+        },
+        "omitted_review_conflict_domains": [],
+    }
+
+    audit = v14._caption_audit(
+        "sH1VX is standing with her torso upright, arms at her sides, "
+        "legs straight, and feet planted on the ground.",
+        projection,
+    )
+
+    assert "unsupported_body_neutrality_language" not in audit["violations"]
+    assert audit["authorized_body_neutrality_phrases"] == ["torso upright"]
+
+
+def test_unauthorized_torso_upright_remains_body_neutrality_violation():
+    projection = {
+        "subject": {
+            "trigger_token": "sH1VX",
+            "subject_pronoun": "she",
+            "possessive_pronoun": "her",
+        },
+        "authoritative_facts": {
+            "body": {},
+        },
+        "omitted_review_conflict_domains": [],
+    }
+
+    audit = v14._caption_audit(
+        "sH1VX is shown with her torso upright.",
+        projection,
+    )
+
+    assert "unsupported_body_neutrality_language" in audit["violations"]
+    assert audit["unsupported_body_neutrality_phrases"] == ["torso upright"]
+
+
 def test_audit_rejects_meta_composition_narration():
     audit = v14._caption_audit(
         "The mirror selfie composition emphasizes the phone near her face.",
@@ -177,6 +249,18 @@ def test_audit_rejects_self_contained_moment_narration():
     )
 
     assert "interpretive_moment_narration" in audit["violations"]
+
+
+def test_retry_prompt_strongly_removes_meta_composition_sentence():
+    prompt = v14._retry_prompt(
+        "BASE PROMPT",
+        "The composition captures a casual, intimate portrait within a lived-in space.",
+        ["meta_composition_narration"],
+    )
+
+    assert "Delete the entire meta-composition clause or sentence." in prompt
+    assert "Do not use 'the composition'" in prompt
+    assert "concrete visible subject, object, or scene facts only" in prompt
 
 
 def test_retry_prompt_explicitly_removes_unauthorized_broad_pose():
