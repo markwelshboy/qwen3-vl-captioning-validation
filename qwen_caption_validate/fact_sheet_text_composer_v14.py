@@ -100,6 +100,37 @@ _INTERPRETIVE_CAUSAL_RE = re.compile(
 )
 _SELF_CONTAINED_MOMENT_RE = re.compile(r"\bself[- ]contained\s+moment\b", re.I)
 
+# Phase-5.8's original support audit deliberately used the bare token
+# "support" for high recall.  At the final surface this is too broad: phrases
+# such as "support details are not specified" are metadata-like prose, not a
+# physical support/contact relation.  Re-evaluate the inherited violation with
+# relation-bearing language only, while retaining explicit negative physical
+# support claims such as "no support beneath her back".
+_CONCRETE_SUPPORT_CONTACT_RE = re.compile(
+    r"\b(?:"
+    r"support(?:ed|ing)\s+(?:by|on|against|the|her|his|their|a|an)\b|"
+    r"weight[- ]?bearing\b|weight\s+(?:on|over)\b|"
+    r"contact\s+with\b|in\s+contact\s+with\b|"
+    r"(?:foot|feet)\s+planted\b|planted\s+(?:foot|feet)\b|"
+    r"(?:foot|feet)\s+flat\b|"
+    r"rest(?:s|ing|ed)?\s+on\b|back\s+against\b|"
+    r"no\s+(?:visible\s+)?support\s+(?:beneath|under|against|from|for)\b|"
+    r"without\s+(?:visible\s+)?support\s+(?:beneath|under|against|from|for)\b"
+    r")",
+    re.I,
+)
+_SUPPORT_CONTACT_AUTHORITY_RE = re.compile(
+    r"\b(?:"
+    r"support(?:ed|ing)\s+(?:by|on|against|the|her|his|their|a|an)\b|"
+    r"weight[- ]?bearing\b|weight\s+(?:on|over)\b|"
+    r"contact\s+with\b|in\s+contact\s+with\b|"
+    r"(?:foot|feet)\s+planted\b|planted\s+(?:foot|feet)\b|"
+    r"(?:foot|feet)\s+flat\b|"
+    r"rest(?:s|ing|ed)?\s+on\b|back\s+against\b"
+    r")",
+    re.I,
+)
+
 _PRIMARY_POSE_PATTERNS: dict[str, re.Pattern[str]] = {
     "standing": re.compile(r"\b(?:stand|stands|standing)\b", re.I),
     "seated": re.compile(r"\b(?:seated|sit|sits|sitting)\b", re.I),
@@ -291,6 +322,63 @@ def _mirror_phone_hardware_surface(
                 out[key] = cleaned
         return out
     return copy.deepcopy(value)
+
+
+def _support_contact_authorized_v14(projection: dict[str, Any]) -> bool:
+    authoritative = (
+        projection.get("authoritative_facts")
+        if isinstance(projection.get("authoritative_facts"), dict)
+        else {}
+    )
+    body = (
+        authoritative.get("body")
+        if isinstance(authoritative.get("body"), dict)
+        else {}
+    )
+    if body.get("global_support_shape"):
+        return True
+    configuration = (
+        body.get("configuration")
+        if isinstance(body.get("configuration"), list)
+        else []
+    )
+    return any(
+        isinstance(value, str) and _SUPPORT_CONTACT_AUTHORITY_RE.search(value)
+        for value in configuration
+    )
+
+
+def _normalized_surface(value: str) -> str:
+    return " ".join(str(value or "").casefold().replace("-", " ").split())
+
+
+def _body_neutrality_phrase_authorized(
+    phrase: str,
+    projection: dict[str, Any],
+) -> bool:
+    authoritative = (
+        projection.get("authoritative_facts")
+        if isinstance(projection.get("authoritative_facts"), dict)
+        else {}
+    )
+    body = (
+        authoritative.get("body")
+        if isinstance(authoritative.get("body"), dict)
+        else {}
+    )
+    configuration = (
+        body.get("configuration")
+        if isinstance(body.get("configuration"), list)
+        else []
+    )
+    needle = _normalized_surface(phrase)
+    if not needle:
+        return False
+    return any(
+        needle in _normalized_surface(value)
+        for value in configuration
+        if isinstance(value, str)
+    )
 
 
 def _allowed_primary_pose_groups(projection: dict[str, Any]) -> set[str]:
@@ -526,6 +614,38 @@ def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
         if not str(violation).startswith("unauthorized_broad_pose:")
     ]
 
+    # Re-scope two inherited high-recall audits against the final authoritative
+    # projection.  These are audit corrections only; no caption text is edited.
+    inherited_support_violation = "support_contact_language_without_authority"
+    violations = [v for v in violations if v != inherited_support_violation]
+    concrete_support_phrases = [
+        " ".join(match.group(0).split())
+        for match in _CONCRETE_SUPPORT_CONTACT_RE.finditer(caption)
+    ]
+    support_contact_authorized = _support_contact_authorized_v14(projection)
+    if concrete_support_phrases and not support_contact_authorized:
+        violations.append(inherited_support_violation)
+
+    inherited_neutrality_violation = "unsupported_body_neutrality_language"
+    violations = [v for v in violations if v != inherited_neutrality_violation]
+    inherited_neutrality_phrases = [
+        str(value)
+        for value in (audit.get("unsupported_body_neutrality_phrases") or [])
+        if value
+    ]
+    authorized_neutrality_phrases = [
+        phrase
+        for phrase in inherited_neutrality_phrases
+        if _body_neutrality_phrase_authorized(phrase, projection)
+    ]
+    unauthorized_neutrality_phrases = [
+        phrase
+        for phrase in inherited_neutrality_phrases
+        if phrase not in authorized_neutrality_phrases
+    ]
+    if unauthorized_neutrality_phrases:
+        violations.append(inherited_neutrality_violation)
+
     allowed_primary_pose = _allowed_primary_pose_groups(projection)
     used_primary_pose = _primary_subject_pose_groups(caption, projection)
     unauthorized_primary_pose = sorted(used_primary_pose - allowed_primary_pose)
@@ -611,6 +731,10 @@ def _caption_audit(caption: str, projection: dict[str, Any]) -> dict[str, Any]:
     audit["primary_subject_used_pose_groups"] = sorted(used_primary_pose)
     audit["primary_subject_pose_scope_enforced"] = True
     audit["mirror_phone_hardware_phrases"] = mirror_phone_hardware
+    audit["concrete_support_contact_phrases"] = concrete_support_phrases
+    audit["support_contact_authorized_v14"] = support_contact_authorized
+    audit["unsupported_body_neutrality_phrases"] = unauthorized_neutrality_phrases
+    audit["authorized_body_neutrality_phrases"] = authorized_neutrality_phrases
     audit["caption_surface_narration_guard_enforced"] = True
     return audit
 
@@ -653,7 +777,11 @@ def _retry_prompt(
         )
     if "meta_composition_narration" in violations:
         extra.append(
-            "Remove meta-caption narration about what the composition or framing focuses on, emphasizes, highlights, captures, or frames. State concrete visible facts directly."
+            "Delete the entire meta-composition clause or sentence. Do not use 'the composition', "
+            "'the framing', 'the image', or 'the shot' as an acting subject that captures, frames, "
+            "focuses on, emphasizes, or highlights anything. Do not replace it with another summary "
+            "such as 'a casual/intimate portrait' or 'a candid moment'. End with concrete visible "
+            "subject, object, or scene facts only."
         )
     if "unsupported_setting_to_mood_causality" in violations:
         extra.append(
