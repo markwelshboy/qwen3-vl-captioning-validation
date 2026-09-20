@@ -233,6 +233,15 @@ def test_audit_rejects_meta_composition_narration():
     assert "meta_composition_narration" in audit["violations"]
 
 
+def test_audit_rejects_image_as_meta_composition_agent():
+    audit = v14._caption_audit(
+        "The image captures a casual portrait in a lived-in room.",
+        _projection(),
+    )
+
+    assert "meta_composition_narration" in audit["violations"]
+
+
 def test_audit_rejects_setting_to_expression_causality():
     audit = v14._caption_audit(
         "Reflective steel walls contribute to a pensive expression.",
