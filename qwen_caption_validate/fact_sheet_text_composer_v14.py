@@ -87,9 +87,9 @@ _MIRROR_TAUTOLOGY_RE = re.compile(
     re.I,
 )
 _META_COMPOSITION_RE = re.compile(
-    r"\b(?:the\s+)?(?:mirror\s+selfie\s+)?composition\s+"
-    r"(?:frames?|focuses?|emphasiz(?:es|ing)|highlights?|captures?)\b"
-    r"|\b(?:the\s+)?framing\s+(?:focuses?|emphasiz(?:es|ing)|highlights?|captures?)\b",
+    r"\b(?:the\s+)?(?:mirror\s+selfie\s+)?"
+    r"(?:composition|framing|image|shot)\s+"
+    r"(?:frames?|focuses?|emphasiz(?:es|ing)|highlights?|captures?)\b",
     re.I,
 )
 _INTERPRETIVE_CAUSAL_RE = re.compile(
