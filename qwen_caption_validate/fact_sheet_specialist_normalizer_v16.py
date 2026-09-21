@@ -23,6 +23,28 @@ DEFAULT_OUTPUT_SUBDIR = Path("semantic-v3") / "caption-fact-sheet-v0.2.15"
 # geometry may veto an obviously impossible relation but may not create one.
 FACE_RELATION_CONTRADICTION_MIN_NORM_BODY = 1.35
 
+# Tight-crop local geometry recovery. This reuses the frozen Pose-v0.16
+# language layer, which already distinguishes shoulder-only "upper body"
+# orientation from whole-body posture. Broad-pose conditional hints remain
+# non-authoritative.
+PARTIAL_UPPER_BODY_MIN_AUTHORITY = 0.85
+
+# Roll was historically diagnostic-only. A large cross-estimator-agreed roll
+# is useful caption geometry when yaw/pitch themselves are unresolved. Keep
+# this deliberately roll-only so it cannot compound already published axes.
+HEAD_ROLL_ONLY_MIN_ABS_DEG = 18.0
+
+_TOWARD_CAMERA_CONTEXT_RE = re.compile(
+    r"\b(?:look(?:s|ed|ing)?|gaze(?:s|d|ing)?)\b.{0,36}"
+    r"\b(?:toward|towards|at|into)\s+(?:the\s+)?camera\b",
+    re.I,
+)
+_OFF_CAMERA_CONTEXT_RE = re.compile(
+    r"\b(?:look(?:s|ed|ing)?|gaze(?:s|d|ing)?)\b.{0,36}"
+    r"(?:\baway\s+from\s+(?:the\s+)?camera\b|\boff[- ]camera\b)",
+    re.I,
+)
+
 _FACE_RELATION_RE = re.compile(
     r"\b(?:hand|fist|palm|fingers?|wrist|forearm)\b.{0,55}\b(?:face|chin)\b"
     r"|\b(?:face|chin)\b.{0,55}\b(?:hand|fist|palm|fingers?|wrist|forearm)\b",
@@ -85,6 +107,356 @@ def _points_from_authoritative_laterality(body: dict[str, Any]) -> dict[str, tup
             points[name] = (0.0, 0.0) if observed else None
             any_observed = any_observed or observed
     return points if any_observed else None
+
+
+def _pose_language_path(sheet: dict[str, Any]) -> Path | None:
+    sources = sheet.get("sources") if isinstance(sheet.get("sources"), dict) else {}
+    explicit = sources.get("pose_language")
+    if explicit:
+        return Path(str(explicit)).expanduser()
+
+    policy_source = sources.get("perception_policy")
+    image_key = str(sheet.get("image_key") or "").strip()
+    if not policy_source or not image_key:
+        return None
+    policy_path = Path(str(policy_source)).expanduser()
+    try:
+        run_dir = policy_path.parents[2]
+    except IndexError:
+        return None
+    return (
+        run_dir
+        / "semantic-v3"
+        / "pose-language-v0.1"
+        / f"{image_key}.pose_language.json"
+    )
+
+
+def _load_pose_language(
+    sheet: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str | None, str | None]:
+    path = _pose_language_path(sheet)
+    if path is None:
+        return None, "pose_language_source_unresolved", None
+    if not path.is_file():
+        return None, "pose_language_source_not_found", str(path)
+    try:
+        value = phase4b0._read_json(path)
+    except Exception as exc:  # pragma: no cover - surfaced in diagnostics
+        return None, f"pose_language_read_failed:{type(exc).__name__}", str(path)
+    return value, None, str(path)
+
+
+def _has_composer_visible_configuration(configuration: list[Any]) -> bool:
+    return any(
+        isinstance(item, dict)
+        and isinstance(item.get("composer_text"), str)
+        and bool(str(item.get("composer_text")).strip())
+        for item in configuration
+    )
+
+
+def _apply_partial_upper_body_orientation(
+    sheet: dict[str, Any],
+    *,
+    pose_language: dict[str, Any] | None = None,
+    pose_language_error: str | None = None,
+    pose_language_source: str | None = None,
+) -> dict[str, Any]:
+    """Recover governed shoulder-only orientation without promoting broad pose.
+
+    The Pose-v0.16 language layer already has a cropped-subject contract: when
+    shoulder authority is strong but hip authority is weak, it emits only an
+    "upper body" camera-relative orientation. This gate exposes that narrow
+    fact to configuration-route captions when the ordinary torso handoff has
+    gone diagnostic-only. Conditional posture hints (including crouching) are
+    deliberately ignored.
+    """
+    out = copy.deepcopy(sheet)
+    body = _body(out)
+    configuration = (
+        body.get("configuration")
+        if isinstance(body.get("configuration"), list)
+        else []
+    )
+    mode = str(((out.get("policy") or {}).get("mode")) or "")
+    torso = (
+        body.get("torso_geometry")
+        if isinstance(body.get("torso_geometry"), dict)
+        else {}
+    )
+
+    adjudication: dict[str, Any] = {
+        "status": "not_applicable",
+        "authoritative_stage": True,
+        "composer_authoritative": False,
+        "applied": False,
+        "route_mode": mode,
+        "minimum_authority": PARTIAL_UPPER_BODY_MIN_AUTHORITY,
+        "broad_pose_created": False,
+        "conditional_posture_hint_promoted": False,
+        "reason": None,
+    }
+
+    if mode != "configuration":
+        adjudication["reason"] = "route_is_not_configuration"
+        body["partial_upper_body_orientation_adjudication"] = adjudication
+        return out
+    if torso.get("composer_eligible"):
+        adjudication["reason"] = "full_torso_orientation_already_composer_authoritative"
+        body["partial_upper_body_orientation_adjudication"] = adjudication
+        return out
+    if _has_composer_visible_configuration(configuration):
+        adjudication["reason"] = "existing_local_configuration_already_composer_visible"
+        body["partial_upper_body_orientation_adjudication"] = adjudication
+        return out
+
+    record = copy.deepcopy(pose_language) if isinstance(pose_language, dict) else None
+    error = pose_language_error
+    source = pose_language_source
+    if record is None and error is None:
+        record, error, source = _load_pose_language(out)
+
+    if not isinstance(record, dict):
+        adjudication.update(
+            status="insufficient_evidence",
+            reason=error or "pose_language_unavailable",
+            pose_language_source=source,
+        )
+        body["partial_upper_body_orientation_adjudication"] = adjudication
+        return out
+
+    components = (
+        record.get("components")
+        if isinstance(record.get("components"), dict)
+        else {}
+    )
+    orientation = (
+        components.get("orientation")
+        if isinstance(components.get("orientation"), dict)
+        else {}
+    )
+    scope = str(orientation.get("scope") or "")
+    phrase = " ".join(str(orientation.get("phrase") or "").split()).strip(" .")
+    try:
+        authority = float(orientation.get("authority"))
+    except (TypeError, ValueError):
+        authority = 0.0
+
+    adjudication.update(
+        pose_language_source=source,
+        orientation_scope=scope or None,
+        orientation_phrase=phrase or None,
+        orientation_authority=authority,
+        ignored_conditional_hints=copy.deepcopy(record.get("conditional_hints") or []),
+    )
+
+    if scope != "upper body":
+        adjudication.update(status="abstain", reason="pose_language_scope_is_not_upper_body")
+        body["partial_upper_body_orientation_adjudication"] = adjudication
+        return out
+    if authority < PARTIAL_UPPER_BODY_MIN_AUTHORITY:
+        adjudication.update(status="abstain", reason="upper_body_orientation_authority_below_threshold")
+        body["partial_upper_body_orientation_adjudication"] = adjudication
+        return out
+    if not phrase:
+        adjudication.update(status="abstain", reason="upper_body_orientation_phrase_missing")
+        body["partial_upper_body_orientation_adjudication"] = adjudication
+        return out
+
+    item = {
+        "text": phrase,
+        "composer_text": phrase,
+        "normalized_text": phrase,
+        "source": "semantic_v3_pose_language_v01",
+        "domain": "configuration",
+        "authority": "pose_v016_observed_shoulder_orientation",
+        "promotion_status": "accepted_partial_upper_body_orientation",
+        "specialist_owner": "pose_language_upper_body_orientation_gate",
+        "partial_upper_body_orientation": {
+            "scope": "upper_body_only",
+            "authority": round(authority, 4),
+            "camera_relative_only": bool(orientation.get("camera_relative_only")),
+            "broad_pose_authority_created": False,
+            "conditional_posture_hints_ignored": True,
+        },
+    }
+    body["configuration"] = copy.deepcopy(configuration) + [item]
+    adjudication.update(
+        status="adjudicated",
+        composer_authoritative=True,
+        applied=True,
+        canonical_composer_text=phrase,
+        reason="strong_shoulder_only_pose_language_recovers_visible_upper_body_orientation",
+    )
+    body["partial_upper_body_orientation_adjudication"] = adjudication
+
+    if source:
+        sources = out.get("sources") if isinstance(out.get("sources"), dict) else {}
+        sources["pose_language"] = source
+        out["sources"] = sources
+    return out
+
+
+def _apply_head_roll_only_semantics(sheet: dict[str, Any]) -> dict[str, Any]:
+    """Publish a large corroborated roll only when yaw/pitch are unresolved."""
+    out = copy.deepcopy(sheet)
+    facts = out.get("facts") if isinstance(out.get("facts"), dict) else {}
+    head = facts.get("head_pose") if isinstance(facts.get("head_pose"), dict) else {}
+    if not head:
+        return out
+
+    roll = head.get("roll") if isinstance(head.get("roll"), dict) else {}
+    horizontal = head.get("horizontal") if isinstance(head.get("horizontal"), dict) else {}
+    vertical = head.get("vertical") if isinstance(head.get("vertical"), dict) else {}
+    authority = str(roll.get("authority") or "")
+    try:
+        degrees = float(roll.get("degrees"))
+    except (TypeError, ValueError):
+        degrees = None
+
+    adjudication = {
+        "status": "not_applicable",
+        "authoritative_stage": True,
+        "composer_authoritative": False,
+        "applied": False,
+        "minimum_abs_roll_deg": HEAD_ROLL_ONLY_MIN_ABS_DEG,
+        "roll_authority": authority or None,
+        "roll_deg": degrees,
+        "direction_published": False,
+        "reason": None,
+    }
+
+    if horizontal.get("publishable") or vertical.get("publishable"):
+        adjudication["reason"] = "yaw_or_pitch_already_caption_authoritative"
+    elif authority != "corroborated":
+        adjudication["reason"] = "roll_not_cross_estimator_corroborated"
+    elif degrees is None or abs(degrees) < HEAD_ROLL_ONLY_MIN_ABS_DEG:
+        adjudication["reason"] = "roll_below_caption_salience_threshold"
+    else:
+        roll["publishable"] = True
+        roll["caption_semantics"] = {
+            "publishable": True,
+            "composer_text": "head tilted noticeably",
+            "magnitude_class": "noticeable",
+            "direction_publishable": False,
+            "abs_roll_deg": round(abs(degrees), 1),
+            "reason": "large_cross_estimator_agreed_roll_with_unresolved_yaw_and_pitch",
+        }
+        adjudication.update(
+            status="adjudicated",
+            composer_authoritative=True,
+            applied=True,
+            canonical_composer_text="head tilted noticeably",
+            reason="large_corroborated_roll_published_without_direction",
+        )
+
+    head["roll"] = roll
+    head["roll_only_adjudication"] = adjudication
+    facts["head_pose"] = head
+    out["facts"] = facts
+    return out
+
+
+def _context_camera_relationship_claims(sheet: dict[str, Any]) -> set[str]:
+    context = (
+        sheet.get("context_only")
+        if isinstance(sheet.get("context_only"), dict)
+        else {}
+    )
+    values = (
+        context.get("expression_action")
+        if isinstance(context.get("expression_action"), list)
+        else []
+    )
+    claims: set[str] = set()
+    for item in values:
+        text = (
+            str(item.get("text") or "")
+            if isinstance(item, dict)
+            else str(item or "")
+        )
+        if _TOWARD_CAMERA_CONTEXT_RE.search(text):
+            claims.add("toward_camera")
+        if _OFF_CAMERA_CONTEXT_RE.search(text):
+            claims.add("off_camera")
+    return claims
+
+
+def _apply_gaze_semantic_conflict_gate(sheet: dict[str, Any]) -> dict[str, Any]:
+    """Use context-only gaze wording only as a veto, never as gaze authority."""
+    out = copy.deepcopy(sheet)
+    facts = out.get("facts") if isinstance(out.get("facts"), dict) else {}
+    gaze = facts.get("gaze") if isinstance(facts.get("gaze"), dict) else {}
+    semantics = (
+        gaze.get("caption_semantics")
+        if isinstance(gaze.get("caption_semantics"), dict)
+        else {}
+    )
+    relationship = (
+        semantics.get("camera_relationship")
+        if isinstance(semantics.get("camera_relationship"), dict)
+        else {}
+    )
+    authoritative_relationship = str(
+        relationship.get("composer_value")
+        or relationship.get("raw_value")
+        or gaze.get("camera_relationship")
+        or ""
+    )
+    claims = _context_camera_relationship_claims(out)
+
+    adjudication = {
+        "status": "not_applicable",
+        "authoritative_stage": True,
+        "composer_authoritative": False,
+        "applied": False,
+        "specialist_camera_relationship": authoritative_relationship or None,
+        "context_only_claims": sorted(claims),
+        "context_only_can_create_gaze_authority": False,
+        "raw_gaze_measurement_preserved": True,
+        "reason": None,
+    }
+
+    opposite = (
+        (authoritative_relationship == "off_camera" and "toward_camera" in claims)
+        or (
+            authoritative_relationship == "toward_camera"
+            and "off_camera" in claims
+        )
+    )
+    if not semantics.get("publishable"):
+        adjudication["reason"] = "caption_gaze_already_unpublishable"
+    elif not opposite:
+        adjudication["reason"] = "no_explicit_camera_relationship_conflict"
+    else:
+        semantics["publishable"] = False
+        for key in ("horizontal", "vertical", "camera_relationship"):
+            child = semantics.get(key) if isinstance(semantics.get(key), dict) else {}
+            if child:
+                child["publishable"] = False
+                child["pre_conflict_composer_value"] = child.get("composer_value")
+                child["composer_value"] = None
+                child["reason"] = "explicit_context_semantic_conflict_forces_abstention"
+                semantics[key] = child
+        semantics["semantic_conflict"] = {
+            "specialist_camera_relationship": authoritative_relationship,
+            "context_only_claims": sorted(claims),
+            "decision": "abstain",
+            "context_only_promoted": False,
+        }
+        gaze["caption_semantics"] = semantics
+        adjudication.update(
+            status="conflict_abstain",
+            composer_authoritative=True,
+            applied=True,
+            reason="explicit_context_camera_relationship_contradicts_specialist_surface",
+        )
+
+    gaze["semantic_conflict_adjudication"] = adjudication
+    facts["gaze"] = gaze
+    out["facts"] = facts
+    return out
 
 
 def _positive_direct_face_relation(text: str) -> bool:
@@ -404,6 +776,9 @@ def _apply_phase4b15_authoritative(sheet: dict[str, Any]) -> dict[str, Any]:
     out = _BASE_APPLY_PHASE4B14(sheet)
     out = _apply_head_support_authority(out)
     out = _apply_face_relation_truth_gate(out)
+    out = _apply_partial_upper_body_orientation(out)
+    out = _apply_head_roll_only_semantics(out)
+    out = _apply_gaze_semantic_conflict_gate(out)
 
     audit = out.get("audit") if isinstance(out.get("audit"), dict) else {}
     audit["phase"] = "4B.15-authoritative"
@@ -422,6 +797,13 @@ def _apply_phase4b15_authoritative(sheet: dict[str, Any]) -> dict[str, Any]:
         missing_face_relation_geometry_is_not_counterevidence=True,
         device_mediated_face_relations_are_outside_anatomical_truth_gate=True,
         coexisting_device_face_relation_disables_direct_distance_veto=True,
+        partial_upper_body_orientation_requires_configuration_route=True,
+        partial_upper_body_orientation_never_creates_broad_pose=True,
+        pose_language_conditional_posture_hints_remain_non_authoritative=True,
+        roll_only_head_tilt_requires_large_corroborated_roll=True,
+        roll_only_head_tilt_never_publishes_roll_direction=True,
+        context_only_gaze_can_veto_but_never_create_gaze_authority=True,
+        gaze_semantic_conflict_preserves_raw_specialist_measurement=True,
         prior_broad_pose_torso_support_knee_raised_leg_and_crouch_depth_gates_remain_authoritative=True,
     )
     face_gate = (
@@ -429,10 +811,39 @@ def _apply_phase4b15_authoritative(sheet: dict[str, Any]) -> dict[str, Any]:
         if isinstance(_body(out).get("face_relation_truth_adjudication"), dict)
         else {}
     )
+    warnings = [str(value) for value in (audit.get("warnings") or []) if value]
     if face_gate.get("applied") and face_gate.get("withheld_count"):
-        warnings = [str(value) for value in (audit.get("warnings") or []) if value]
         warnings.append("face_relation_geometry_contradiction_withheld")
-        audit["warnings"] = sorted(set(warnings))
+
+    body = _body(out)
+    partial = (
+        body.get("partial_upper_body_orientation_adjudication")
+        if isinstance(body.get("partial_upper_body_orientation_adjudication"), dict)
+        else {}
+    )
+    if partial.get("applied"):
+        warnings.append("partial_upper_body_orientation_recovered")
+
+    facts = out.get("facts") if isinstance(out.get("facts"), dict) else {}
+    head = facts.get("head_pose") if isinstance(facts.get("head_pose"), dict) else {}
+    roll_gate = (
+        head.get("roll_only_adjudication")
+        if isinstance(head.get("roll_only_adjudication"), dict)
+        else {}
+    )
+    if roll_gate.get("applied"):
+        warnings.append("head_roll_only_semantics_promoted")
+
+    gaze = facts.get("gaze") if isinstance(facts.get("gaze"), dict) else {}
+    gaze_gate = (
+        gaze.get("semantic_conflict_adjudication")
+        if isinstance(gaze.get("semantic_conflict_adjudication"), dict)
+        else {}
+    )
+    if gaze_gate.get("applied"):
+        warnings.append("gaze_semantic_conflict_abstained")
+
+    audit["warnings"] = sorted(set(warnings))
     audit["invariants"] = invariants
     out["audit"] = audit
     out["schema_version"] = SCHEMA_VERSION
