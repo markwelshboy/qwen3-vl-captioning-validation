@@ -280,3 +280,232 @@ def test_face_relation_truth_gate_abstains_when_geometry_missing():
 
     assert body["configuration"][0]["composer_text"] == "hand near the face"
     assert body["face_relation_truth_adjudication"]["status"] == "insufficient_evidence"
+
+
+def _partial_pose_language(*, authority=0.9):
+    return {
+        "components": {
+            "orientation": {
+                "label": "three_quarter",
+                "scope": "upper body",
+                "phrase": "upper body partly turned sideways to the camera",
+                "authority": authority,
+                "camera_relative_only": True,
+            },
+        },
+        "conditional_hints": [
+            {
+                "kind": "posture",
+                "value": "crouching",
+                "phrase": "crouching",
+                "requires": "semantic_corroboration",
+            },
+        ],
+    }
+
+
+def test_partial_upper_body_orientation_recovers_only_local_geometry():
+    sheet = _sheet([], left=("shoulder", "elbow"), right=("shoulder", "elbow"))
+    sheet["policy"] = {"mode": "configuration"}
+    sheet["facts"]["body"]["torso_geometry"] = {
+        "available": True,
+        "composer_eligible": False,
+        "semantic_scope": "diagnostic_only_insufficient_torso_observation",
+    }
+
+    out = phase4b15._apply_partial_upper_body_orientation(
+        sheet,
+        pose_language=_partial_pose_language(),
+        pose_language_source="/tmp/pose-language/00028.pose_language.json",
+    )
+    body = out["facts"]["body"]
+
+    assert [item["composer_text"] for item in body["configuration"]] == [
+        "upper body partly turned sideways to the camera"
+    ]
+    assert body.get("pose_candidate") is None
+    gate = body["partial_upper_body_orientation_adjudication"]
+    assert gate["status"] == "adjudicated"
+    assert gate["broad_pose_created"] is False
+    assert gate["conditional_posture_hint_promoted"] is False
+    assert gate["ignored_conditional_hints"][0]["value"] == "crouching"
+
+
+def test_partial_upper_body_orientation_does_not_displace_existing_configuration():
+    sheet = _sheet(
+        [_item("arm bent at the elbow")],
+        left=("shoulder", "elbow"),
+        right=("shoulder", "elbow"),
+    )
+    sheet["policy"] = {"mode": "configuration"}
+    sheet["facts"]["body"]["torso_geometry"] = {
+        "available": True,
+        "composer_eligible": False,
+    }
+
+    out = phase4b15._apply_partial_upper_body_orientation(
+        sheet,
+        pose_language=_partial_pose_language(),
+    )
+
+    assert out["facts"]["body"]["configuration"][0]["composer_text"] == "arm bent at the elbow"
+    assert len(out["facts"]["body"]["configuration"]) == 1
+    assert (
+        out["facts"]["body"]["partial_upper_body_orientation_adjudication"]["reason"]
+        == "existing_local_configuration_already_composer_visible"
+    )
+
+
+def test_partial_upper_body_orientation_requires_strong_pose_language_authority():
+    sheet = _sheet([], left=("shoulder",), right=("shoulder",))
+    sheet["policy"] = {"mode": "configuration"}
+    sheet["facts"]["body"]["torso_geometry"] = {
+        "available": True,
+        "composer_eligible": False,
+    }
+
+    out = phase4b15._apply_partial_upper_body_orientation(
+        sheet,
+        pose_language=_partial_pose_language(authority=0.7),
+    )
+
+    assert out["facts"]["body"]["configuration"] == []
+    assert (
+        out["facts"]["body"]["partial_upper_body_orientation_adjudication"]["reason"]
+        == "upper_body_orientation_authority_below_threshold"
+    )
+
+
+def test_large_corroborated_roll_publishes_generic_tilt_when_other_axes_unresolved():
+    sheet = {
+        "facts": {
+            "head_pose": {
+                "available": True,
+                "horizontal": {"publishable": False},
+                "vertical": {"publishable": False},
+                "roll": {
+                    "publishable": False,
+                    "authority": "corroborated",
+                    "degrees": 32.7,
+                },
+            },
+        },
+    }
+
+    out = phase4b15._apply_head_roll_only_semantics(sheet)
+    roll = out["facts"]["head_pose"]["roll"]
+
+    assert roll["publishable"] is True
+    assert roll["caption_semantics"]["composer_text"] == "head tilted noticeably"
+    assert roll["caption_semantics"]["direction_publishable"] is False
+
+
+def test_roll_only_semantics_abstains_when_yaw_or_pitch_already_publishes():
+    sheet = {
+        "facts": {
+            "head_pose": {
+                "available": True,
+                "horizontal": {"publishable": True, "value": "frame_left"},
+                "vertical": {"publishable": False},
+                "roll": {
+                    "publishable": False,
+                    "authority": "corroborated",
+                    "degrees": 32.7,
+                },
+            },
+        },
+    }
+
+    out = phase4b15._apply_head_roll_only_semantics(sheet)
+
+    assert out["facts"]["head_pose"]["roll"]["publishable"] is False
+    assert (
+        out["facts"]["head_pose"]["roll_only_adjudication"]["reason"]
+        == "yaw_or_pitch_already_caption_authoritative"
+    )
+
+
+def test_gaze_context_conflict_forces_surface_abstention_without_promoting_context():
+    sheet = {
+        "facts": {
+            "gaze": {
+                "available": True,
+                "publishable": True,
+                "source": "l2cs",
+                "camera_relationship": "off_camera",
+                "yaw_deg": 35.6,
+                "pitch_deg": -12.8,
+                "caption_semantics": {
+                    "available": True,
+                    "publishable": True,
+                    "horizontal": {
+                        "composer_value": "frame_left",
+                        "publishable": True,
+                    },
+                    "vertical": {
+                        "composer_value": "down",
+                        "publishable": True,
+                    },
+                    "camera_relationship": {
+                        "composer_value": "off_camera",
+                        "publishable": True,
+                    },
+                },
+            },
+        },
+        "context_only": {
+            "expression_action": [
+                {
+                    "text": "looking toward camera",
+                    "authority": "context_only",
+                },
+            ],
+        },
+    }
+
+    out = phase4b15._apply_gaze_semantic_conflict_gate(sheet)
+    gaze = out["facts"]["gaze"]
+    semantics = gaze["caption_semantics"]
+
+    assert gaze["publishable"] is True
+    assert gaze["yaw_deg"] == 35.6
+    assert semantics["publishable"] is False
+    assert semantics["horizontal"]["composer_value"] is None
+    assert semantics["vertical"]["composer_value"] is None
+    assert semantics["camera_relationship"]["composer_value"] is None
+    gate = gaze["semantic_conflict_adjudication"]
+    assert gate["status"] == "conflict_abstain"
+    assert gate["context_only_can_create_gaze_authority"] is False
+    assert gate["raw_gaze_measurement_preserved"] is True
+
+
+def test_gaze_context_agreement_does_not_change_specialist_surface():
+    sheet = {
+        "facts": {
+            "gaze": {
+                "available": True,
+                "publishable": True,
+                "camera_relationship": "off_camera",
+                "caption_semantics": {
+                    "available": True,
+                    "publishable": True,
+                    "horizontal": {"composer_value": "frame_left", "publishable": True},
+                    "camera_relationship": {
+                        "composer_value": "off_camera",
+                        "publishable": True,
+                    },
+                },
+            },
+        },
+        "context_only": {
+            "expression_action": [{"text": "looking away from the camera"}],
+        },
+    }
+
+    out = phase4b15._apply_gaze_semantic_conflict_gate(sheet)
+
+    assert out["facts"]["gaze"]["caption_semantics"]["publishable"] is True
+    assert (
+        out["facts"]["gaze"]["semantic_conflict_adjudication"]["reason"]
+        == "no_explicit_camera_relationship_conflict"
+    )
