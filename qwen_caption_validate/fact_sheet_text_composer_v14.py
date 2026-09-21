@@ -532,6 +532,46 @@ def _projection(
     )
     authoritative = copy.deepcopy(authoritative)
 
+    # Phase 4B.15 can publish a large corroborated head roll as a generic
+    # tilt when yaw/pitch are unresolved. Phase 5.12 intentionally collapses
+    # neutral axis bookkeeping and therefore does not see this roll-only
+    # surface; restore only the already-governed caption semantic here.
+    source_facts = sheet.get("facts") if isinstance(sheet.get("facts"), dict) else {}
+    source_head = (
+        source_facts.get("head_pose")
+        if isinstance(source_facts.get("head_pose"), dict)
+        else {}
+    )
+    source_roll = (
+        source_head.get("roll")
+        if isinstance(source_head.get("roll"), dict)
+        else {}
+    )
+    roll_semantics = (
+        source_roll.get("caption_semantics")
+        if isinstance(source_roll.get("caption_semantics"), dict)
+        else {}
+    )
+    roll_surface = _clean(roll_semantics.get("composer_text"))
+    roll_only_projected = bool(source_roll.get("publishable") and roll_surface)
+    if roll_only_projected:
+        projected_head = (
+            authoritative.get("head")
+            if isinstance(authoritative.get("head"), dict)
+            else {}
+        )
+        projected_head = copy.deepcopy(projected_head)
+        existing_surface = _clean(projected_head.get("composer_text"))
+        if existing_surface:
+            suffix = roll_surface.removeprefix("head ").strip()
+            if suffix and suffix.casefold() not in existing_surface.casefold():
+                projected_head["composer_text"] = existing_surface + " and " + suffix
+        else:
+            projected_head["composer_text"] = roll_surface
+        projected_head["roll_only_tilt"] = True
+        projected_head["roll_direction_published"] = False
+        authoritative["head"] = projected_head
+
     capture = (
         authoritative.get("capture")
         if isinstance(authoritative.get("capture"), dict)
@@ -595,6 +635,8 @@ def _projection(
         projection.pop("holistic_context_non_authoritative", None)
 
     projection["authoritative_facts"] = authoritative
+    audit["head_roll_only_surface_projected"] = roll_only_projected
+    audit["head_roll_only_surface_text"] = roll_surface if roll_only_projected else None
     audit["capture_mechanism_domain_firewall_enforced"] = True
     audit["capture_mechanism_relations_sanitized"] = withheld_capture_relations
     audit["negative_visibility_contact_relations_sanitized"] = sanitized_negative_relations
