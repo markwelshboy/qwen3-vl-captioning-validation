@@ -632,3 +632,52 @@ def test_secondary_person_squatting_does_not_count_as_primary_pose():
 
     assert "unauthorized_broad_pose:squatting" not in audit["violations"]
     assert audit["primary_subject_used_pose_groups"] == []
+
+
+def test_projection_restores_governed_roll_only_head_tilt():
+    sheet = {
+        "schema_version": "caption-fact-sheet-0.3.2",
+        "image_key": "synthetic",
+        "policy": {"mode": "configuration"},
+        "facts": {
+            "body": {},
+            "visual": {},
+            "framing": {},
+            "head_pose": {
+                "available": True,
+                "horizontal": {"publishable": False},
+                "vertical": {"publishable": False},
+                "roll": {
+                    "publishable": True,
+                    "authority": "corroborated",
+                    "degrees": 32.7,
+                    "caption_semantics": {
+                        "publishable": True,
+                        "composer_text": "head tilted noticeably",
+                        "direction_publishable": False,
+                    },
+                },
+            },
+            "gaze": {"publishable": False},
+        },
+        "context_only": {},
+        "audit": {"violations": [], "warnings": [], "review_conflicts": []},
+    }
+
+    projection, audit = v14._projection(
+        sheet,
+        trigger_token="sH1VX",
+        subject_class="woman",
+    )
+
+    head = projection["authoritative_facts"]["head"]
+    assert head["composer_text"] == "head tilted noticeably"
+    assert head["roll_only_tilt"] is True
+    assert head["roll_direction_published"] is False
+    assert audit["head_roll_only_surface_projected"] is True
+
+    caption_audit = v14._caption_audit(
+        "sH1VX is shown with her head tilted noticeably.",
+        projection,
+    )
+    assert "head_orientation_without_publishable_head" not in caption_audit["violations"]
