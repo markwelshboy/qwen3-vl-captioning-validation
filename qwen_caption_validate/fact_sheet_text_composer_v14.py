@@ -151,7 +151,7 @@ _INTERVENING_NONPRIMARY_CLAUSE_SUBJECT_RE = re.compile(
 )
 _LOCAL_BODY_PART_POSE_SUBJECT_RE_TEMPLATE = (
     r"\b{possessive}\s+(?:upper\s+)?torso\b"
-    r"[^,;.!?]{0,40}$"
+    r"[^,;.!?]{{0,40}}$"
 )
 
 
